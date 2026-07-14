@@ -3,7 +3,7 @@ import { dirname, join, normalize, parse, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { CameraConsentRecord, CameraConsentRepository, OnboardingProgress, OnboardingProgressRepository, OnboardingStage } from "../user-data/ports.js";
 
-export const STORAGE_SCHEMA_VERSION = 6;
+export const STORAGE_SCHEMA_VERSION = 7;
 export const RECOVERY_REQUIRED = "MIGRATION_RECOVERY_REQUIRED";
 
 export type StorageOpenResult =
@@ -17,7 +17,7 @@ export interface OpenStorageOptions {
 export interface PersistedSession { readonly sessionId: string; readonly modeId: string; readonly state: string; readonly elapsedActiveMs: number; readonly updatedAt: string; }
 export interface PersistedNudge { readonly nudgeId: string; readonly sessionId: string; readonly decision: string; readonly reason: string; readonly policyVersion: string; readonly createdAt: string; }
 export type NudgeResponse = "AUTO_CORRECTED" | "ACCEPTED" | "SNOOZED" | "DISMISSED" | "IGNORED" | "UNKNOWN";
-export interface PersistedSummary { readonly summaryId: string; readonly sessionId: string; readonly status: string; readonly elapsedActiveMs: number; readonly createdAt: string; }
+export interface PersistedSummary { readonly summaryId: string; readonly sessionId: string; readonly status: string; readonly elapsedActiveMs: number; readonly createdAt: string; readonly summaryJson?: string; }
 
 function ensureDatabasePath(databasePath: string): string {
   const normalized = normalize(resolve(databasePath));
@@ -83,6 +83,11 @@ function createV6Schema(database: DatabaseSync): void {
   const columns = database.prepare("PRAGMA table_info(companion_nudge)").all() as unknown as readonly { name: string }[];
   if (!columns.some((column) => column.name === "response")) database.exec("ALTER TABLE companion_nudge ADD COLUMN response TEXT;");
   if (!columns.some((column) => column.name === "response_at")) database.exec("ALTER TABLE companion_nudge ADD COLUMN response_at TEXT;");
+}
+
+function createV7Schema(database: DatabaseSync): void {
+  const columns = database.prepare("PRAGMA table_info(session_summary)").all() as unknown as readonly { name: string }[];
+  if (!columns.some((column) => column.name === "summary_json")) database.exec("ALTER TABLE session_summary ADD COLUMN summary_json TEXT;");
 }
 
 function getSchemaVersion(database: DatabaseSync): number {
@@ -183,11 +188,11 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
 
   saveSessionSummary(summary: PersistedSummary): boolean {
     if (!/^[a-z0-9-]{8,64}$/i.test(summary.summaryId) || !/^[a-z0-9-]{8,64}$/i.test(summary.sessionId) || !Number.isSafeInteger(summary.elapsedActiveMs) || summary.elapsedActiveMs < 0 || Number.isNaN(Date.parse(summary.createdAt))) throw new Error("INVALID_SESSION_SUMMARY");
-    try { this.#database.prepare("INSERT INTO session_summary VALUES (?, ?, ?, ?, ?)").run(summary.summaryId, summary.sessionId, summary.status, summary.elapsedActiveMs, summary.createdAt); return true; } catch (error) { if (error instanceof Error && error.message.includes("UNIQUE")) return false; throw error; }
+    try { this.#database.prepare("INSERT INTO session_summary (summary_id, session_id, status, elapsed_active_ms, created_at, summary_json) VALUES (?, ?, ?, ?, ?, ?)").run(summary.summaryId, summary.sessionId, summary.status, summary.elapsedActiveMs, summary.createdAt, summary.summaryJson ?? null); return true; } catch (error) { if (error instanceof Error && error.message.includes("UNIQUE")) return false; throw error; }
   }
 
   listSessionSummaries(): readonly PersistedSummary[] {
-    return this.#database.prepare("SELECT summary_id, session_id, status, elapsed_active_ms, created_at FROM session_summary ORDER BY created_at DESC").all().map((row) => { const value = row as Record<string, unknown>; return { summaryId: String(value.summary_id), sessionId: String(value.session_id), status: String(value.status), elapsedActiveMs: Number(value.elapsed_active_ms), createdAt: String(value.created_at) }; });
+    return this.#database.prepare("SELECT summary_id, session_id, status, elapsed_active_ms, created_at, summary_json FROM session_summary ORDER BY created_at DESC").all().map((row) => { const value = row as Record<string, unknown>; return { summaryId: String(value.summary_id), sessionId: String(value.session_id), status: String(value.status), elapsedActiveMs: Number(value.elapsed_active_ms), createdAt: String(value.created_at), summaryJson: value.summary_json === null ? undefined : String(value.summary_json) }; });
   }
 
   deleteAllLocalData(): "DELETED" {
@@ -248,6 +253,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
       createV4Schema(database);
       createV5Schema(database);
       createV6Schema(database);
+      createV7Schema(database);
       database.exec(`PRAGMA user_version = ${STORAGE_SCHEMA_VERSION}; COMMIT;`);
       assertIntegrity(database);
       return { state: "READY", storage: new LocalSqliteStorage(database), migrated: false };
@@ -258,7 +264,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
       return { state: "READY", storage: new LocalSqliteStorage(database), migrated: false };
     }
 
-    if (version < 1 || version > 5) throw new Error("UNSUPPORTED_SCHEMA_VERSION");
+    if (version < 1 || version > 6) throw new Error("UNSUPPORTED_SCHEMA_VERSION");
 
     copyFileSync(safePath, `${safePath}.backup-v1`, 0);
     backupCreated = true;
@@ -269,6 +275,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
     createV4Schema(database);
     createV5Schema(database);
     createV6Schema(database);
+    createV7Schema(database);
     database.exec(`PRAGMA user_version = ${STORAGE_SCHEMA_VERSION}; COMMIT;`);
     assertIntegrity(database);
     database.prepare("INSERT INTO migration_record VALUES (?, ?, ?, ?, ?)").run(

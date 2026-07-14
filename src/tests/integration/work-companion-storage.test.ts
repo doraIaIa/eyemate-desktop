@@ -22,6 +22,7 @@ test("session persistence is idempotent and recovery-safe", () => {
     const summary = { summaryId: "summary-001", sessionId: session.sessionId, status: "COMPLETED", elapsedActiveMs: 1200, createdAt: session.updatedAt } as const;
     assert.equal(opened.storage.saveSessionSummary(summary), true);
     assert.equal(opened.storage.saveSessionSummary(summary), false);
+    assert.equal(opened.storage.listSessionSummaries()[0]?.summaryJson, undefined);
     assert.equal(opened.storage.deleteAllLocalData(), "DELETED");
     assert.equal(opened.storage.loadSession(session.sessionId), null);
     opened.storage.close();

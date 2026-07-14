@@ -11,6 +11,7 @@ import { createSurveyDraft, createSurveyOnlyReport, recordSurveyAnswer } from ".
 import { evaluateSafetyGate, internalSafetyCatalogue } from "../safety/safety-gate.js";
 import { applySessionEvent, createSession, type WorkSession } from "../work-session/session-state.js";
 import { decideNudge, type NudgeDecision } from "../work-session/companion-policy.js";
+import { createSessionSummary } from "../work-session/session-summary.js";
 import type { NudgeResponse } from "../platform-electron/sqlite-storage.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -41,7 +42,11 @@ function updateWorkSession(event: "START" | "STARTED" | "PAUSE" | "RESUME" | "FI
   if (workSession === null) workSession = createSession(`session-${randomUUID().slice(0, 8)}`, "TIMER_ONLY");
   workSession = applySessionEvent(workSession, event, now);
   storage?.saveSession({ sessionId: workSession.id, modeId: workSession.modeId, state: workSession.state, elapsedActiveMs: workSession.elapsedActiveMs, updatedAt: new Date().toISOString() });
-  if (workSession.state === "COMPLETED") storage?.saveSessionSummary({ summaryId: `summary-${randomUUID().slice(0, 8)}`, sessionId: workSession.id, status: "COMPLETED", elapsedActiveMs: workSession.elapsedActiveMs, createdAt: new Date().toISOString() });
+  if (workSession.state === "COMPLETED" || workSession.state === "CANCELLED") {
+    const createdAt = new Date().toISOString();
+    const summary = createSessionSummary(workSession, "m2-companion-policy/0.1.0");
+    storage?.saveSessionSummary({ summaryId: `summary-${randomUUID().slice(0, 8)}`, sessionId: workSession.id, status: summary.timerOutcome, elapsedActiveMs: summary.durationActiveMs, createdAt, summaryJson: JSON.stringify(summary) });
+  }
   return workSession;
 }
 
