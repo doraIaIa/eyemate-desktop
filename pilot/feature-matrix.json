@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "eyemate-pilot-feature-matrix/0.1.0",
+  "channel": "beta-internal-unsigned",
+  "targetStatus": "PILOT_READY_WITH_EXTERNAL_GATES",
+  "features": [
+    { "id": "survey-only-checkup", "state": "ENABLED", "gateClass": "AUTOMATED", "reason": "Local Electron acceptance passes with synthetic, non-clinical content." },
+    { "id": "timer-only-companion", "state": "ENABLED", "gateClass": "AUTOMATED", "reason": "Session, recovery, nudge and deletion acceptance pass without camera." },
+    { "id": "personal-intelligence-local", "state": "ENABLED", "gateClass": "AUTOMATED", "reason": "Aggregate-only reports, preview, export and deletion pass locally." },
+    { "id": "sensitive-persistence", "state": "DISABLED", "gateClass": "SECURITY_PRIVACY_APPROVAL", "reason": "ADR-005 requires approved authenticated encryption and key lifecycle; current SQLite persistence is plaintext." },
+    { "id": "camera-lifecycle", "state": "DISABLED", "gateClass": "REAL_DEVICE", "reason": "Guided harness can be automated, but this host run still needs explicit camera action and a real device." },
+    { "id": "blink-distance-accuracy", "state": "DISABLED", "gateClass": "GROUND_TRUTH", "reason": "No approved ground-truth protocol, dataset or threshold." },
+    { "id": "clinical-osdi-6", "state": "DISABLED", "gateClass": "CLINICAL_APPROVAL", "reason": "No owner-approved questionnaire text, scoring or recommendation catalogue." },
+    { "id": "professional-export", "state": "DEGRADED", "gateClass": "AUTOMATED", "reason": "Markdown and JSON are enabled; PDF is not required for this internal beta." },
+    { "id": "dynamic-egress", "state": "DEGRADED", "gateClass": "SYSTEM_PERMISSION", "reason": "WPR fails with 0xc5585011; local process-attributed TCP observation cannot prove all protocols." },
+    { "id": "signed-msix", "state": "DISABLED", "gateClass": "CERTIFICATE_STORE", "reason": "Signing interface may be verified, but no certificate or Store identity is available." }
+  ]
+}

@@ -22,6 +22,8 @@
     "verify": "npm run verify:m1 && npm run security && npm run accessibility && npm run acceptance:m2 && npm run acceptance:m3 && npm run acceptance:ui",
     "release:verify": "npm run verify && npm run build:msix:m1",
     "release:provenance": "npm run build:msix:m1 && node tools/m4/generate-release-provenance.mjs",
+    "pilot:contract": "node tools/pilot/validate-pilot-contract.mjs pilot/feature-matrix.json",
+    "test:pilot-contract": "node tools/pilot/run-pilot-contract-fixture-tests.mjs",
     "accessibility": "node tools/m4/check-accessibility.mjs",
     "security": "node tools/m4/check-security-posture.mjs",
     "performance:m4": "npm run build:msix:m1 && node tools/m4/measure-runtime.mjs",
