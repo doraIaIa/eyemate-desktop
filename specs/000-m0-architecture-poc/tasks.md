@@ -50,6 +50,12 @@ last_reviewed: 2026-07-14
 - Expected evidence: `NOT_EVALUATED_OFFLINE_ONLY` bị từ chối bằng `BLOCKED_UNVERIFIED_EGRESS`; chỉ evidence đã được xác minh riêng mới qua gate.
 - Out of scope: bắt đầu WPR/network capture, thay firewall/system setting, khẳng định tool không egress hoặc thay thế trace thật.
 
+### External runtime verification record
+
+- `BLOCKED_EXTERNAL` on DP-DEV: `wpr -start Network -filemode` failed with `0xc5585011` while WPR was not recording.
+- No ETL was created; the empty local quarantine directory was deleted. WPR remained stopped after failure.
+- Dynamic WPR egress/auto-update verification is `UNKNOWN` due to host policy/permission. No elevation, policy/system-setting change or retry is authorized.
+
 ## T-M0-003B — SHA-256 manifest evidence artifact
 
 - Goal: sinh và verify manifest SHA-256 deterministic cho artifact `artifacts/...` đã qua scanner, dùng relative path/type/size/hash/scanner version/schema version.
