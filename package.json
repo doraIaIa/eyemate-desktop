@@ -7,6 +7,7 @@
     "test:state:m0": "node candidates/shared/run-state-fixture-tests.mjs",
     "test:electron:m0": "electron candidates/electron/main.mjs --test",
     "test:storage:electron:m0": "node candidates/electron/run-storage-fixture-tests.mjs",
+    "test:privacy:m0": "node tools/m0/run-privacy-sink-fixture-tests.mjs",
     "check:tauri:m0": "cargo check --manifest-path candidates/tauri/src-tauri/Cargo.toml"
   },
   "devDependencies": {
