@@ -46,6 +46,11 @@ const eyeMateApi: EyeMatePreloadApi = {
   async listSessionSummaries() { const result: unknown = await ipcRenderer.invoke("work-session:list-summaries"); if (!Array.isArray(result)) throw new Error("PRELOAD_SUMMARY_LIST_INVALID"); return result as readonly { readonly summaryId: string; readonly sessionId: string; readonly status: string; readonly elapsedActiveMs: number; readonly createdAt: string }[]; }
   ,async requestBreakNudge() { return await ipcRenderer.invoke("work-session:request-break-nudge"); }
   ,async respondToNudge(nudgeId, response) { return await ipcRenderer.invoke("work-session:respond-nudge", nudgeId, response); }
+  ,async generateM3Report() { return await ipcRenderer.invoke("m3:generate-report"); }
+  ,async listM3Reports() { const result: unknown = await ipcRenderer.invoke("m3:list-reports"); if (!Array.isArray(result)) throw new Error("PRELOAD_M3_REPORTS_INVALID"); return result as readonly import("../personal-intelligence/report-service.js").PersonalReport[]; }
+  ,async previewProfessionalSummary() { const result: unknown = await ipcRenderer.invoke("m3:preview-professional-summary"); if (typeof result !== "string") throw new Error("PRELOAD_M3_PREVIEW_INVALID"); return result; }
+  ,async resetM3Baseline() { const result: unknown = await ipcRenderer.invoke("m3:reset-baseline"); if (result !== "DELETED") throw new Error("PRELOAD_M3_RESET_INVALID"); return result; }
+  ,async deleteM3Data() { const result: unknown = await ipcRenderer.invoke("m3:delete-data"); if (result !== "DELETED") throw new Error("PRELOAD_M3_DELETE_INVALID"); return result; }
 };
 
 contextBridge.exposeInMainWorld("eyeMate", Object.freeze(eyeMateApi));

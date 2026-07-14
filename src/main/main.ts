@@ -15,6 +15,8 @@ import { createSessionSummary } from "../work-session/session-summary.js";
 import { InProcessNudgeAdapter } from "../work-session/nudge-adapter.js";
 import { DEFAULT_TIMER_ONLY_CONFIG } from "../work-session/companion-config.js";
 import { fromSurveyOnly, fromWorkSession } from "../personal-intelligence/source-adapter.js";
+import { validateAnalyticsInput, type AnalyticsInput } from "../personal-intelligence/analytics.js";
+import { buildPersonalReport, renderProfessionalSummary, type PersonalReport } from "../personal-intelligence/report-service.js";
 import type { NudgeResponse } from "../platform-electron/sqlite-storage.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -124,6 +126,23 @@ function withdrawCameraConsent(): void {
   storage.saveCameraConsent({ purpose: "CAMERA_MEASUREMENT", scope: "LOCAL_CAMERA", textVersion: "m1-camera-1", decision: "WITHDRAWN", decidedAt: new Date().toISOString() });
 }
 
+function analyticsInputs(): readonly AnalyticsInput[] {
+  return (storage?.listM3Records("SOURCE") ?? []).flatMap((record) => { try { return [validateAnalyticsInput(JSON.parse(record.payloadJson) as AnalyticsInput)]; } catch { return []; } });
+}
+
+function generateM3Report(): PersonalReport {
+  const inputs = analyticsInputs();
+  const timezone = inputs[0]?.timezone ?? "UTC";
+  const now = new Date().toISOString();
+  const report = buildPersonalReport(inputs, now.slice(0, 10), timezone, now);
+  storage?.saveM3Record({ id: `report-${randomUUID().slice(0, 12)}`, kind: "REPORT", createdAt: now, payloadJson: JSON.stringify(report) });
+  return report;
+}
+
+function listM3Reports(): readonly PersonalReport[] {
+  return (storage?.listM3Records("REPORT") ?? []).flatMap((record) => { try { return [JSON.parse(record.payloadJson) as PersonalReport]; } catch { return []; } });
+}
+
 function registerIpcHandlers(): void {
   ipcMain.handle("runtime:get-info", (): RuntimeInfo => getRuntimeInfo());
   ipcMain.handle("privacy:get-summary", (): PrivacySummary => getPrivacySummary());
@@ -141,6 +160,11 @@ function registerIpcHandlers(): void {
   ipcMain.handle("work-session:list-summaries", () => storage?.listSessionSummaries() ?? []);
   ipcMain.handle("work-session:request-break-nudge", () => requestBreakNudge());
   ipcMain.handle("work-session:respond-nudge", (_event, nudgeId: string, response: NudgeResponse) => storage?.recordNudgeResponse(nudgeId, response, new Date().toISOString()) ?? false);
+  ipcMain.handle("m3:generate-report", () => generateM3Report());
+  ipcMain.handle("m3:list-reports", () => listM3Reports());
+  ipcMain.handle("m3:preview-professional-summary", () => renderProfessionalSummary(generateM3Report()));
+  ipcMain.handle("m3:reset-baseline", () => storage?.deleteM3Records("BASELINE") ?? "DELETED");
+  ipcMain.handle("m3:delete-data", () => storage?.deleteM3Records() ?? "DELETED");
 }
 
 async function createMainWindow(): Promise<BrowserWindow> {

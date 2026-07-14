@@ -18,6 +18,8 @@ const reportHistoryElement = document.querySelector<HTMLParagraphElement>("#repo
 const sessionStatusElement = document.querySelector<HTMLParagraphElement>("#session-status");
 const sessionModeElement = document.querySelector<HTMLSelectElement>("#session-mode");
 const nudgeStatusElement = document.querySelector<HTMLParagraphElement>("#nudge-status");
+const m3StatusElement = document.querySelector<HTMLParagraphElement>("#m3-status");
+const m3PreviewElement = document.querySelector<HTMLPreElement>("#m3-preview-output");
 let currentNudgeId: string | null = null;
 const renderSession = (session: Awaited<ReturnType<typeof window.eyeMate.getWorkSession>>) => { if (sessionStatusElement) sessionStatusElement.textContent = session ? `Phiên ${session.state}; thời gian hoạt động ${session.elapsedActiveMs} ms.` : "Chưa có phiên."; };
 
@@ -89,6 +91,10 @@ async function respondNudge(response: import("../shared/preload-contract.js").Nu
 document.querySelector<HTMLButtonElement>("#accept-nudge")?.addEventListener("click", () => void respondNudge("ACCEPTED"));
 document.querySelector<HTMLButtonElement>("#snooze-nudge")?.addEventListener("click", () => void respondNudge("SNOOZED"));
 document.querySelector<HTMLButtonElement>("#dismiss-nudge")?.addEventListener("click", () => void respondNudge("DISMISSED"));
+document.querySelector<HTMLButtonElement>("#m3-generate")?.addEventListener("click", async () => { const report = await window.eyeMate.generateM3Report(); if (m3StatusElement) m3StatusElement.textContent = `Baseline ${report.baseline.state}; VLI ${report.daily.vli.score ?? "INSUFFICIENT_DATA"}; confidence ${report.daily.vli.dataConfidence}.`; });
+document.querySelector<HTMLButtonElement>("#m3-preview")?.addEventListener("click", async () => { if (m3PreviewElement) m3PreviewElement.textContent = await window.eyeMate.previewProfessionalSummary(); });
+document.querySelector<HTMLButtonElement>("#m3-reset")?.addEventListener("click", async () => { if (!window.confirm("Reset baseline sẽ không xóa báo cáo cũ.")) return; await window.eyeMate.resetM3Baseline(); if (m3StatusElement) m3StatusElement.textContent = "Baseline đã reset; lần đo mới sẽ bắt đầu LEARNING."; });
+document.querySelector<HTMLButtonElement>("#m3-delete")?.addEventListener("click", async () => { if (!window.confirm("Xóa dữ liệu phân tích M3?")) return; await window.eyeMate.deleteM3Data(); if (m3StatusElement) m3StatusElement.textContent = "Dữ liệu phân tích M3 đã được xóa."; });
 
 onboardingButton?.addEventListener("click", async () => {
   await window.eyeMate.completeOnboardingWithoutCamera();
