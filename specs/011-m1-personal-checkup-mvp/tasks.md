@@ -14,7 +14,7 @@
 - [x] `T-M1-007` Questionnaire synthetic, survey-only flow, partial/recovery và report snapshot.
 - [x] `T-M1-008` Camera port mock, off/denied/unavailable/low-quality, privacy sink gate.
 - [x] `T-M1-009` Distance zone/quality abstention scaffold, không exact centimet.
-- [ ] `T-M1-010` Report render, export preview và data deletion/privacy center.
+- [x] `T-M1-010` Report render, export preview và data deletion/privacy center.
 - [ ] `T-M1-011` Integration acceptance, release-like build và M1 exit evidence.
 
 ## Dependency
