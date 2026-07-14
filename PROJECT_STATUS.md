@@ -3,12 +3,12 @@
 Last updated: 2026-07-14
 Current milestone: M1 — Personal Checkup MVP
 Current batch: M1-A foundation
-Current task: T-M1-007 — Survey-only checkup và report snapshot
+Current task: T-M1-008 — Camera port mock và privacy gate
 Task state: IN_PROGRESS
 
-Latest verified commit: `c41a22b`
-Task base commit: `c41a22b`
-Working tree: M1-A foundation đã kiểm chứng, chờ commit có chủ đích.
+Latest verified commit: `279eed7`
+Task base commit: `279eed7`
+Working tree: T-M1-007 đã kiểm chứng, chờ commit có chủ đích.
 
 Completed:
 
@@ -19,6 +19,7 @@ Completed:
 - T-M1-004: SQLite local adapter có WAL, schema version, N-1 backup/migration, integrity check, recovery lock và repository onboarding typed.
 - T-M1-005: State machine onboarding Local Only, consent camera có purpose/scope/version/time/decision, withdrawal persistence và camera-off/unavailable contract.
 - T-M1-006: Safety Gate deterministic có rule/version, xử lý confirmed/uncertain/catalogue incompatible; catalogue chỉ là placeholder nội bộ chưa clinically approved.
+- T-M1-007: Questionnaire synthetic versioned, survey-only report snapshot, missing/partial/cancel/recovery và safety-stop semantics.
 
 Verification:
 
@@ -28,11 +29,11 @@ Verification:
 
 Remaining:
 
-- T-M1-007 questionnaire synthetic, survey-only flow, partial/recovery và report snapshot.
+- T-M1-008 camera port mock, off/denied/unavailable/low-quality và privacy sink gate.
 
 Next exact action:
 
-- Review và commit T-M1-006; triển khai survey-only checkup.
+- Review và commit T-M1-007; triển khai camera port mock.
 
 Next exact command:
 
