@@ -56,6 +56,13 @@ last_reviewed: 2026-07-14
 - No ETL was created; the empty local quarantine directory was deleted. WPR remained stopped after failure.
 - Dynamic WPR egress/auto-update verification is `UNKNOWN` due to host policy/permission. No elevation, policy/system-setting change or retry is authorized.
 
+## T-M0-003H — Static egress inspection for M0 tooling
+
+- Goal: fail source inspection when repo-local `tools/m0` contains network module/API/URL references; this is static evidence only.
+- Dependencies: T-M0-003G.
+- Verification command: `node tools/m0/run-static-egress-inspection-fixture-tests.mjs` and `node tools/m0/inspect-static-egress.mjs`.
+- Out of scope: claim about WPR/system tool behavior, dynamic trace, network capture or any candidate app.
+
 ## T-M0-003B — SHA-256 manifest evidence artifact
 
 - Goal: sinh và verify manifest SHA-256 deterministic cho artifact `artifacts/...` đã qua scanner, dùng relative path/type/size/hash/scanner version/schema version.
