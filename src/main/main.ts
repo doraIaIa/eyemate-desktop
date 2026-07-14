@@ -12,6 +12,7 @@ import { evaluateSafetyGate, internalSafetyCatalogue } from "../safety/safety-ga
 import { applySessionEvent, createSession, type WorkSession } from "../work-session/session-state.js";
 import { decideNudge, type NudgeDecision } from "../work-session/companion-policy.js";
 import { createSessionSummary } from "../work-session/session-summary.js";
+import { InProcessNudgeAdapter } from "../work-session/nudge-adapter.js";
 import type { NudgeResponse } from "../platform-electron/sqlite-storage.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -35,6 +36,7 @@ let workSession: WorkSession | null = null;
 let sessionMonotonicMs = 0;
 let lastNudgeMonotonicMs: number | null = null;
 let nudgesInSession = 0;
+const nudgeAdapter = new InProcessNudgeAdapter();
 const sessionNow = (): number => { sessionMonotonicMs += 1; return sessionMonotonicMs; };
 
 function updateWorkSession(event: "START" | "STARTED" | "PAUSE" | "RESUME" | "FINISH" | "CANCEL"): WorkSession {
@@ -71,7 +73,8 @@ function requestBreakNudge(): NudgeDecision & { readonly nudgeId: string } {
   if (decision.action === "EMIT") {
     lastNudgeMonotonicMs = now;
     nudgesInSession += 1;
-    storage?.recordNudge({ nudgeId, sessionId: workSession.id, decision: decision.action, reason: decision.reason, policyVersion: decision.policyVersion, createdAt: new Date().toISOString(), action: decision.suggestedActionKey, deliveryState: "EMITTED" });
+    const delivery = nudgeAdapter.deliver({ nudgeId, sessionId: workSession.id, actionKey: "TAKE_SHORT_BREAK", policyVersion: decision.policyVersion });
+    storage?.recordNudge({ nudgeId, sessionId: workSession.id, decision: decision.action, reason: decision.reason, policyVersion: decision.policyVersion, createdAt: new Date().toISOString(), action: decision.suggestedActionKey, deliveryState: delivery.state === "DELIVERED" ? "EMITTED" : "ABSTAINED" });
   }
   return { ...decision, nudgeId };
 }
