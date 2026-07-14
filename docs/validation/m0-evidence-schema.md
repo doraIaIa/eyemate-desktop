@@ -11,13 +11,13 @@ related: [VAL-M0-001, NFR-M0-001, NFR-M0-002, REL-M0-003, AC-M0-011, AC-M0-012, 
 
 ## Định dạng đề xuất
 
-Mỗi lần chạy ghi một UTF-8 JSON Lines record theo `schemaVersion: m0-benchmark-run/0.2.0`. Đây là contract đề xuất, chưa có validator hay command canonical. Summary chỉ được sinh từ run records `VALID`; không sửa trực tiếp số liệu summary. Version `0.2.0-proposed` thay `0.1.0-proposed` vì QA bổ sung run-plan/attempt, trạng thái ba chiều, metric completeness và acceptance evaluation; chưa có evidence `0.1.0` nào được phép nâng cấp ngầm.
+Mỗi lần chạy ghi một UTF-8 JSON Lines record theo `schemaVersion: m0-benchmark-run/0.3.0`. Summary chỉ được sinh từ run records `VALID`; không sửa trực tiếp số liệu summary. Version `0.3.0-proposed` gộp contract QA (`0.2.0`) với privacy/security allowlist, pre-ingest và minimization; chưa có evidence cũ nào được phép nâng cấp ngầm.
 
 ## Run record tối thiểu
 
 ```json
 {
-  "schemaVersion": "m0-benchmark-run/0.2.0",
+  "schemaVersion": "m0-benchmark-run/0.3.0",
   "runId": "20260714T000000Z__candidate__DP-DEV__WL-001-v1__r01",
   "timestampUtc": "2026-07-14T00:00:00Z",
   "operator": { "role": "tech", "pseudonymousId": "operator-01" },
@@ -56,6 +56,17 @@ Mỗi lần chạy ghi một UTF-8 JSON Lines record theo `schemaVersion: m0-ben
 ```
 
 Các field `TBD` trong ví dụ không được dùng trong record `VALID`. `operator` dùng role/pseudonymous ID, không lưu tên người dùng hệ điều hành.
+
+## Validator tối thiểu M0
+
+`tools/m0/validate-evidence-schema.mjs` là validator dependency-free đầu tiên của M0, chạy trực tiếp với Node.js và chỉ đọc JSONL. Nó kiểm tra cấu trúc run record `0.3.0`, trạng thái ba chiều, count/coverage metric, duplicate metric/artifact reference, command ID/path tương đối và forbidden field/path cơ bản. Đây chưa phải scanner toàn diện hoặc proof leakage runtime; scanner/scrubber/egress inspection tiếp tục là deliverable nhóm B.
+
+```text
+node tools/m0/validate-evidence-schema.mjs <run-record.jsonl>
+node tools/m0/run-fixture-tests.mjs
+```
+
+Fixture trong `tools/m0/fixtures/` là synthetic và không phải benchmark evidence. Command đã được xác minh trên Node `v24.12.0`; không cần package manager hay dependency mới.
 
 `command` trong record thật chỉ được chứa command ID hoặc argv đã chuẩn hóa theo allowlist; cấm raw shell command có home path, workspace path, username, token, key path hoặc secret. Raw stdout/stderr không tự động là evidence.
 
@@ -135,12 +146,12 @@ Synthetic fixtures phải có generator/version/seed/provenance chứng minh kh�
 
 | Artifact | Retention đề xuất | Owner | Ghi chú |
 |---|---|---|---|
-| Run record, device snapshot đã scrub, checksum/index | Đến khi ADR-003/004 accepted và hết cửa sổ review; thời hạn cụ thể `TBD` | Tech + QA | Cần phê duyệt trước run |
-| MSIX, manifest, SBOM, build logs đã scrub | Theo CI retention `TBD` | Release + Security | Không chứa secret |
-| Performance trace đã scrub | Tối thiểu đến ADR review; thời hạn `TBD` | QA | Chỉ allowlisted metric |
-| Invalid/aborted evidence | Giữ reason/provenance; artifact nguy hiểm bị cô lập | QA + Privacy/Security | Không xóa dấu vết quyết định |
+| Run record, device snapshot đã scrub, checksum/index | Tối đa 30 ngày từ run hoặc xóa sớm theo yêu cầu người dùng | Tech + QA | Chỉ local M0; không phải policy sản phẩm cuối |
+| MSIX, manifest, SBOM, build logs đã scrub | Tối đa 30 ngày từ build hoặc xóa sớm theo yêu cầu người dùng | Release + Security | Không chứa secret |
+| Performance trace đã scrub | Tối đa 30 ngày từ run hoặc xóa sớm theo yêu cầu người dùng | QA | Chỉ allowlisted metric |
+| Invalid/aborted evidence | Tối đa 30 ngày cho reason/provenance đã scrub | QA + Privacy/Security | Không xóa dấu vết quyết định trước khi có retained index |
 
-Không được bắt đầu collection thật khi thời hạn retention, storage location, access role, deletion owner và purge-verification method còn `TBD`. Với incident chứa artifact cấm, evidence tree chỉ giữ metadata sự cố đã scrub. Bản gốc nếu buộc phải cô lập để điều tra phải nằm ngoài evidence tree, quyền tối thiểu, không upload/sync, có legal/privacy owner và destruction deadline được phê duyệt trước; nếu các điều kiện này chưa tồn tại thì dừng collection và không tạo artifact đó.
+Policy M0 tạm thời là local-only, tối đa 30 ngày hoặc xóa sớm theo yêu cầu người dùng. Storage location, access role, deletion owner và purge-verification method là deliverable nhóm B: không thu evidence benchmark thật trước khi tooling đó tồn tại. Với incident chứa artifact cấm, evidence tree chỉ giữ metadata sự cố đã scrub; không tạo hoặc giữ bản gốc khi chưa có isolation/destruction control thực thi được.
 
 ## Artifact tuyệt đối không được lưu
 

@@ -1,0 +1,1 @@
+{"schemaVersion":"m0-benchmark-run/0.3.0","deviceSnapshotRef":"../devices/escape.json","runPlanRef":"file:///plans/escape.json","artifactRefs":["users/operator.json","artifacts/duplicate.json","artifacts/duplicate.json"],"metricObservations":[{"metricId":"MET-DUPLICATE"},{"metricId":"MET-DUPLICATE"}]}

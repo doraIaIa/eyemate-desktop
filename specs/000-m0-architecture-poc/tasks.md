@@ -33,45 +33,49 @@ T-M0-003 → T-M0-005 → T-M0-007
 - Stop condition: dừng khi root/ownership không rõ, gặp secret/PHI/raw camera artifact, hoặc cần quyền ngoài read-only; không chuyển sang scaffold.
 - Completion record: `COMPLETED` ở commit `c51b4cd`; evidence tại `docs/audits/`; V1 commit `77ad32f1b519418d882d2d476f13206644536df9`; không sửa source V1.
 
-## T-M0-002 — Khóa benchmark protocol và evidence schema
+## T-M0-002 — Reclassify progressive-assurance gate
 
-- Goal: tạo đúng một outcome — readiness package được các role bắt buộc duyệt và khóa version để hai candidate có thể được triển khai/đo công bằng.
+- Goal: ghi nhận `D-014` của project owner, giữ nhóm A trước code và chuyển nhóm B thành deliverable implementation; không tự đòi reviewer `APPROVED` cho tooling chưa tồn tại.
 - Requirements/acceptance: `NFR-M0-001`–`NFR-M0-003`, `AC-M0-012`, `AC-M0-013`, `AC-M0-016`, `AC-M0-020`.
-- Dependencies: T-M0-001 đã hoàn thành; bốn tài liệu readiness tồn tại; owner `D-008`; review Tech và QA phải là hai lượt riêng dù cùng một người đội nhiều vai.
-- Files được phép sửa: bốn file `docs/validation/m0-*.md`, `docs/reviews/M0_BENCHMARK_READINESS_REVIEW.md`, và phần readiness/traceability của `plan.md`, `tasks.md`, `acceptance.md` nếu không đổi nghĩa requirement.
+- Dependencies: T-M0-001 đã hoàn thành; readiness package và ba review lịch sử tồn tại; project-owner decision `D-014`.
+- Files được phép sửa: `docs/validation/m0-progressive-assurance.md`, bốn file `docs/validation/m0-*.md`, và phần readiness/traceability của `plan.md`, `tasks.md`, `acceptance.md` nếu không đổi nghĩa requirement.
 - Do not modify: source V1, application candidate, ADR status/choice, production budget, encryption, clinical/measurement threshold, `AGENTS.template.md`/`AGENTS.md`, Git remote/history.
-- Workload/evidence/stop rules: `DP-DEV`–`DP-EDGE`, `WL-001`–`WL-020`, toàn bộ `MET-*`, `VAL-M0-STOP-001`–`016`, JSONL schema hiện hành `m0-benchmark-run/0.2.0-proposed`; chưa khóa cho run thật.
-- Out of scope: scaffold/install/build/test/benchmark/package/migration; chọn shell/runtime/encryption; thu raw camera hoặc health data thật.
-- Tests to add/update: không viết validator trong task readiness; review schema/link/duplicate-ID bằng read-only command khi có tool phù hợp.
-- Verification command dự kiến: `<canonical> validate:m0-protocol`, `<canonical> validate:m0-evidence`; chưa tồn tại manifest nên chưa thể xác minh. Trong change set tài liệu chỉ dùng `git diff --check`, `git diff --stat`, `rg`/link review.
-- Expected evidence: protocol versioned; target/observed mapping plan; metric schema; approval table; stop/invalid-run rules; adversarial review không còn BLOCKER/HIGH.
-- Stop condition: thiếu profile Windows 11/metric owner/workload tương đương/provenance/approval; assumption thành fact; hoặc cần command/application chưa được phép. Khi dừng, giữ T-M0-002 `CONDITIONALLY READY`/`NOT READY`, không bắt đầu T-M0-003.
+- Workload/evidence/stop rules: `DP-DEV` cho POC đầu; `WL-001`–`WL-020`, `MET-*`, `VAL-M0-STOP-001`–`016`, schema `m0-benchmark-run/0.3.0-proposed`.
+- Out of scope: candidate camera/storage/package benchmark; chọn shell/runtime/encryption; thu raw camera/health data thật.
+- Tests to add/update: không có code trong T-M0-002; T-M0-003 tạo validator/fixture.
+- Verification: `git diff --check`, `rg`/link review và decision record `D-014`.
+- Expected evidence: `m0-progressive-assurance.md`, A/B/C/D mapping, owner decisions, và task code đầu tiên được unlock.
+- Stop condition: invariant A bị nới lỏng, raw-data/real-person fixture xuất hiện, hoặc task sau đòi camera/dependency không thuộc scope.
 - Rollback/cleanup: chỉ revert change set tài liệu qua commit mới nếu owner yêu cầu; không xóa audit/evidence; không có package/process/database được tạo trong task.
 - Quyết định bị cấm: `D-003`, `D-006`, `D-009`, `D-013`, runtime/model/license, performance threshold và clinical content.
 
-### Gate checklist trước T-M0-002
+### Completion record
+
+- `COMPLETED` ở change set progressive assurance theo quyết định project owner; không phải benchmark approval.
+- Tech/QA/Privacy reviews giữ `CHANGES_REQUIRED` như evidence lịch sử và được review lại sau harness/fixture/dry-run artifact thật.
+
+### Gate checklist trước benchmark chính thức
 
 - [x] T-M0-001 audit read-only có path/commit/evidence.
 - [x] Device/workload/metric/evidence/stop-rule proposal tồn tại.
 - [x] Fair-comparison và raw-artifact prohibition được ghi.
-- [ ] Tech review `APPROVED` ở lượt riêng — hiện `CHANGES_REQUIRED` tại `M0_TECH_REVIEW.md`.
-- [ ] QA review `APPROVED` ở lượt riêng — hiện `CHANGES_REQUIRED` tại `M0_QA_REVIEW.md`.
-- [ ] Privacy + Security approval cho artifact/stop rules.
-- [ ] Các `TBD` cần cho dry-run có owner và deadline; observed device được gán trước workload tương ứng.
-- [ ] Canonical validation command được tạo/xác minh trong task scaffold sau khi được phép; hiện chỉ là placeholder.
+- [ ] Tooling nhóm B có test/fixture và artifact thật.
+- [ ] Timing, warm-up, repetition, variance, overhead tolerance và tool equivalence khóa trước result.
+- [ ] Privacy/Security review lại scanner, artifact và egress thực thi được.
+- [ ] DP-DEV fields run-critical hoàn tất; profile ngoài DP-DEV trước external validity/pilot.
 
-## T-M0-003 — Scaffold tối thiểu command registry và shared test fixtures
+## T-M0-003 — Validator evidence schema và fixture synthetic
 
-- Goal: tạo manifest/lockfile, command registry, evidence contract và fixture tối thiểu cần cho hai spike; chưa tạo full architecture.
+- Goal: tạo đúng một outcome thực thi được: validator JSONL evidence `0.3.0` chạy dependency-free cùng fixture positive/negative synthetic.
 - Requirements/acceptance: `REL-M0-003`, `VAL-M0-001`.
-- Dependencies: T-M0-002 và plan được duyệt.
-- Files likely involved: root manifest/lockfile, test fixture/evidence schema, minimal CI validation.
-- Do not modify: `AGENTS.template.md` thành `AGENTS.md`, full Domain Core/UI, cloud/event bus/plugin system.
-- Out of scope: camera/storage/MSIX implementation.
-- Tests to add/update: evidence schema, duplicate-ID/link và command smoke validation.
-- Verification command: command install/lint/typecheck/test lấy từ manifest vừa tạo; phải ghi kết quả thật trước task done.
-- Expected evidence: clean checkout chạy command registry tối thiểu và CI lưu log.
-- Stop condition: dependency/license/network purpose không rõ hoặc command không tái lập trên clean checkout.
+- Dependencies: T-M0-002 documentation completion; Node `v24.12.0` đã xác minh read-only; không cần package manager.
+- Files likely involved: `tools/m0/validate-evidence-schema.mjs`, `tools/m0/run-fixture-tests.mjs`, `tools/m0/fixtures/`, `tools/m0/README.md`, schema/plan/task docs.
+- Do not modify: `AGENTS.template.md`/`AGENTS.md`, V1, full Domain Core/UI, cloud/event bus/plugin system.
+- Out of scope: camera/storage/MSIX/shell implementation, network capture, package manager, dependency mới.
+- Tests to add/update: valid fixture phải pass; forbidden-field và invalid-metric fixture phải fail bằng reason code; không fixture nào chứa raw/real-person data.
+- Verification command: `node tools/m0/run-fixture-tests.mjs`.
+- Expected evidence: command output thật, validator/fixture source synthetic, documented error code và Git diff.
+- Stop condition: fixture chứa dữ liệu cấm, validator cần dependency/network, hoặc output ghi raw/path/secret.
 
 ## T-M0-004 — Electron camera/local-asset spike
 

@@ -58,6 +58,10 @@ last_reviewed: 2026-07-14
 
 T-M0-001 đã đạt acceptance ở chế độ audit read-only. Readiness package chưa phải T-M0-002 và không tạo application code. T-M0-002 chỉ được bắt đầu khi bốn tài liệu trên được review theo bảng approval, không còn `CHANGES_REQUIRED`, và tất cả field cần cho dry-run đã có owner/deadline.
 
+### Progressive assurance — `D-014`
+
+Project owner đã xác nhận `docs/validation/m0-progressive-assurance.md`: review hiện tại là historical evidence, không chặn implementation nhóm B. Invariant/privacy/stop/fairness nhóm A vẫn bắt buộc trước code; group B phải được xây/test trong M0; group C khóa trước benchmark chính thức; group D hoãn đến pilot/public release. `T-M0-002` đã đủ ở phần documentation và unlock `T-M0-003` chỉ cho tooling non-camera, dependency-free.
+
 ## Proposed design
 
 ### Nguyên tắc
