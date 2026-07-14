@@ -23,6 +23,14 @@ Mọi workload kế thừa các field sau; override phải được khóa trư�
 - `invalidRun`: thiếu provenance; sai device/power/network/asset/config; không đủ warm-up/duration/repetition; tool lỗi/overhead đáng kể; stop rule kích hoạt.
 - `cleanup`: stop camera/model/process, đóng DB/tool, xóa package/data tạm theo manifest; không xóa evidence đã checksum.
 
+Các ràng buộc Privacy/Security sau áp dụng cho toàn bộ catalogue, kể cả khi một row không lặp lại:
+
+- Mọi workload có thể mở camera (`WL-004`–`WL-012`, `WL-017` khi gọi source run) phải có product-consent fixture `GRANTED` trước camera intent. OS permission không thay thế consent. `WL-006` chỉ mô phỏng OS denial sau khi product consent đã được grant; thiếu/withdrawn consent phải chứng minh camera chưa được request.
+- Synthetic camera/quality fixture chỉ được sinh thủ tục trong RAM từ generator/version/seed đã duyệt, không bắt nguồn từ ảnh/video/landmark người thật và không được lưu pixel/landmark output. Evidence chỉ giữ generator manifest, seed không nhận dạng và expected typed state.
+- Measurement/capture/scanner tool phải tắt auto-update, cloud sync, crash upload và usage telemetry; outbound của app, dependency **và tool** đều thuộc `MET-NET-UNEXPECTED`. Network evidence chỉ giữ metadata allowlisted, không capture payload/body, DNS content ngoài field cần thiết hoặc memory dump.
+- Command/tool output, trace, log, screenshot và dump không tự động được xem là evidence. Chỉ artifact qua allowlist, scrubber, secret/identifier scan và checksum gate trong `m0-evidence-schema.md` mới được ingest.
+- Workload package/signing chỉ dùng test identity/certificate. Cấm production private key, passphrase, provider URI, key path, token và certificate gắn danh tính cá nhân trong artifact.
+
 ## Run plan khóa trước kết quả
 
 Trước khi chạy workload chính thức, Tech + QA PHẢI tạo một run plan có version/checksum và khóa các field: candidate, workload/version, device snapshot, camera/resolution/driver, asset/algorithm manifest, package/build, power/network mode, tool/version, warm-up, stabilization, timeout, duration, sampling interval, planned repetitions, thứ tự chạy, cooldown, expected metric set, variance/outlier rule và overhead tolerance. Khi một field run-critical còn `TBD`, workload không được tạo run `VALID`.
@@ -115,4 +123,4 @@ Không metric nào hiện có performance baseline hoặc pass threshold. Correc
 |---|---|---|---|---|---|---|---|
 | `m0-benchmark-workloads.md` | `0.1.0-proposed` | Tech + QA | Tech | `CHANGES_REQUIRED` | 2026-07-14 | Measurement stack, warm-up, duration, repetitions, variance và overhead tolerance chưa khóa/xác minh | Sau tool provisioning + overhead dry-run được phê duyệt riêng; không dùng benchmark result |
 | `m0-benchmark-workloads.md` | `0.2.0-proposed` | Tech + QA | QA | `CHANGES_REQUIRED` | 2026-07-14 | Warm-up/stabilization/timeout/duration/repetitions/sample interval, variance/outlier rule, tool equivalence và overhead tolerance chưa khóa | Sau protocol/tool dry-run tách khỏi benchmark và run plan có version/checksum |
-| `m0-benchmark-workloads.md` | `0.2.0-proposed` | Tech + QA | Privacy + Security | `NOT_REVIEWED` | — | Cần duyệt capture/trace artifact allowlist | Trước chạy camera/network workload |
+| `m0-benchmark-workloads.md` | `0.3.0-proposed` | Tech + QA | Privacy + Security | `CHANGES_REQUIRED` | 2026-07-14 | Consent/tool-egress/synthetic-fixture contract đã siết nhưng tool config, payload-free capture, scrubber và negative fixtures chưa được dry-run/xác minh | Sau privacy/security dry-run chỉ với fixture synthetic và trước mọi camera/network benchmark |

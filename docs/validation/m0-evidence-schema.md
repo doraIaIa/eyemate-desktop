@@ -57,6 +57,8 @@ Mỗi lần chạy ghi một UTF-8 JSON Lines record theo `schemaVersion: m0-ben
 
 Các field `TBD` trong ví dụ không được dùng trong record `VALID`. `operator` dùng role/pseudonymous ID, không lưu tên người dùng hệ điều hành.
 
+`command` trong record thật chỉ được chứa command ID hoặc argv đã chuẩn hóa theo allowlist; cấm raw shell command có home path, workspace path, username, token, key path hoặc secret. Raw stdout/stderr không tự động là evidence.
+
 ## Trạng thái run tách theo ba chiều
 
 - `executionStatus`: `COMPLETED` hoặc `ABORTED`. `ABORTED` nghĩa là sequence dừng trước terminal marker; không tự nói run hợp lệ hay candidate fail.
@@ -101,6 +103,25 @@ evidence/m0/<protocol-version>/
 
 Tên `runId`: `<UTC-basic>__<candidate>__<deviceProfileId>__<workloadId>-v<version>__r<NN>`. Không chứa username, camera serial, participant ID hoặc dữ liệu sức khỏe.
 
+## Artifact allowlist và pre-ingest gate
+
+Chỉ các loại dưới đây được phép vào evidence tree. `artifactRefs` không phải quyền ghi tùy ý; loại chưa có trong bảng bị từ chối mặc định.
+
+| Loại artifact | Nội dung được phép | Nội dung cấm/điều kiện |
+|---|---|---|
+| Run plan/run record/summary/index/checksum | ID pseudonymous, typed status, metric aggregate, version, refs/checksum | Không raw command/output, free-text chứa path/identifier, raw/exact camera series |
+| Device snapshot | Field allowlist và bucket trong `m0-device-profiles.md` | Không hostname/user/SID/path/drive letter/serial/device instance/PnP/MAC/IP/SSID |
+| Resource/performance trace | Timestamp monotonic, PID pseudonymous trong run, aggregate CPU/RAM/handle/count/bucket | Không memory dump, stack/command line/path/module path thô, ETW field ngoài allowlist |
+| Network evidence | Timestamp bucket, process-role, direction, protocol, destination class/hash được duyệt, attempt count/result | Không payload/body, cookie/header/token, DNS payload, local IP/MAC/SSID; tool upload cũng là finding |
+| Privacy scan report | Scanner/rule version, sink, symbolic canary/rule ID, finding count, checksum của artifact đã scan | Không chép finding payload cấm vào report |
+| SQLite/migration evidence | Synthetic schema/fixture version, integrity/migration result, backup method/checksum | Không DB V1/người dùng; backup runtime chỉ synthetic và purge theo manifest |
+| Package/build evidence | MSIX/checksum, normalized content manifest, SBOM, scrubbed build/sign result, public test-cert fingerprint/alias | Không private key/passphrase/token/provider URI/key path, production certificate hoặc cert subject cá nhân |
+| Lifecycle/accessibility evidence | Typed state/rule/count và scrubbed control metadata | Không screenshot camera, screen recording hoặc UI text chứa PII/health content |
+
+Pre-ingest bắt buộc: đóng/flushing collector → tạo staging ngoài evidence tree với quyền tối thiểu → kiểm tra type/size → allowlist field → scrub username/path/identifier/secret → forbidden raw-data scan → checksum → chỉ khi zero finding mới move/copy vào evidence tree. Scanner/scrubber lỗi hoặc loại artifact không biết làm run `INVALID` và artifact không được ingest.
+
+Synthetic fixtures phải có generator/version/seed/provenance chứng minh không bắt nguồn từ người thật. Chỉ generator/config/expected typed result được commit hoặc giữ; raw pixel/landmark output của generator vẫn RAM-only và không phải evidence.
+
 ## Provenance, checksum và summary
 
 - Build manifest liên kết commit, dirty flag, lockfile checksum, toolchain, package checksum, asset manifest và schema version.
@@ -108,6 +129,7 @@ Tên `runId`: `<UTC-basic>__<candidate>__<deviceProfileId>__<workloadId>-v<versi
 - Summary lưu query/aggregation version và danh sách run IDs/checksums đầu vào. Sau khi index được review, mọi sửa evidence tạo version mới; không thay file tại chỗ.
 - Review phải tái tính checksum và đối chiếu summary với run records. Summary có checksum không khớp hoặc tham chiếu thiếu kích hoạt stop rule.
 - Raw benchmark samples kỹ thuật là số đo CPU/RAM/time/error; không phải frame, landmark hay exact camera series.
+- SHA-256 chỉ chứng minh integrity sau khi index được chốt, không tự chứng minh nguồn gốc hoặc chống người có quyền sửa đồng thời artifact và checksum. Trước evidence thật phải khóa cơ chế provenance/attestation hoặc protected immutable storage, reviewer role và quyền ghi/tái tính; trạng thái hiện tại là `TBD`.
 
 ## Retention đề xuất
 
@@ -117,6 +139,8 @@ Tên `runId`: `<UTC-basic>__<candidate>__<deviceProfileId>__<workloadId>-v<versi
 | MSIX, manifest, SBOM, build logs đã scrub | Theo CI retention `TBD` | Release + Security | Không chứa secret |
 | Performance trace đã scrub | Tối thiểu đến ADR review; thời hạn `TBD` | QA | Chỉ allowlisted metric |
 | Invalid/aborted evidence | Giữ reason/provenance; artifact nguy hiểm bị cô lập | QA + Privacy/Security | Không xóa dấu vết quyết định |
+
+Không được bắt đầu collection thật khi thời hạn retention, storage location, access role, deletion owner và purge-verification method còn `TBD`. Với incident chứa artifact cấm, evidence tree chỉ giữ metadata sự cố đã scrub. Bản gốc nếu buộc phải cô lập để điều tra phải nằm ngoài evidence tree, quyền tối thiểu, không upload/sync, có legal/privacy owner và destruction deadline được phê duyệt trước; nếu các điều kiện này chưa tồn tại thì dừng collection và không tạo artifact đó.
 
 ## Artifact tuyệt đối không được lưu
 
@@ -133,4 +157,4 @@ Nếu công cụ sinh artifact cấm, dừng ngay, cô lập quyền truy cập,
 |---|---|---|---|---|---|---|---|
 | `m0-evidence-schema.md` | `0.1.0-proposed` | Tech + QA | Tech | `CHANGES_REQUIRED` | 2026-07-14 | Chưa có validator, command registry, artifact scrubber hoặc checksum/index verification chạy được | Khi T-M0-003 được phép và command được xác minh trên clean checkout |
 | `m0-evidence-schema.md` | `0.2.0-proposed` | Tech + QA | QA | `CHANGES_REQUIRED` | 2026-07-14 | Chưa có validator, canonical command hoặc artifact chứng minh planned-slot completeness, checksum/link và summary recomputation | Khi schema/traceability validator chạy được trên fixture positive/negative |
-| `m0-evidence-schema.md` | `0.2.0-proposed` | Tech + QA | Privacy + Security | `NOT_REVIEWED` | — | Cần duyệt artifact allowlist/retention | Trước thu evidence thật |
+| `m0-evidence-schema.md` | `0.3.0-proposed` | Tech + QA | Privacy + Security | `CHANGES_REQUIRED` | 2026-07-14 | Positive allowlist/pre-ingest/minimization đã định nghĩa; retention/access/deletion, scrubber/scanner, provenance protection và negative fixtures chưa được khóa hoặc xác minh | Trước thu evidence thật hoặc chạy tool có thể sinh trace/log/dump |
