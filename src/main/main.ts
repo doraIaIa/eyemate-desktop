@@ -29,10 +29,12 @@ const smokeMode = process.argv.includes("--m1-smoke");
 const companionSmokeMode = process.argv.includes("--m2-smoke");
 const intelligenceSmokeMode = process.argv.includes("--m3-smoke");
 const uiValidationMode = process.argv.includes("--ui-validate");
+const uiRecoverySeedMode = process.argv.includes("--ui-recovery-seed");
+const uiRecoveryCheckMode = process.argv.includes("--ui-recovery-check");
 const uiCaptureArgument = process.argv.find((argument) => argument.startsWith("--ui-screenshot-dir="));
 const uiScreenshotDirectory = uiCaptureArgument?.slice("--ui-screenshot-dir=".length) ?? null;
 
-if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode) {
+if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode || uiRecoverySeedMode || uiRecoveryCheckMode) {
   app.disableHardwareAcceleration();
 }
 
@@ -375,15 +377,31 @@ async function runUiValidation(window: BrowserWindow): Promise<void> {
   requireTrue(await evaluate("location.hash === '#/privacy' && Boolean(document.querySelector('#privacy-delete'))"), "UI_RELOAD_RESTORE_INVALID");
 }
 
+async function runUiRecoverySeed(window: BrowserWindow): Promise<void> {
+  await window.webContents.executeJavaScript("window.eyeMate.startWorkSession('TIMER_ONLY')", true);
+  await new Promise((resolve) => setTimeout(resolve, 180));
+}
+
+async function runUiRecoveryCheck(window: BrowserWindow): Promise<void> {
+  const result = await window.webContents.executeJavaScript("window.eyeMate.getWorkSession().then((session) => session && `${session.state}:${session.elapsedActiveMs > 0}`)", true);
+  if (result !== "RECOVERY_REQUIRED:true") throw new Error(`UI_SESSION_RECOVERY_INVALID:${String(result)}`);
+}
+
 app.whenReady().then(async () => {
   const openedStorage = openLocalSqliteStorage(resolveDatabasePath(app.getPath("userData")));
   if (openedStorage.state === "READY") { storage = openedStorage.storage; recoverPersistedSession(); }
   registerIpcHandlers();
   const window = await createMainWindow();
 
-  if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode) {
+  if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode || uiRecoverySeedMode || uiRecoveryCheckMode) {
     try {
       if (uiValidationMode) await runUiValidation(window);
+      else if (uiRecoverySeedMode) {
+        await runUiRecoverySeed(window);
+        app.quit();
+        return;
+      }
+      else if (uiRecoveryCheckMode) await runUiRecoveryCheck(window);
       else if (intelligenceSmokeMode) await runIntelligenceSmoke(window);
       else if (companionSmokeMode) await runCompanionSmoke(window);
       else await runSmoke(window);
