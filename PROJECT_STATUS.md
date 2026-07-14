@@ -6,7 +6,7 @@ Current batch: M3 exit verification
 Current task: T-M3-006 — Regression, MSIX smoke and M3 exit
 Task state: ENGINEERING_COMPLETE_WITH_LIMITATIONS
 
-Latest verified commit: `54dc5d5`
+Latest verified commit: `23a2f89`
 Task base commit: `024bff9`
 Working tree: clean after M3 exit verification.
 
@@ -74,7 +74,7 @@ Important decisions:
 ## M3 Exit Record (2026-07-14)
 
 - Status: `ENGINEERING_COMPLETE_WITH_LIMITATIONS`.
-- Verified: `npm run verify:m1` (39 unit, 10 integration, lint/typecheck/architecture/privacy/Electron M1 smoke), `npm run acceptance:m2`, `npm run acceptance:m3`, and `npm run build:msix:m1` all PASS.
+- Verified: `npm run verify:m1` (43 unit, 10 integration, lint/typecheck/architecture/privacy/Electron M1 smoke), `npm run acceptance:m2`, `npm run acceptance:m3`, and `npm run build:msix:m1` all PASS.
 - M3 evidence: typed source provenance; baseline coverage/reset/stale behavior; abstaining pattern; normalized VLI with separate confidence; timezone-aware daily/weekly aggregation; report snapshot/history; local Markdown/JSON export; category/all deletion; schema-v8 migration test.
 - Safety/privacy: no raw camera frame/video/landmark persistence was added; renderer remains behind typed preload IPC; no cloud, account or telemetry was added.
 - Limitations: real-camera metrics remain UNKNOWN; dynamic WPR egress/auto-update verification remains UNKNOWN due to host policy error `0xc5585011`; encryption-at-rest is TBD; package is unsigned internal MSIX; reports are product-behaviour analytics and not a diagnosis or medical record.

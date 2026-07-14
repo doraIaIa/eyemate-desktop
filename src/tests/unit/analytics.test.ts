@@ -24,3 +24,10 @@ test("daily summary aggregates all same-day sources and keeps a DST local date",
   assert.equal(daily.actionKey, "TAKE_SHORT_BREAK");
   assert.equal(localDateFor("2026-03-08T07:30:00.000Z", "America/New_York"), "2026-03-08");
 });
+test("weekly digest is deterministic and requires three observed days", () => {
+  const days = ["2026-07-14", "2026-07-15", "2026-07-16"].map((date, index) => aggregateDaily([{ ...valid, sourceId: `work-week-${index}`, occurredAtUtc: `${date}T10:00:00.000Z` }], date, "Asia/Bangkok"));
+  const first = aggregateWeekly(days, "2026-07-14", "Asia/Bangkok");
+  assert.equal(first.status, "AVAILABLE");
+  assert.equal(first.missingDays, 4);
+  assert.deepEqual(aggregateWeekly(days, "2026-07-14", "Asia/Bangkok"), first);
+});
