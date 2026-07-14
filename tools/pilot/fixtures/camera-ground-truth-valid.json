@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "eyemate-camera-ground-truth/0.1.0",
+  "calibrationReferenceCm": 60,
+  "observations": [
+    { "id": "run-001", "referenceDistanceCm": 45, "observedZone": "NEAR", "qualityAccepted": true, "rawDataPersisted": false },
+    { "id": "run-002", "referenceDistanceCm": 60, "observedZone": "COMFORT", "qualityAccepted": true, "rawDataPersisted": false },
+    { "id": "run-003", "referenceDistanceCm": 75, "observedZone": "FAR", "qualityAccepted": true, "rawDataPersisted": false }
+  ]
+}

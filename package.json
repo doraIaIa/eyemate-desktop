@@ -28,6 +28,8 @@
     "test:camera-harness": "npm run build && electron tools/pilot/run-camera-validation.mjs --smoke",
     "test:camera-runtime": "npm run build && node tools/pilot/run-camera-runtime-integration.mjs",
     "camera:measure:pilot": "npm run build && node tools/pilot/run-camera-runtime-integration.mjs --full-measurement",
+    "camera:ground-truth:validate": "node tools/pilot/validate-camera-ground-truth.mjs",
+    "test:camera-ground-truth": "node tools/pilot/run-camera-ground-truth-fixture-tests.mjs",
     "test:pdf-export": "npm run build && electron tools/pilot/run-pdf-export-integration.mjs",
     "egress:observe:pilot": "npm run build && node tools/pilot/observe-tcp-egress.mjs",
     "build:msix:beta": "npm run build && node tools/m1/build-msix.mjs --beta",
