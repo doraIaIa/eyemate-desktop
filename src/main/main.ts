@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { createSecureWindowOptions } from "./window-options.js";
 import type { RuntimeInfo } from "../shared/runtime-contract.js";
+import { EYEMATE_APPLICATION_VERSION } from "../shared/product-meta.js";
 import type { CheckupSummary, PrivacySummary, SurveyRequest } from "../shared/m1-contract.js";
 import { createSurveyOnlyExportPreview, resolveDeletionResult } from "../user-data/data-controls.js";
 import { DEFAULT_USER_PREFERENCES, openLocalSqliteStorage, resolveDatabasePath, type LocalSqliteStorage } from "../platform-electron/sqlite-storage.js";
@@ -41,7 +42,7 @@ if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode
 function getRuntimeInfo(): RuntimeInfo {
   return {
     mode: "LOCAL_ONLY",
-    applicationVersion: app.getVersion()
+    applicationVersion: EYEMATE_APPLICATION_VERSION
   };
 }
 
@@ -51,6 +52,7 @@ let sessionMonotonicMs = 0;
 let lastNudgeMonotonicMs: number | null = null;
 let nudgesInSession = 0;
 const nudgeAdapter = new InProcessNudgeAdapter();
+const currentIso = (): string => uiValidationMode ? "2026-07-14T12:00:00.000Z" : new Date().toISOString();
 const sessionNow = (): number => {
   sessionMonotonicMs = Math.max(sessionMonotonicMs + 1, Math.round(performance.now()));
   return sessionMonotonicMs;
@@ -59,7 +61,7 @@ const sessionNow = (): number => {
 function persistActiveSessionBeforeExit(): void {
   if (workSession?.state !== "ACTIVE") return;
   workSession = tickSession(workSession, sessionNow());
-  storage?.saveSession({ sessionId: workSession.id, modeId: workSession.modeId, state: workSession.state, elapsedActiveMs: workSession.elapsedActiveMs, updatedAt: new Date().toISOString() });
+  storage?.saveSession({ sessionId: workSession.id, modeId: workSession.modeId, state: workSession.state, elapsedActiveMs: workSession.elapsedActiveMs, updatedAt: currentIso() });
 }
 
 function updateWorkSession(event: "START" | "STARTED" | "PAUSE" | "RESUME" | "FINISH" | "CANCEL"): WorkSession {
@@ -67,9 +69,9 @@ function updateWorkSession(event: "START" | "STARTED" | "PAUSE" | "RESUME" | "FI
   if (workSession === null) workSession = createSession(`session-${randomUUID().slice(0, 8)}`, "TIMER_ONLY");
   const previousState = workSession.state;
   workSession = applySessionEvent(workSession, event, now);
-  storage?.saveSession({ sessionId: workSession.id, modeId: workSession.modeId, state: workSession.state, elapsedActiveMs: workSession.elapsedActiveMs, updatedAt: new Date().toISOString() });
+  storage?.saveSession({ sessionId: workSession.id, modeId: workSession.modeId, state: workSession.state, elapsedActiveMs: workSession.elapsedActiveMs, updatedAt: currentIso() });
   if (workSession.state !== previousState && (workSession.state === "COMPLETED" || workSession.state === "CANCELLED")) {
-    const createdAt = new Date().toISOString();
+    const createdAt = currentIso();
     const summary = createSessionSummary(workSession, "m2-companion-policy/0.1.0");
     const summaryId = `summary-${randomUUID().slice(0, 8)}`;
     storage?.saveSessionSummary({ summaryId, sessionId: workSession.id, status: summary.timerOutcome, elapsedActiveMs: summary.durationActiveMs, createdAt, summaryJson: JSON.stringify(summary) });
@@ -115,7 +117,7 @@ function requestBreakNudge(): NudgeDecision & { readonly nudgeId: string } {
     lastNudgeMonotonicMs = now;
     nudgesInSession += 1;
     const delivery = nudgeAdapter.deliver({ nudgeId, sessionId: workSession.id, actionKey: "TAKE_SHORT_BREAK", policyVersion: decision.policyVersion });
-    storage?.recordNudge({ nudgeId, sessionId: workSession.id, decision: decision.action, reason: decision.reason, policyVersion: decision.policyVersion, createdAt: new Date().toISOString(), action: decision.suggestedActionKey, deliveryState: delivery.state === "DELIVERED" ? "EMITTED" : "ABSTAINED" });
+    storage?.recordNudge({ nudgeId, sessionId: workSession.id, decision: decision.action, reason: decision.reason, policyVersion: decision.policyVersion, createdAt: currentIso(), action: decision.suggestedActionKey, deliveryState: delivery.state === "DELIVERED" ? "EMITTED" : "ABSTAINED" });
   }
   return { ...decision, nudgeId };
 }
@@ -139,7 +141,7 @@ function runSurveyOnly(request: SurveyRequest): CheckupSummary {
   const safety = evaluateSafetyGate({ answers: { safety_signal_a: request.safety, safety_signal_b: "NEGATIVE" } }, internalSafetyCatalogue);
   const draft = recordSurveyAnswer(createSurveyDraft(), "comfort_now", request.response);
   const report = createSurveyOnlyReport(draft, safety.outcome);
-  const createdAt = new Date().toISOString();
+  const createdAt = currentIso();
   const reportId = randomUUID();
   storage?.saveSurveyOnlyReport({ reportId, status: report.status, action: report.action, provenanceVersion: report.provenance.reportSchemaVersion, createdAt });
   const source = fromSurveyOnly({ reportId, createdAt, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", schemaVersion: report.provenance.reportSchemaVersion, symptomBurden: null });
@@ -149,14 +151,14 @@ function runSurveyOnly(request: SurveyRequest): CheckupSummary {
 
 function completeOnboardingWithoutCamera(): void {
   if (storage === null) throw new Error("LOCAL_STORAGE_UNAVAILABLE");
-  const now = new Date().toISOString();
+  const now = currentIso();
   storage.save({ stage: "COMPLETE", updatedAt: now });
   storage.saveCameraConsent({ purpose: "CAMERA_MEASUREMENT", scope: "LOCAL_CAMERA", textVersion: "m1-camera-1", decision: "SKIPPED", decidedAt: now });
 }
 
 function withdrawCameraConsent(): void {
   if (storage === null) throw new Error("LOCAL_STORAGE_UNAVAILABLE");
-  storage.saveCameraConsent({ purpose: "CAMERA_MEASUREMENT", scope: "LOCAL_CAMERA", textVersion: "m1-camera-1", decision: "WITHDRAWN", decidedAt: new Date().toISOString() });
+  storage.saveCameraConsent({ purpose: "CAMERA_MEASUREMENT", scope: "LOCAL_CAMERA", textVersion: "m1-camera-1", decision: "WITHDRAWN", decidedAt: currentIso() });
 }
 
 function analyticsInputs(): readonly AnalyticsInput[] {
@@ -168,7 +170,7 @@ function analyticsInputs(): readonly AnalyticsInput[] {
 function generateM3Report(): PersonalReport {
   const inputs = analyticsInputs();
   const timezone = inputs[0]?.timezone ?? "UTC";
-  const now = new Date().toISOString();
+  const now = currentIso();
   const report = buildPersonalReport(inputs, localDateFor(now, timezone), timezone, now);
   storage?.saveM3Record({ id: `baseline-${report.baseline.contextKey}-${now.slice(0, 10)}`, kind: "BASELINE", createdAt: now, payloadJson: JSON.stringify(report.baseline) });
   storage?.saveM3Record({ id: `daily-${report.daily.localDate}-${timezone.replace(/[^a-z0-9]/gi, "-")}`, kind: "DAILY", createdAt: now, payloadJson: JSON.stringify(report.daily) });
@@ -187,7 +189,7 @@ function currentM3Report(): PersonalReport {
   if (existing !== undefined) return existing;
   const inputs = analyticsInputs();
   const timezone = inputs[0]?.timezone ?? "UTC";
-  const now = new Date().toISOString();
+  const now = currentIso();
   return buildPersonalReport(inputs, localDateFor(now, timezone), timezone, now);
 }
 
@@ -207,7 +209,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle("work-session:get", () => workSession);
   ipcMain.handle("work-session:list-summaries", () => storage?.listSessionSummaries() ?? []);
   ipcMain.handle("work-session:request-break-nudge", () => requestBreakNudge());
-  ipcMain.handle("work-session:respond-nudge", (_event, nudgeId: string, response: NudgeResponse) => storage?.recordNudgeResponse(nudgeId, response, new Date().toISOString()) ?? false);
+  ipcMain.handle("work-session:respond-nudge", (_event, nudgeId: string, response: NudgeResponse) => storage?.recordNudgeResponse(nudgeId, response, currentIso()) ?? false);
   ipcMain.handle("m3:generate-report", () => generateM3Report());
   ipcMain.handle("m3:list-reports", () => listM3Reports());
   ipcMain.handle("m3:preview-professional-summary", (_event, format: LocalExportFormat = "MARKDOWN") => {
@@ -215,7 +217,7 @@ function registerIpcHandlers(): void {
     const report = currentM3Report();
     return format === "JSON" ? JSON.stringify(report, null, 2) : renderProfessionalSummary(report);
   });
-  ipcMain.handle("m3:reset-baseline", () => { const now = new Date().toISOString(); storage?.saveM3Record({ id: `baseline-reset-${randomUUID().slice(0, 12)}`, kind: "BASELINE", createdAt: now, payloadJson: JSON.stringify({ state: "RESET", version: "m3-baseline/0.1.0" }) }); return "DELETED"; });
+  ipcMain.handle("m3:reset-baseline", () => { const now = currentIso(); storage?.saveM3Record({ id: `baseline-reset-${randomUUID().slice(0, 12)}`, kind: "BASELINE", createdAt: now, payloadJson: JSON.stringify({ state: "RESET", version: "m3-baseline/0.1.0" }) }); return "DELETED"; });
   ipcMain.handle("m3:delete-data", () => storage?.deleteM3Records() ?? "DELETED");
   ipcMain.handle("m3:delete-category", (_event, category: M3DataCategory) => {
     if (!["BASELINE", "PATTERN", "SUMMARY", "REPORT", "ALL"].includes(category)) throw new Error("INVALID_M3_DATA_CATEGORY");
@@ -329,10 +331,12 @@ async function runUiValidation(window: BrowserWindow): Promise<void> {
   const wait = async (milliseconds = 180): Promise<void> => await new Promise((resolve) => setTimeout(resolve, milliseconds));
   const evaluate = async <T>(source: string): Promise<T> => await window.webContents.executeJavaScript(source, true) as T;
   const requireTrue = (value: unknown, reason: string): void => { if (value !== true) throw new Error(reason); };
+  await evaluate("(() => { const style = document.createElement('style'); style.textContent = '*{animation:none!important;transition:none!important}'; document.head.append(style); return true; })()");
   const capture = async (name: string, width = 1280, height = 800): Promise<void> => {
     if (uiScreenshotDirectory === null) return;
     window.setSize(width, height);
     await wait(420);
+    if (name === "session-active") await evaluate("(() => { const timer = document.querySelector('.session-panel .session-timer'); timer.textContent = '00:00:01'; timer.removeAttribute('id'); const progress = document.querySelector('.session-panel .session-progress span'); if (progress) progress.style.setProperty('--progress', '1%'); return true; })()");
     requireTrue(await evaluate("document.documentElement.scrollWidth <= window.innerWidth && document.querySelector('.app-shell').getBoundingClientRect().right <= window.innerWidth + 1"), `UI_LAYOUT_OVERFLOW_${width}x${height}`);
     const image = await window.webContents.capturePage();
     await mkdir(uiScreenshotDirectory, { recursive: true });
@@ -364,6 +368,7 @@ async function runUiValidation(window: BrowserWindow): Promise<void> {
   requireTrue(await evaluate("Boolean(document.querySelector('#session-toggle')) && document.body.textContent.includes('Phiên đang hoạt động')"), "UI_SESSION_START_INVALID");
   await wait(1_050);
   requireTrue(await evaluate("document.querySelector('#session-timer').textContent !== '00:00:00'"), "UI_SESSION_TIMER_NOT_COUNTING");
+  await evaluate("document.querySelector('#session-timer').textContent = '00:00:01'; true");
   await capture("session-active");
   await capture("session-active", 1024, 768);
   await evaluate("document.querySelector('#session-toggle').click(); true"); await wait();
@@ -445,6 +450,7 @@ async function runUiValidation(window: BrowserWindow): Promise<void> {
   await evaluate("document.querySelector('#toast-region').replaceChildren(); true");
   await evaluate(`(() => { document.querySelector('#sound-toggle').click(); document.querySelector('#reduced-motion-toggle').click(); document.querySelector('#quiet-toggle').click(); const now = new Date(); const minute = now.getHours() * 60 + now.getMinutes(); const start = document.querySelector('#quiet-start'); const end = document.querySelector('#quiet-end'); const format = (value) => String(Math.floor(value / 60)).padStart(2,'0') + ':' + String(value % 60).padStart(2,'0'); start.value = format((minute + 1439) % 1440); end.value = format((minute + 2) % 1440); end.dispatchEvent(new Event('change')); return true; })()`); await wait(750);
   requireTrue(await evaluate("window.eyeMate.getUserPreferences().then((value) => value.soundEnabled && value.reducedMotion && value.quietHoursEnabled)"), "UI_SETTINGS_AUTOSAVE_INVALID");
+  await evaluate("document.querySelector('#quiet-start').value = '22:00'; document.querySelector('#quiet-end').value = '07:00'; true");
   await capture("settings");
   await capture("settings", 1024, 768);
   await window.webContents.reload(); await wait(450);
