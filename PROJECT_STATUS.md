@@ -7,10 +7,10 @@ Task state: DONE
 
 Git verification:
 
-- Latest verified commit: `02530ff`.
-- Task base commit: `02530ff`.
-- Working tree: task T-M0-003I pending commit.
-- Files currently modified: `PROJECT_STATUS.md`, `specs/000-m0-architecture-poc/tasks.md`, `tools/m0/`.
+- Latest verified task commit: `5d5a4e6`.
+- Task base commit: `5d5a4e6`.
+- Working tree: expected clean after checkpoint commit.
+- Files currently modified: NONE after checkpoint commit.
 - V1 remains read-only at `F:\dry-eye-app`; required baseline commit is `77ad32f1b519418d882d2d476f13206644536df9`.
 
 Completed measurement-readiness tooling:
