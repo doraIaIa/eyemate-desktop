@@ -32,6 +32,16 @@ last_reviewed: 2026-07-14
 - Out of scope: capture trace, cài/đổi cấu hình tool, network probe, camera hoặc benchmark thật.
 - Stop condition: tool cần shell/command tùy ý, output không scrub được, hoặc artifact ghi identifier/path máy.
 
+## T-M0-003F — Measurement-harness overhead control dry-run
+
+- Goal: chạy chính xác ba repetition no-op local-only để tạo evidence về overhead của measurement harness; đây không phải benchmark candidate, không tạo run `VALID` và không đặt threshold hiệu năng.
+- Requirements/acceptance: `NFR-M0-001`, `NFR-M0-002`, `VAL-M0-001`, `VAL-M0-STOP-008`, `VAL-M0-STOP-012`.
+- Dependencies: T-M0-003D và T-M0-003E hoàn thành.
+- Verification command: `node tools/m0/run-measurement-control-dry-run-fixture-tests.mjs`.
+- Expected evidence: report schema-versioned, ba attempt theo planned slot bất biến, provenance tool/collector, elapsed monotonic finite; scanner-pass và không chứa raw command output, path máy, camera hoặc network payload.
+- Out of scope: Electron/Tauri, camera, process của candidate, network/egress probe, performance comparison, pass/fail budget hoặc outlier removal.
+- Stop condition: worker không khởi tạo/cleanup được, attempt thiếu, output không qua scanner, hoặc evidence bị trình bày như benchmark result.
+
 ## T-M0-003B — SHA-256 manifest evidence artifact
 
 - Goal: sinh và verify manifest SHA-256 deterministic cho artifact `artifacts/...` đã qua scanner, dùng relative path/type/size/hash/scanner version/schema version.

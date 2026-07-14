@@ -2,29 +2,40 @@
 
 Last updated: 2026-07-14
 Current milestone: M0 — Architecture POC
-Current task: T-M0-003E — Local measurement-tool inventory
+Current task: T-M0-003F — Measurement-harness overhead control dry-run
 Task state: DONE
 
 Git verification:
 
-- Current task commit and working-tree state must be read from `git log --oneline -1` and `git status --short`; this file intentionally does not duplicate a commit hash.
+- Latest verified commit: `d98f4f9`.
+- Task base commit: `d98f4f9`.
+- Working tree: expected clean after this task commit.
+- Files currently modified: NONE after commit.
 - V1 remains read-only at `F:\dry-eye-app`; required baseline commit is `77ad32f1b519418d882d2d476f13206644536df9`.
 
-Completed in current task:
+Completed immediately before current task:
 
 - Local-only allowlist collector for Node, WPR, Xperf, Logman and Wevtutil.
 - Scrubbed, scanner-checked and atomically written `resource-trace` inventory artifact.
 - Inventory records availability and safely parsed version only; raw command output, executable paths, username and hostname are excluded.
 
-Verification completed:
+Verification already run for T-M0-003E:
 
 - `node tools/m0/run-tool-inventory-fixture-tests.mjs`: 7 PASS, including unsafe path and junction rejection with no outside write.
 - Egress and auto-update remain `NOT_EVALUATED_OFFLINE_ONLY`; this task does not open network or camera.
-- The full M0 regression suite and `git diff --check` are required immediately before commit.
+- Full M0 regression suite and `git diff --check` passed before commit `d98f4f9`.
 
-Remaining M0 readiness work:
+Still remaining in M0:
 
-- Select and implement the next dependency-safe measurement readiness task after this commit; no camera, shell selection or benchmark run is started by this task.
+- Egress/auto-update inspection and tool-output inspection remain required before camera/network benchmark.
+
+Next exact action:
+
+- Select the next local-only measurement-readiness task; do not invoke any candidate, camera or network.
+
+Next exact command:
+
+- `node tools/m0/run-tool-inventory-fixture-tests.mjs`.
 
 Known limit:
 
