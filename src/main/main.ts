@@ -57,8 +57,10 @@ function updateWorkSession(event: "START" | "STARTED" | "PAUSE" | "RESUME" | "FI
     const summary = createSessionSummary(workSession, "m2-companion-policy/0.1.0");
     const summaryId = `summary-${randomUUID().slice(0, 8)}`;
     storage?.saveSessionSummary({ summaryId, sessionId: workSession.id, status: summary.timerOutcome, elapsedActiveMs: summary.durationActiveMs, createdAt, summaryJson: JSON.stringify(summary) });
-    const source = fromWorkSession({ summaryId, sessionId: workSession.id, elapsedActiveMs: summary.durationActiveMs, createdAt, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", schemaVersion: summary.schemaVersion });
-    storage?.saveM3Record({ id: `source-${summaryId}`, kind: "SOURCE", createdAt, payloadJson: JSON.stringify(source) });
+    if (workSession.state === "COMPLETED" && summary.durationActiveMs > 0) {
+      const source = fromWorkSession({ summaryId, sessionId: workSession.id, elapsedActiveMs: summary.durationActiveMs, createdAt, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", schemaVersion: summary.schemaVersion });
+      storage?.saveM3Record({ id: `source-${summaryId}`, kind: "SOURCE", createdAt, payloadJson: JSON.stringify(source) });
+    }
   }
   return workSession;
 }
