@@ -33,3 +33,5 @@ Nó không thay scanner sink runtime, scrubber, checksum-manifest generator, net
 `evaluate-tool-egress-gate.mjs` là gate fail-closed: inventory `NOT_EVALUATED_OFFLINE_ONLY` bị chặn bằng `BLOCKED_UNVERIFIED_EGRESS`. Gate không thực hiện capture và không tự tạo evidence `VERIFIED_*`; network trace được phê duyệt riêng vẫn là bắt buộc trước benchmark camera/network.
 
 `inspect-static-egress.mjs` recursively inspects repo-local production `tools/m0/*.mjs` (fixture runners are excluded) for network modules, APIs and URL literals. A clean result is static evidence about this source set only; it does not prove the behavior of WPR, Windows or any other system tool.
+
+`check-tool-output-admission.mjs` quarantines raw capture/dump outputs (`.etl`, `.blg`, `.dmp`, `.mdmp`) before opening them. Only `.json`, `.jsonl` and `.txt` can be considered, and each must pass the existing scanner. Quarantine is not a safety finding or egress conclusion; it prevents raw output from being ingested.

@@ -63,6 +63,13 @@ last_reviewed: 2026-07-14
 - Verification command: `node tools/m0/run-static-egress-inspection-fixture-tests.mjs` and `node tools/m0/inspect-static-egress.mjs`.
 - Out of scope: claim about WPR/system tool behavior, dynamic trace, network capture or any candidate app.
 
+## T-M0-003I — Measurement-tool output admission gate
+
+- Goal: quarantine raw capture/dump extensions without reading or ingesting them; only scanner-passing text output may be admitted.
+- Dependencies: T-M0-003A.
+- Verification command: `node tools/m0/run-tool-output-admission-fixture-tests.mjs`.
+- Out of scope: ETL parsing, WPR retry, artifact upload, raw trace retention or claim that a quarantined output is safe.
+
 ## T-M0-003B — SHA-256 manifest evidence artifact
 
 - Goal: sinh và verify manifest SHA-256 deterministic cho artifact `artifacts/...` đã qua scanner, dùng relative path/type/size/hash/scanner version/schema version.
