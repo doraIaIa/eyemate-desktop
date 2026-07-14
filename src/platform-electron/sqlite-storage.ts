@@ -134,6 +134,11 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
     this.#database.prepare("INSERT INTO checkup_report_snapshot VALUES (?, ?, 'SURVEY_ONLY', 'NOT_MEASURED', ?, ?, ?)").run(snapshot.reportId, snapshot.status, snapshot.action, snapshot.provenanceVersion, snapshot.createdAt);
   }
 
+  deleteAllLocalData(): "DELETED" {
+    this.#database.exec("BEGIN IMMEDIATE; DELETE FROM checkup_report_snapshot; DELETE FROM camera_consent; DELETE FROM onboarding_progress; COMMIT;");
+    return "DELETED";
+  }
+
   close(): void {
     this.#database.close();
   }

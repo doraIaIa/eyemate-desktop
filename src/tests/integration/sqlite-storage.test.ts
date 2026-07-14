@@ -71,6 +71,20 @@ test("rút camera consent được ghi lại sau restart", () => {
   rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });
 });
 
+test("delete all local data là idempotent và không khẳng định xóa export ngoài app", () => {
+  const databasePath = createFixturePath("delete");
+  const result = openLocalSqliteStorage(databasePath);
+  assert.equal(result.state, "READY");
+  if (result.state === "READY") {
+    result.storage.save({ stage: "COMPLETE", updatedAt: "2026-07-14T00:00:00.000Z" });
+    assert.equal(result.storage.deleteAllLocalData(), "DELETED");
+    assert.equal(result.storage.load(), null);
+    assert.equal(result.storage.deleteAllLocalData(), "DELETED");
+    result.storage.close();
+  }
+  rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });
+});
+
 test("database path chặn installation resources và không chứa raw camera marker", () => {
   assert.throws(() => resolveDatabasePath("C:/application/resources"), /INVALID_USER_DATA_DIRECTORY/);
   const databasePath = createFixturePath("privacy");
