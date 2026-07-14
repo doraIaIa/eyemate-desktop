@@ -77,6 +77,19 @@ T-M0-003 → T-M0-005 → T-M0-007
 - Expected evidence: command output thật, validator/fixture source synthetic, documented error code và Git diff.
 - Stop condition: fixture chứa dữ liệu cấm, validator cần dependency/network, hoặc output ghi raw/path/secret.
 
+## T-M0-003A — Artifact allowlist và forbidden-content scanner
+
+- Goal: tạo đúng một outcome thực thi được: scanner local-only từ chối artifact type không allowlist, binary/text chứa forbidden field/path/secret pattern và in reason code không echo input.
+- Requirements/acceptance: `PRIV-M0-001`, `SEC-M0-001`, `VAL-M0-001`, `AC-M0-007`, `AC-M0-018`, `AC-M0-019`.
+- Dependencies: T-M0-003 hoàn thành ở commit `fc7ae96`; dùng Node standard library đã xác minh.
+- Files likely involved: `tools/m0/scan-evidence-artifact.mjs`, scanner fixture/runner, `tools/m0/README.md`, evidence schema/task docs.
+- Do not modify: V1, application candidate, camera/runtime, `AGENTS.template.md`/`AGENTS.md`, dependency/OS setting.
+- Out of scope: runtime sink scanner, network capture, binary package scanner, scrubber/purge implementation hoặc benchmark thật.
+- Tests to add/update: safe allowlisted text pass; forbidden field/path/token và unknown artifact type reject; fixture source chỉ synthetic.
+- Verification command: `node tools/m0/run-scanner-fixture-tests.mjs`.
+- Expected evidence: executable scanner, fixture result và reason code; không lưu input artifact vào output.
+- Stop condition: scanner cần network/dependency, fixture chứa raw/real-person data, hoặc scanner echo forbidden payload.
+
 ## T-M0-004 — Electron camera/local-asset spike
 
 - Goal: Electron candidate đạt camera lifecycle, quality boundary và local-asset/offline contract, chưa thêm storage/package.

@@ -1,0 +1,2 @@
+raw_frame=synthetic-symbolic-token
+artifactPath=C:\Users\synthetic-user\evidence\run.json
