@@ -3,6 +3,7 @@ import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSyn
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
+import { DatabaseSync } from "node:sqlite";
 import {
   RECOVERY_REQUIRED,
   createV1StorageFixture,
@@ -10,6 +11,7 @@ import {
   openLocalSqliteStorage,
   resolveDatabasePath
 } from "../../platform-electron/sqlite-storage.js";
+import { createSensitiveDataCodec } from "../../platform-electron/storage-crypto.js";
 
 function createFixturePath(name: string): string {
   return join(mkdtempSync(join(tmpdir(), "eyemate-m1-storage-")), name, "eyemate.sqlite");
@@ -151,5 +153,77 @@ test("delete all purge plaintext canary và migration backup", () => {
   assert.equal(existsSync(`${databasePath}.backup-v1`), false);
   const remaining = readdirSync(dirname(databasePath)).filter((name) => name.startsWith("eyemate.sqlite"));
   assert.equal(remaining.some((name) => readFileSync(join(dirname(databasePath), name)).includes(Buffer.from(canary))), false);
+  rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });
+});
+
+test("protected storage mã hóa payload nhạy cảm, restart và delete không để plaintext", () => {
+  const databasePath = createFixturePath("protected-roundtrip");
+  const codec = createSensitiveDataCodec(Buffer.alloc(32, 11));
+  const canary = "SENSITIVE_PROTECTED_CANARY_91C2";
+  const opened = openLocalSqliteStorage(databasePath, { sensitiveDataCodec: codec });
+  assert.equal(opened.state, "READY");
+  if (opened.state === "READY") {
+    opened.storage.saveSurveyOnlyReport({ reportId: "protected-report", status: "COMPLETED", action: canary, provenanceVersion: "protected/0.1.0", createdAt: "2026-07-14T00:00:00.000Z" });
+    opened.storage.saveM3Record({ id: "protected-source", kind: "SOURCE", createdAt: "2026-07-14T00:00:00.000Z", payloadJson: JSON.stringify({ canary }) });
+    opened.storage.close();
+  }
+  assert.equal(readdirSync(dirname(databasePath)).some((name) => readFileSync(join(dirname(databasePath), name)).includes(Buffer.from(canary))), false);
+  const reopened = openLocalSqliteStorage(databasePath, { sensitiveDataCodec: codec });
+  assert.equal(reopened.state, "READY");
+  if (reopened.state === "READY") {
+    assert.equal(reopened.storage.listSurveyOnlyReports()[0]?.action, canary);
+    assert.equal(JSON.parse(reopened.storage.listM3Records("SOURCE")[0]!.payloadJson).canary, canary);
+    reopened.storage.deleteAllLocalData();
+    reopened.storage.close();
+  }
+  assert.equal(readdirSync(dirname(databasePath)).some((name) => readFileSync(join(dirname(databasePath), name)).includes(Buffer.from(canary))), false);
+  rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });
+});
+
+test("protected storage fail-closed với missing/wrong key và payload bị sửa", () => {
+  const databasePath = createFixturePath("protected-tamper");
+  const codec = createSensitiveDataCodec(Buffer.alloc(32, 21));
+  const opened = openLocalSqliteStorage(databasePath, { sensitiveDataCodec: codec });
+  assert.equal(opened.state, "READY");
+  if (opened.state === "READY") {
+    opened.storage.saveSurveyOnlyReport({ reportId: "tampered-report", status: "COMPLETED", action: "CANARY", provenanceVersion: "protected/0.1.0", createdAt: "2026-07-14T00:00:00.000Z" });
+    opened.storage.close();
+  }
+  assert.equal(openLocalSqliteStorage(databasePath).state, RECOVERY_REQUIRED);
+  assert.equal(openLocalSqliteStorage(databasePath, { sensitiveDataCodec: createSensitiveDataCodec(Buffer.alloc(32, 22)) }).state, RECOVERY_REQUIRED);
+  const database = new DatabaseSync(databasePath);
+  const row = database.prepare("SELECT action FROM checkup_report_snapshot WHERE report_id = 'tampered-report'").get() as { action: string };
+  database.prepare("UPDATE checkup_report_snapshot SET action = ? WHERE report_id = 'tampered-report'").run(`${row.action.slice(0, -1)}A`);
+  database.close();
+  const tampered = openLocalSqliteStorage(databasePath, { sensitiveDataCodec: codec });
+  assert.equal(tampered.state, "READY");
+  if (tampered.state === "READY") {
+    assert.throws(() => tampered.storage.listSurveyOnlyReports(), /TAMPERED_OR_KEY_INVALID/);
+    tampered.storage.close();
+  }
+  rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });
+});
+
+test("plaintext migration tạo backup đã mã hóa và interrupted migration không commit một phần", () => {
+  const databasePath = createFixturePath("protected-migration");
+  const canary = "LEGACY_PLAINTEXT_CANARY_44AF";
+  const legacy = openLocalSqliteStorage(databasePath);
+  assert.equal(legacy.state, "READY");
+  if (legacy.state === "READY") {
+    legacy.storage.saveSurveyOnlyReport({ reportId: "legacy-report", status: "COMPLETED", action: canary, provenanceVersion: "legacy/0.1.0", createdAt: "2026-07-14T00:00:00.000Z" });
+    legacy.storage.close();
+  }
+  const codec = createSensitiveDataCodec(Buffer.alloc(32, 31));
+  const interrupted = openLocalSqliteStorage(databasePath, { sensitiveDataCodec: codec, forceEncryptionMigrationFailure: true });
+  assert.equal(interrupted.state, RECOVERY_REQUIRED);
+  assert.equal(existsSync(`${databasePath}.backup-encrypted`), true);
+  assert.equal(readFileSync(`${databasePath}.backup-encrypted`, "utf8").includes(canary), false);
+  const migrated = openLocalSqliteStorage(databasePath, { sensitiveDataCodec: codec });
+  assert.equal(migrated.state, "READY");
+  if (migrated.state === "READY") {
+    assert.equal(migrated.storage.listSurveyOnlyReports()[0]?.action, canary);
+    migrated.storage.close();
+  }
+  assert.equal(readdirSync(dirname(databasePath)).some((name) => name !== "eyemate.sqlite.backup-encrypted" && readFileSync(join(dirname(databasePath), name)).includes(Buffer.from(canary))), false);
   rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });
 });

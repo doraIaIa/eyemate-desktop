@@ -1,8 +1,9 @@
-import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, normalize, parse, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { CameraConsentRecord, CameraConsentRepository, OnboardingProgress, OnboardingProgressRepository, OnboardingStage } from "../user-data/ports.js";
 import type { DataInventoryItem, UserPreferences } from "../shared/preload-contract.js";
+import type { SensitiveDataCodec } from "./storage-crypto.js";
 
 export const STORAGE_SCHEMA_VERSION = 10;
 export const RECOVERY_REQUIRED = "MIGRATION_RECOVERY_REQUIRED";
@@ -13,6 +14,8 @@ export type StorageOpenResult =
 
 export interface OpenStorageOptions {
   readonly forceMigrationFailure?: boolean;
+  readonly forceEncryptionMigrationFailure?: boolean;
+  readonly sensitiveDataCodec?: SensitiveDataCodec;
 }
 
 export interface PersistedSession { readonly sessionId: string; readonly modeId: string; readonly state: string; readonly elapsedActiveMs: number; readonly updatedAt: string; }
@@ -129,6 +132,65 @@ function assertIntegrity(database: DatabaseSync): void {
   if (result.integrity_check !== "ok") throw new Error("INTEGRITY_CHECK_FAILED");
 }
 
+function encryptedValue(codec: SensitiveDataCodec | undefined, value: string, context: string): string {
+  return codec === undefined || codec.isEncrypted(value) ? value : codec.encrypt(value, context);
+}
+
+function decryptedValue(codec: SensitiveDataCodec | undefined, value: string, context: string): string {
+  if (codec === undefined) {
+    if (value.startsWith("eyemate:aes-256-gcm:")) throw new Error("PROTECTED_STORAGE_KEY_REQUIRED");
+    return value;
+  }
+  return codec.isEncrypted(value) ? codec.decrypt(value, context) : value;
+}
+
+function migrateSensitivePayloads(database: DatabaseSync, databasePath: string, codec: SensitiveDataCodec, forceFailure: boolean): boolean {
+  database.exec("CREATE TABLE IF NOT EXISTS sensitive_storage_state (singleton INTEGER PRIMARY KEY CHECK (singleton = 1), codec_version TEXT NOT NULL, key_check TEXT NOT NULL);");
+  const state = database.prepare("SELECT codec_version, key_check FROM sensitive_storage_state WHERE singleton = 1").get() as { codec_version: string; key_check: string } | undefined;
+  if (state) {
+    if (state.codec_version !== codec.version || codec.decrypt(state.key_check, "storage:key-check") !== "EYEMATE_STORAGE_KEY_OK") throw new Error("SENSITIVE_STORAGE_KEY_INVALID");
+    return false;
+  }
+  database.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+  const backupPath = `${databasePath}.backup-encrypted`;
+  const temporaryBackupPath = `${backupPath}.tmp-${process.pid}`;
+  try {
+    const encryptedBackup = codec.encrypt(readFileSync(databasePath).toString("base64"), "storage:migration-backup");
+    writeFileSync(temporaryBackupPath, encryptedBackup, { encoding: "utf8", flag: "wx" });
+    renameSync(temporaryBackupPath, backupPath);
+  } catch (error) { rmSync(temporaryBackupPath, { force: true }); throw error; }
+  database.exec("BEGIN IMMEDIATE;");
+  try {
+    for (const row of database.prepare("SELECT report_id, action FROM checkup_report_snapshot").all() as unknown as readonly { report_id: string; action: string }[]) {
+      database.prepare("UPDATE checkup_report_snapshot SET action = ? WHERE report_id = ?").run(encryptedValue(codec, row.action, `checkup:${row.report_id}:action`), row.report_id);
+    }
+    for (const row of database.prepare("SELECT summary_id, summary_json FROM session_summary WHERE summary_json IS NOT NULL").all() as unknown as readonly { summary_id: string; summary_json: string }[]) {
+      database.prepare("UPDATE session_summary SET summary_json = ? WHERE summary_id = ?").run(encryptedValue(codec, row.summary_json, `summary:${row.summary_id}:json`), row.summary_id);
+    }
+    for (const row of database.prepare("SELECT record_id, payload_json FROM m3_record").all() as unknown as readonly { record_id: string; payload_json: string }[]) {
+      database.prepare("UPDATE m3_record SET payload_json = ? WHERE record_id = ?").run(encryptedValue(codec, row.payload_json, `m3:${row.record_id}:payload`), row.record_id);
+    }
+    for (const row of database.prepare("SELECT singleton, value_json FROM app_preferences").all() as unknown as readonly { singleton: number; value_json: string }[]) {
+      database.prepare("UPDATE app_preferences SET value_json = ? WHERE singleton = ?").run(encryptedValue(codec, row.value_json, "preferences:singleton:value"), row.singleton);
+    }
+    if (forceFailure) throw new Error("FORCED_ENCRYPTION_MIGRATION_FAILURE");
+    database.prepare("INSERT INTO sensitive_storage_state VALUES (1, ?, ?)").run(codec.version, codec.encrypt("EYEMATE_STORAGE_KEY_OK", "storage:key-check"));
+    database.exec("COMMIT;");
+  } catch (error) { database.exec("ROLLBACK;"); throw error; }
+  database.exec("PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);");
+  rmSync(`${databasePath}.backup-v1`, { force: true });
+  rmSync(backupPath, { force: true });
+  return true;
+}
+
+function assertStorageProtectionAvailable(database: DatabaseSync, codec: SensitiveDataCodec | undefined): void {
+  const table = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sensitive_storage_state'").get();
+  if (table && codec === undefined) {
+    const state = database.prepare("SELECT singleton FROM sensitive_storage_state WHERE singleton = 1").get();
+    if (state) throw new Error("PROTECTED_STORAGE_KEY_REQUIRED");
+  }
+}
+
 function isOnboardingStage(value: string): value is OnboardingStage {
   return ["NOT_STARTED", "INTRO_SEEN", "PRIVACY_SEEN", "CAMERA_DECIDED", "COMPLETE"].includes(value);
 }
@@ -136,10 +198,12 @@ function isOnboardingStage(value: string): value is OnboardingStage {
 export class LocalSqliteStorage implements OnboardingProgressRepository, CameraConsentRepository {
   readonly #database: DatabaseSync;
   readonly #databasePath: string;
+  readonly #codec: SensitiveDataCodec | undefined;
 
-  constructor(database: DatabaseSync, databasePath: string) {
+  constructor(database: DatabaseSync, databasePath: string, codec?: SensitiveDataCodec) {
     this.#database = database;
     this.#databasePath = databasePath;
+    this.#codec = codec;
   }
 
   load(): OnboardingProgress | null {
@@ -186,7 +250,7 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
 
   saveSurveyOnlyReport(snapshot: { readonly reportId: string; readonly status: "COMPLETED" | "INSUFFICIENT_DATA" | "SAFETY_STOP"; readonly action: string; readonly provenanceVersion: string; readonly createdAt: string }): void {
     if (!/^[a-z0-9-]{8,64}$/i.test(snapshot.reportId) || Number.isNaN(Date.parse(snapshot.createdAt))) throw new Error("INVALID_REPORT_SNAPSHOT");
-    this.#database.prepare("INSERT INTO checkup_report_snapshot VALUES (?, ?, 'SURVEY_ONLY', 'NOT_MEASURED', ?, ?, ?)").run(snapshot.reportId, snapshot.status, snapshot.action, snapshot.provenanceVersion, snapshot.createdAt);
+    this.#database.prepare("INSERT INTO checkup_report_snapshot VALUES (?, ?, 'SURVEY_ONLY', 'NOT_MEASURED', ?, ?, ?)").run(snapshot.reportId, snapshot.status, encryptedValue(this.#codec, snapshot.action, `checkup:${snapshot.reportId}:action`), snapshot.provenanceVersion, snapshot.createdAt);
   }
 
   saveSession(session: PersistedSession): void {
@@ -225,33 +289,34 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
 
   saveSessionSummary(summary: PersistedSummary): boolean {
     if (!/^[a-z0-9-]{8,64}$/i.test(summary.summaryId) || !/^[a-z0-9-]{8,64}$/i.test(summary.sessionId) || !Number.isSafeInteger(summary.elapsedActiveMs) || summary.elapsedActiveMs < 0 || Number.isNaN(Date.parse(summary.createdAt))) throw new Error("INVALID_SESSION_SUMMARY");
-    try { this.#database.prepare("INSERT INTO session_summary (summary_id, session_id, status, elapsed_active_ms, created_at, summary_json) VALUES (?, ?, ?, ?, ?, ?)").run(summary.summaryId, summary.sessionId, summary.status, summary.elapsedActiveMs, summary.createdAt, summary.summaryJson ?? null); return true; } catch (error) { if (error instanceof Error && error.message.includes("UNIQUE")) return false; throw error; }
+    const protectedSummary = summary.summaryJson === undefined ? null : encryptedValue(this.#codec, summary.summaryJson, `summary:${summary.summaryId}:json`);
+    try { this.#database.prepare("INSERT INTO session_summary (summary_id, session_id, status, elapsed_active_ms, created_at, summary_json) VALUES (?, ?, ?, ?, ?, ?)").run(summary.summaryId, summary.sessionId, summary.status, summary.elapsedActiveMs, summary.createdAt, protectedSummary); return true; } catch (error) { if (error instanceof Error && error.message.includes("UNIQUE")) return false; throw error; }
   }
 
   listSessionSummaries(): readonly PersistedSummary[] {
-    return this.#database.prepare("SELECT summary_id, session_id, status, elapsed_active_ms, created_at, summary_json FROM session_summary ORDER BY created_at DESC").all().map((row) => { const value = row as Record<string, unknown>; return { summaryId: String(value.summary_id), sessionId: String(value.session_id), status: String(value.status), elapsedActiveMs: Number(value.elapsed_active_ms), createdAt: String(value.created_at), summaryJson: value.summary_json === null ? undefined : String(value.summary_json) }; });
+    return this.#database.prepare("SELECT summary_id, session_id, status, elapsed_active_ms, created_at, summary_json FROM session_summary ORDER BY created_at DESC").all().map((row) => { const value = row as Record<string, unknown>; const summaryId = String(value.summary_id); return { summaryId, sessionId: String(value.session_id), status: String(value.status), elapsedActiveMs: Number(value.elapsed_active_ms), createdAt: String(value.created_at), summaryJson: value.summary_json === null ? undefined : decryptedValue(this.#codec, String(value.summary_json), `summary:${summaryId}:json`) }; });
   }
 
   saveM3Record(record: M3StoredRecord): boolean {
     if (!/^[a-z0-9-]{4,100}$/i.test(record.id) || !["SOURCE", "BASELINE", "PATTERN", "DAILY", "WEEKLY", "REPORT"].includes(record.kind) || Number.isNaN(Date.parse(record.createdAt)) || record.payloadJson.length === 0 || record.payloadJson.length > 100_000) throw new Error("INVALID_M3_RECORD");
     try { JSON.parse(record.payloadJson); } catch { throw new Error("INVALID_M3_RECORD"); }
-    const result = this.#database.prepare("INSERT OR IGNORE INTO m3_record VALUES (?, ?, ?, ?)").run(record.id, record.kind, record.createdAt, record.payloadJson);
+    const result = this.#database.prepare("INSERT OR IGNORE INTO m3_record VALUES (?, ?, ?, ?)").run(record.id, record.kind, record.createdAt, encryptedValue(this.#codec, record.payloadJson, `m3:${record.id}:payload`));
     return Number(result.changes) === 1;
   }
 
   listM3Records(kind: M3StoredRecord["kind"]): readonly M3StoredRecord[] {
-    return this.#database.prepare("SELECT record_id, kind, created_at, payload_json FROM m3_record WHERE kind = ? ORDER BY created_at ASC").all(kind).map((row) => { const value = row as Record<string, unknown>; return { id: String(value.record_id), kind: value.kind as M3StoredRecord["kind"], createdAt: String(value.created_at), payloadJson: String(value.payload_json) }; });
+    return this.#database.prepare("SELECT record_id, kind, created_at, payload_json FROM m3_record WHERE kind = ? ORDER BY created_at ASC").all(kind).map((row) => { const value = row as Record<string, unknown>; const id = String(value.record_id); return { id, kind: value.kind as M3StoredRecord["kind"], createdAt: String(value.created_at), payloadJson: decryptedValue(this.#codec, String(value.payload_json), `m3:${id}:payload`) }; });
   }
 
   loadUserPreferences(): UserPreferences {
     const row = this.#database.prepare("SELECT value_json FROM app_preferences WHERE singleton = 1").get() as { value_json: string } | undefined;
     if (row === undefined) return DEFAULT_USER_PREFERENCES;
-    try { return validateUserPreferences(JSON.parse(row.value_json) as UserPreferences); } catch { throw new Error("INVALID_USER_PREFERENCES_RECORD"); }
+    try { return validateUserPreferences(JSON.parse(decryptedValue(this.#codec, row.value_json, "preferences:singleton:value")) as UserPreferences); } catch { throw new Error("INVALID_USER_PREFERENCES_RECORD"); }
   }
 
   saveUserPreferences(preferences: UserPreferences): UserPreferences {
     const validated = validateUserPreferences(preferences);
-    this.#database.prepare("INSERT INTO app_preferences VALUES (1, ?, ?) ON CONFLICT(singleton) DO UPDATE SET value_json=excluded.value_json, updated_at=excluded.updated_at").run(JSON.stringify(validated), new Date().toISOString());
+    this.#database.prepare("INSERT INTO app_preferences VALUES (1, ?, ?) ON CONFLICT(singleton) DO UPDATE SET value_json=excluded.value_json, updated_at=excluded.updated_at").run(encryptedValue(this.#codec, JSON.stringify(validated), "preferences:singleton:value"), new Date().toISOString());
     return validated;
   }
 
@@ -298,13 +363,14 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
     this.#database.exec("BEGIN IMMEDIATE; DELETE FROM app_preferences; DELETE FROM m3_record; DELETE FROM session_summary; DELETE FROM companion_nudge; DELETE FROM work_session; DELETE FROM checkup_report_snapshot; DELETE FROM camera_consent; DELETE FROM onboarding_progress; COMMIT;");
     this.#database.exec("PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);");
     rmSync(`${this.#databasePath}.backup-v1`, { force: true });
+    rmSync(`${this.#databasePath}.backup-encrypted`, { force: true });
     return "DELETED";
   }
 
   listSurveyOnlyReports(): readonly { readonly status: string; readonly action: string; readonly createdAt: string }[] {
-    return this.#database.prepare("SELECT status, action, created_at FROM checkup_report_snapshot ORDER BY created_at DESC").all().map((row) => {
-      const value = row as { status: string; action: string; created_at: string };
-      return { status: value.status, action: value.action, createdAt: value.created_at };
+    return this.#database.prepare("SELECT report_id, status, action, created_at FROM checkup_report_snapshot ORDER BY created_at DESC").all().map((row) => {
+      const value = row as { report_id: string; status: string; action: string; created_at: string };
+      return { status: value.status, action: decryptedValue(this.#codec, value.action, `checkup:${value.report_id}:action`), createdAt: value.created_at };
     });
   }
 
@@ -398,13 +464,16 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
       createV9Schema(database);
       createV10Schema(database);
       database.exec(`PRAGMA user_version = ${STORAGE_SCHEMA_VERSION}; COMMIT;`);
+      if (options.sensitiveDataCodec) migrateSensitivePayloads(database, safePath, options.sensitiveDataCodec, options.forceEncryptionMigrationFailure === true);
       assertIntegrity(database);
-      return { state: "READY", storage: new LocalSqliteStorage(database, safePath), migrated: false };
+      return { state: "READY", storage: new LocalSqliteStorage(database, safePath, options.sensitiveDataCodec), migrated: false };
     }
 
     if (version === STORAGE_SCHEMA_VERSION) {
+      assertStorageProtectionAvailable(database, options.sensitiveDataCodec);
+      const encryptionMigrated = options.sensitiveDataCodec ? migrateSensitivePayloads(database, safePath, options.sensitiveDataCodec, options.forceEncryptionMigrationFailure === true) : false;
       assertIntegrity(database);
-      return { state: "READY", storage: new LocalSqliteStorage(database, safePath), migrated: false };
+      return { state: "READY", storage: new LocalSqliteStorage(database, safePath, options.sensitiveDataCodec), migrated: encryptionMigrated };
     }
 
     if (version < 1 || version > 9) throw new Error("UNSUPPORTED_SCHEMA_VERSION");
@@ -427,7 +496,8 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
     database.prepare("INSERT INTO migration_record VALUES (?, ?, ?, ?, ?)").run(
       `m1-v${version}-to-v${STORAGE_SCHEMA_VERSION}`, version, STORAGE_SCHEMA_VERSION, "SUCCEEDED", "2026-07-14T00:00:00.000Z"
     );
-    return { state: "READY", storage: new LocalSqliteStorage(database, safePath), migrated: true };
+    if (options.sensitiveDataCodec) migrateSensitivePayloads(database, safePath, options.sensitiveDataCodec, options.forceEncryptionMigrationFailure === true);
+    return { state: "READY", storage: new LocalSqliteStorage(database, safePath, options.sensitiveDataCodec), migrated: true };
   } catch (error) {
     try {
       database?.exec("ROLLBACK;");
@@ -435,6 +505,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
       // Không có transaction đang hoạt động.
     }
     database?.close();
+    backupCreated ||= existsSync(`${safePath}.backup-encrypted`);
     return {
       state: RECOVERY_REQUIRED,
       failureCode: error instanceof Error ? error.message : "STORAGE_OPEN_FAILED",

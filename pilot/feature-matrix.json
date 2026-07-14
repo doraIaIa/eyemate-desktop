@@ -6,7 +6,7 @@
     { "id": "survey-only-checkup", "state": "ENABLED", "gateClass": "AUTOMATED", "reason": "Local Electron acceptance passes with synthetic, non-clinical content." },
     { "id": "timer-only-companion", "state": "ENABLED", "gateClass": "AUTOMATED", "reason": "Session, recovery, nudge and deletion acceptance pass without camera." },
     { "id": "personal-intelligence-local", "state": "ENABLED", "gateClass": "AUTOMATED", "reason": "Aggregate-only reports, preview, export and deletion pass locally." },
-    { "id": "sensitive-persistence", "state": "DISABLED", "gateClass": "SECURITY_PRIVACY_APPROVAL", "reason": "ADR-005 requires approved authenticated encryption and key lifecycle; current SQLite persistence is plaintext." },
+    { "id": "sensitive-persistence", "state": "DISABLED", "gateClass": "SECURITY_PRIVACY_APPROVAL", "reason": "Authenticated sensitive-payload encryption and Windows DPAPI key protection are implemented and executable-tested; Security/Privacy approval is still required by ADR-005." },
     { "id": "camera-lifecycle", "state": "DISABLED", "gateClass": "REAL_DEVICE", "reason": "Guided harness can be automated, but this host run still needs explicit camera action and a real device." },
     { "id": "blink-distance-accuracy", "state": "DISABLED", "gateClass": "GROUND_TRUTH", "reason": "No approved ground-truth protocol, dataset or threshold." },
     { "id": "clinical-osdi-6", "state": "DISABLED", "gateClass": "CLINICAL_APPROVAL", "reason": "No owner-approved questionnaire text, scoring or recommendation catalogue." },

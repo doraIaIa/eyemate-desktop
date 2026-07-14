@@ -2,6 +2,7 @@
 
 ```yaml
 decision_status: confirmed
+implementation_status: proposed_pending_security_privacy_approval
 release_scope: m4
 owner: tech-owner
 review: { security: required, privacy: required, product: required }
@@ -9,11 +10,13 @@ review: { security: required, privacy: required, product: required }
 
 ## Decision
 
-EyeMate does not claim encryption at rest in the current Electron/SQLite build. Until an approved authenticated-encryption implementation has a key lifecycle, migration/recovery and tamper evidence, builds are restricted to **internal synthetic engineering** and cannot be presented as a sensitive-data pilot candidate.
+EyeMate does not claim Security/Privacy approval for encryption at rest. The Electron/SQLite build now protects sensitive payload fields with authenticated encryption and a Windows-protected key, but builds remain restricted to **internal synthetic engineering** until the implementation and evidence are approved.
+
+The gate and fail-closed restriction are **confirmed**. The implementation described below is **proposed** until Security and Privacy owners accept it.
 
 ## Rationale
 
-The current SQLite adapter persists local onboarding, checkup and report data in plaintext. Adding a crypto scheme without an approved Windows key-protection strategy would create a false security claim. SQLCipher and field-level authenticated encryption remain options requiring a security-approved ADR revision and executable migration tests.
+The selected implementation uses Node's maintained AES-256-GCM primitive for sensitive payload fields and Electron `safeStorage` (Windows DPAPI in the target environment) for the random 256-bit master key. Record identity is authenticated as additional data. Metadata needed for SQLite lookup remains visible, so this is explicitly field-level protection rather than full-file SQLCipher.
 
 ## Required gate before sensitive pilot
 
@@ -25,14 +28,14 @@ The current SQLite adapter persists local onboarding, checkup and report data in
 
 ## Consequences
 
-- `SENSITIVE_PILOT = DISABLED`.
+- `SENSITIVE_PILOT = DISABLED_PENDING_SECURITY_PRIVACY_APPROVAL`.
 - Internal unsigned MSIX is for synthetic engineering only.
 - Clinical, signing, real-camera accuracy and dynamic-egress gates remain independent external limitations.
 
 ## Pilot-readiness evaluation (2026-07-14)
 
-- Executable plaintext scan confirms the current SQLite file contains the synthetic canary; encryption is therefore `NOT_IMPLEMENTED`, not `PASS`.
+- Executable plaintext scan confirms synthetic sensitive payload canaries are not present in SQLite, WAL or encrypted migration backup after successful write/migration/delete.
 - The feature matrix validator keeps `sensitive-persistence` fail-closed as `DISABLED`.
 - Existing schema migration, interrupted migration, backup/recovery, idempotent reset and physical-delete tests pass. Physical deletion enables SQLite secure-delete, checkpoints/truncates WAL, vacuums free pages and removes the migration backup.
-- Tamper, wrong-key, missing-key and plaintext-to-encrypted migration cases are not applicable evidence while no approved encryption implementation exists; they remain an external Security/Privacy gate rather than being reported as passing.
+- Tamper, wrong-key, missing-key, restart, atomic key creation, plaintext-to-encrypted migration, interrupted migration, encrypted backup and delete/reset cases have executable coverage. These tests verify implementation behavior; they do not constitute Security/Privacy approval.
 - No real-person or sensitive health data is permitted in the internal beta package under this decision.

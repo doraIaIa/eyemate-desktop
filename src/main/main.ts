@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, session } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, session } from "electron";
 import path from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -22,6 +22,7 @@ import { localDateFor, validateAnalyticsInput, type AnalyticsInput } from "../pe
 import { buildPersonalReport, renderProfessionalSummary, type PersonalReport } from "../personal-intelligence/report-service.js";
 import { writeLocalExport, type LocalExportFormat } from "../platform-electron/local-export.js";
 import type { NudgeResponse } from "../platform-electron/sqlite-storage.js";
+import { loadOrCreateProtectedStorageKey } from "../platform-electron/storage-crypto.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const rendererIndexPath = path.join(currentDirectory, "../renderer/index.html");
@@ -534,7 +535,10 @@ async function runCameraRuntimeTest(window: BrowserWindow): Promise<void> {
 }
 
 app.whenReady().then(async () => {
-  const openedStorage = openLocalSqliteStorage(resolveDatabasePath(app.getPath("userData")));
+  const userDataDirectory = app.getPath("userData");
+  const protectedKey = loadOrCreateProtectedStorageKey({ keyFilePath: path.join(userDataDirectory, "protected-storage-key.json"), protector: safeStorage, allowCreate: true });
+  if (protectedKey.state !== "READY") throw new Error(protectedKey.failureCode);
+  const openedStorage = openLocalSqliteStorage(resolveDatabasePath(userDataDirectory), { sensitiveDataCodec: protectedKey.codec });
   if (openedStorage.state === "READY") { storage = openedStorage.storage; recoverPersistedSession(); }
   configureLocalCameraPermission();
   registerIpcHandlers();
