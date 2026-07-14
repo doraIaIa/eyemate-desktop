@@ -245,9 +245,9 @@ T-M0-003 → T-M0-005 → T-M0-007
 - Do not modify: production Store listing, production signing secret, updater channel.
 - Out of scope: Store submission/publish hoặc auto-update.
 - Tests to add/update: clean install/uninstall, manifest validation, package identity/data path.
-- Verification command: `<canonical> build:<candidate>:msix`, `<canonical> verify:msix`; chưa thể xác minh.
+- Verification command: `npm run test:msix:m0`, `npm run build:msix:tauri:m0`, `npm run build:msix:electron:m0`.
 - Expected evidence: MSIX/checksum/manifest/SBOM, Windows 11 result và Store constraints.
-- Stop condition: cần production secret/publish, manifest vi phạm constraint hoặc clean install phá data invariant.
+- Stop condition: cần production secret/publish, manifest vi phạm constraint, clean install phá data invariant hoặc yêu cầu trust-store/system-policy ngoài test certificate local đã được owner cho phép.
 
 ## T-M0-010 — Performance và reproducibility measurement
 

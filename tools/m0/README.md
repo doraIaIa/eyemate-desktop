@@ -14,6 +14,9 @@ node tools/m0/initialize-run-directory.mjs init <evidence-root> '<metadata-json>
 node tools/m0/run-initializer-fixture-tests.mjs
 node tools/m0/collect-measurement-tool-inventory.mjs collect <evidence-root> artifacts/measurement-tool-inventory.json
 node tools/m0/run-tool-inventory-fixture-tests.mjs
+node tools/m0/run-msix-feasibility-fixture-tests.mjs
+node tools/m0/build-msix-feasibility.mjs build tauri --out .m0/msix --sign
+node tools/m0/build-msix-feasibility.mjs build electron --out .m0/msix --sign
 ```
 
 Validator chỉ đọc JSONL, in reason code tối thiểu và không echo record/input. Fixture là dữ liệu synthetic, không chứa raw frame/video/landmark, dữ liệu sức khỏe, đường dẫn người dùng hay secret.
@@ -37,3 +40,6 @@ Nó không thay scanner sink runtime, scrubber, checksum-manifest generator, net
 `check-tool-output-admission.mjs` quarantines raw capture/dump outputs (`.etl`, `.blg`, `.dmp`, `.mdmp`) before opening them. Only `.json`, `.jsonl` and `.txt` can be considered, and each must pass the existing scanner. Quarantine is not a safety finding or egress conclusion; it prevents raw output from being ingested.
 
 `validate-m0-run-plan.mjs` validates a proposed versioned run plan before evidence collection. It rejects missing/TBD run-critical fields, invalid planned repetitions/slots and missing expected metrics; it does not choose timing, thresholds or a candidate.
+
+
+build-msix-feasibility.mjs tạo MSIX feasibility nội bộ cho Electron/Tauri bằng Windows SDK makeappx và test certificate CurrentUser đã được owner cho phép. Output mặc định nằm dưới .m0/msix và bị ignore; summary JSON đã scrub qua scanner type package-build, chỉ ghi relative package path, byte size, SHA-256, manifest identity/capability và trạng thái tool. Script dùng node:child_process với allowlist makeappx/signtool, shell=false, không network, không Store publish, không production signing attestation và không ghi private key/cert thumbprint. Trạng thái signtool verify có thể là UNTRUSTED_TEST_CERT_OR_POLICY nếu test cert chưa được trust ở CurrentUser; không tự thay đổi trust store/security policy.

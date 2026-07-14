@@ -8,6 +8,9 @@
     "test:electron:m0": "electron candidates/electron/main.mjs --test",
     "test:storage:electron:m0": "node candidates/electron/run-storage-fixture-tests.mjs",
     "test:privacy:m0": "node tools/m0/run-privacy-sink-fixture-tests.mjs",
+    "test:msix:m0": "node tools/m0/run-msix-feasibility-fixture-tests.mjs",
+    "build:msix:tauri:m0": "node tools/m0/build-msix-feasibility.mjs build tauri --out .m0/msix --sign",
+    "build:msix:electron:m0": "node tools/m0/build-msix-feasibility.mjs build electron --out .m0/msix --sign",
     "check:tauri:m0": "cargo check --manifest-path candidates/tauri/src-tauri/Cargo.toml"
   },
   "devDependencies": {
