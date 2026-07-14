@@ -1,10 +1,10 @@
-# Hướng dẫn tác nhân — EyeMate V2 M2
+# Hướng dẫn tác nhân — EyeMate V2
 
 ## Phạm vi và nguồn sự thật
 
 - Repository V2: `F:\eyemate-desktop`.
 - V1: `F:\dry-eye-app` chỉ đọc; không sửa, không commit, không sao chép mù quáng kiến trúc hay hành vi.
-- Milestone hiện hành: **M2 — Work Companion MVP**. Electron là desktop shell đã được chấp nhận tại `ADR-003`; không mở lại Electron/Tauri nếu không có evidence mới nghiêm trọng.
+- M3 đã đạt `ENGINEERING_COMPLETE_WITH_LIMITATIONS`; Electron là desktop shell đã được chấp nhận tại `ADR-003`. Không mở M4 hoặc mở lại Electron/Tauri nếu chưa có objective/evidence mới được phê duyệt.
 - Dùng theo thứ tự: Git thực tế → `PROJECT_STATUS.md` → spec/acceptance/task hiện hành → code/test → `GOVERNANCE.md` → `MASTER_SPEC.md` → ADR accepted.
 - Đọc `docs/` và `specs/` theo feature đang làm; không dùng chat hay V1 làm nguồn sự thật cho behavior V2.
 

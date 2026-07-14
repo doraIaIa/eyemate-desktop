@@ -1,14 +1,14 @@
 # Project Status
 
 Last updated: 2026-07-14
-Current milestone: M2 — Work Companion MVP
-Current batch: M2-A/B foundation
-Current task: T-M2-002 — Companion policy engine
-Task state: IN_PROGRESS — M3 PERSONAL INTELLIGENCE
+Current milestone: M3 — Personal Intelligence, Trends & Reports
+Current batch: M3 exit verification
+Current task: T-M3-006 — Regression, MSIX smoke and M3 exit
+Task state: ENGINEERING_COMPLETE_WITH_LIMITATIONS
 
-Latest verified commit: `b14bf01`
-Task base commit: `d7c8892`
-Working tree: M2 task graph và session-state foundation chờ commit.
+Latest verified commit: `54dc5d5`
+Task base commit: `024bff9`
+Working tree: clean after M3 exit verification.
 
 Completed:
 
@@ -36,19 +36,20 @@ Verification:
 
 M2 exit verification: PASS — `npm run verify:m1`, `npm run acceptance:m2`, and `npm run build:msix:m1`; T-M2-001 through T-M2-006 complete.
 
-M3 batch: canonical aggregate sources, baseline/pattern/VLI, report preview, local Markdown/JSON export, M3 reset/delete and Electron smoke are implemented. `npm run verify:m1`, `npm run acceptance:m2`, `npm run acceptance:m3`, and `npm run build:msix:m1` PASS. M3 exit remains pending full coverage audit.
+M3 exit: `ENGINEERING_COMPLETE_WITH_LIMITATIONS`. Typed M1/M2 aggregate inputs flow through baseline, pattern abstention, VLI, timezone-aware daily/weekly summaries, immutable local report snapshots, Electron report UI, local Markdown/JSON export, reset and category/all-data deletion. Schema v8 migration and derived-record deletion are covered by integration tests.
 
 Remaining:
 
-- T-M2-002 đến T-M2-006 theo `specs/012-m2-work-companion/tasks.md`.
+- Do not open M4 without a new approved objective.
+- Before any pilot/public release, repeat real-camera validation, dynamic egress verification, and resolve encryption/signing/clinical limitations.
 
 Next exact action:
 
-- Commit M2 foundation rồi triển khai companion policy, persistence và timer-only vertical slice.
+- Await a new approved milestone objective.
 
 Next exact command:
 
-- `npm run unit`
+- `git status --short`
 
 Blockers requiring owner:
 
@@ -69,6 +70,15 @@ Important decisions:
 - Dynamic WPR egress là UNKNOWN/DEFERRED_M0_LIMITATION; không chứng minh không egress.
 - M1 ENGINEERING_COMPLETE không đồng nghĩa PUBLIC_READY.
 - M2 dùng Electron timer-only; camera runtime thật vẫn proposed/UNKNOWN.
+
+## M3 Exit Record (2026-07-14)
+
+- Status: `ENGINEERING_COMPLETE_WITH_LIMITATIONS`.
+- Verified: `npm run verify:m1` (39 unit, 10 integration, lint/typecheck/architecture/privacy/Electron M1 smoke), `npm run acceptance:m2`, `npm run acceptance:m3`, and `npm run build:msix:m1` all PASS.
+- M3 evidence: typed source provenance; baseline coverage/reset/stale behavior; abstaining pattern; normalized VLI with separate confidence; timezone-aware daily/weekly aggregation; report snapshot/history; local Markdown/JSON export; category/all deletion; schema-v8 migration test.
+- Safety/privacy: no raw camera frame/video/landmark persistence was added; renderer remains behind typed preload IPC; no cloud, account or telemetry was added.
+- Limitations: real-camera metrics remain UNKNOWN; dynamic WPR egress/auto-update verification remains UNKNOWN due to host policy error `0xc5585011`; encryption-at-rest is TBD; package is unsigned internal MSIX; reports are product-behaviour analytics and not a diagnosis or medical record.
+- V1 source was not modified. Its repository still contains unrelated pre-existing untracked documentation files.
 
 Do not redo:
 
