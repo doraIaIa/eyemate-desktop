@@ -16,26 +16,33 @@ last_reviewed: 2026-07-14
 - Git: repo trống, nhánh `main`, remote `origin` trỏ `https://github.com/doraIaIa/eyemate-desktop.git`.
 - Tại thời điểm lập plan chưa có application source, package manifest, lockfile, CI workflow, test, build/package script hoặc canonical command.
 - Bộ tài liệu thiết kế nguồn: `C:\Users\ADMIN\Downloads\EyeMate_V2_Documentation_Pack\EyeMate_V2_Documentation`.
-- `V1_SOURCE_PATH` trong yêu cầu là placeholder; không tìm thấy source EyeMate V1 trong workspace hiện tại hoặc ở cấp gốc ổ F. Audit V1 chưa thể thực hiện.
+- Source EyeMate V1 đã xác minh tại `F:\dry-eye-app`, Git root cùng đường dẫn, remote `QNSang/dry-eye-app`, branch `main`, commit `77ad32f1b519418d882d2d476f13206644536df9`.
+- V1 worktree trước audit có hai file untracked tồn tại sẵn: `CHAPTER_4_EVIDENCE_REPORT.md` và `PROJECT_DOCUMENTATION.md`; không dùng làm runtime evidence và không sửa.
+- Audit read-only T-M0-001 nằm tại `docs/audits/V1_REPOSITORY_MAP.md`, `V1_EVIDENCE_REGISTER.md` và `V1_M0_GAP_ANALYSIS.md`.
 - Không đổi `AGENTS.template.md` thành `AGENTS.md`; repository map và command thật chưa được xác minh.
 
 ### Command đã chạy và giới hạn
 
 - Đã xác minh: liệt kê file tài liệu, đọc UTF-8, kiểm tra repo Git/remote/status.
 - Chưa thể xác minh: install, lint, typecheck, unit, integration, acceptance, dev, build, MSIX, signing, benchmark và CI reproducibility vì chưa có code/toolchain/workflow.
-- Chưa thể xác minh chi phí migrate V1, camera pipeline V1, model/WASM assets V1, storage V1, dependency và lỗi kế thừa vì chưa có đường dẫn source thật.
+- Đã xác minh tĩnh V1: Electron/Vite/TypeScript entrypoints; getUserMedia lifecycle; MediaPipe/ONNX CDN paths và local model files; Dexie/IndexedDB schema; consent/localStorage; checkup/work-session flow; IPC/overlay/native bridge; package/test/CI gaps và duplicate/empty legacy candidates.
+- Không chạy install, lint, typecheck, test, dev, build, package, migration, network trace hoặc hardware camera. Runtime correctness, Windows 11 behavior, MSIX, performance và leakage instrumentation vẫn UNKNOWN.
 
 ### Spec/plan mismatch cần giữ rõ
 
 - `README.md` nói `plan.md` chỉ tạo sau khi đọc codebase thực tế. Codebase thực tế hiện là repo trống; plan này vì vậy chỉ định discovery/scaffold POC và không khẳng định module/file/command chưa tồn tại.
 - `tasks.md` theo governance thường tạo sau khi plan được duyệt; người dùng yêu cầu tạo trong gói plan hiện tại. Các task là đề xuất, không được bắt đầu trước phê duyệt.
+- V1 docs tuyên bố offline/zero-store, nhưng runtime code mặc định dùng MediaPipe/ONNX WASM CDN và emit raw landmarks. Tài liệu lịch sử V1 không ghi đè runtime evidence hoặc invariant V2.
+- V1 camera/storage/consent/measurement xung đột M0: auto-approve media, quality không gate cứng, missing→zero, uncalibrated numeric distance, raw landmarks/blink history qua event, IndexedDB không backup/recovery và packaging/test/CI thiếu.
+- Dòng blocker “Source V1/path thật” ở cuối plan đã lỗi thời sau audit, nhưng T-M0-001 không được phép sửa phần ngoài Existing system evidence/mismatch; nguồn đúng là ba tài liệu `docs/audits/` và cần được dọn trong change set governance kế tiếp.
 
 ### Phân loại mức độ chắc chắn
 
 | Loại | Nội dung |
 |---|---|
 | Fact đã quan sát | Repo V2 chỉ có tài liệu; không có source/manifest/lockfile/CI/test; remote và nhánh đã xác minh; `AGENTS.md` không tồn tại. |
-| Fact chưa quan sát được | Source V1, entrypoint, preload, camera pipeline, model/WASM path, storage, build/package script, dependency và test V1. Không có phát hiện V1 nào được coi là audit. |
+| Fact V1 đã quan sát | V1 ở `F:\dry-eye-app`; file/symbol/commit nằm trong `docs/audits/`. Electron hiện hữu không đồng nghĩa được chọn cho V2. |
+| Fact chưa quan sát được | Runtime camera/network/leakage, clean build/test/package, Windows 11/MSIX/Store, performance, model accuracy và existing user database. Các mục này giữ UNKNOWN. |
 | Assumption cần kiểm chứng | Windows 11 runner/camera có thể cấp; MSIX candidate có thể dùng test identity/certificate; một runtime local có license phù hợp. Assumption không cho phép chọn công nghệ. |
 | Proposed design | Hai spike cùng workload, shared evidence contract/fixture, RAM-only window, SQLite fixture và CI matrix. Tên module/path vẫn đề xuất. |
 | Open decision | `D-003`, `D-006`, `D-008`, `D-009`, `D-013`, runtime/model/license và việc V1 có tồn tại để migrate hay không. |
