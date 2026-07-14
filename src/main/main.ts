@@ -191,6 +191,8 @@ function registerIpcHandlers(): void {
 
 async function createMainWindow(): Promise<BrowserWindow> {
   const window = new BrowserWindow(createSecureWindowOptions(preloadPath));
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("will-navigate", (event) => event.preventDefault());
   await window.loadFile(rendererIndexPath);
   window.show();
   return window;
