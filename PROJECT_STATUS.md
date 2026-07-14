@@ -2,13 +2,13 @@
 
 Last updated: 2026-07-14
 Current milestone: M1 — Personal Checkup MVP
-Current batch: M1-A foundation
+Current batch: M1 integration batch 3
 Current task: T-M1-010 — Tích hợp report và Privacy Center
 Task state: IN_PROGRESS
 
-Latest verified commit: `c3ee2d7`
-Task base commit: `c3ee2d7`
-Working tree: sạch sau batch implementation thứ hai.
+Latest verified commit: `9bc9f6d`
+Task base commit: `9bc9f6d`
+Working tree: sạch sau integration batch 3.
 
 Completed:
 
@@ -22,6 +22,8 @@ Completed:
 - T-M1-007: Questionnaire synthetic versioned, survey-only report snapshot, missing/partial/cancel/recovery và safety-stop semantics.
 - T-M1-008/009: Camera mock states và distance zone abstention; không có camera runtime/capture thật hay exact centimet.
 - T-M1-010A: Export preview và deletion result typed đã có; chưa tích hợp UI/persistence hoàn chỉnh.
+- Electron bridge/UI: Privacy summary Local Only và survey-only flow chạy qua main/preload/renderer; onboarding Local Only bắt buộc trước checkup.
+- Release-like MSIX nội bộ unsigned build được bằng `npm run build:msix:m1`; không phải signing/Store readiness.
 
 Verification:
 
@@ -31,11 +33,11 @@ Verification:
 
 Remaining:
 
-- T-M1-010 UI report/Privacy Center; T-M1-011 integration acceptance và release-like build.
+- T-M1-010 hoàn tất withdrawal/delete/report history UI; T-M1-011 integration acceptance/restart/recovery và release-like flow.
 
 Next exact action:
 
-- Tích hợp các use case M1 hiện có vào preload/main/renderer; không mở camera thật.
+- Hoàn tất controls Privacy Center và integration acceptance cho report/history/deletion; không mở camera thật.
 
 Next exact command:
 
