@@ -2,48 +2,39 @@
 
 Last updated: 2026-07-14
 Current milestone: M0 — Architecture POC
-Current task: T-M0-003I — Measurement-tool output admission gate
-Task state: DONE
+Current task: T-M0-005 — Tauri camera/local-asset spike
+Task state: BLOCKED
 
 Git verification:
 
-- Latest verified task commit: `5d5a4e6`.
-- Task base commit: `5d5a4e6`.
-- Working tree: expected clean after checkpoint commit.
-- Files currently modified: NONE after checkpoint commit.
+- Latest verified task commit: `b010d16`.
+- Task base commit: `b010d16`.
+- Working tree: uncommitted `candidates/tauri/` is preserved; do not discard or commit it before a successful build.
+- Files currently modified: `candidates/tauri/`.
 - V1 remains read-only at `F:\dry-eye-app`; required baseline commit is `77ad32f1b519418d882d2d476f13206644536df9`.
 
-Completed measurement-readiness tooling:
+Completed M0 evidence:
 
-- Local-only allowlist collector for Node, WPR, Xperf, Logman and Wevtutil.
-- Scrubbed, scanner-checked and atomically written `resource-trace` inventory artifact.
-- Inventory records availability and safely parsed version only; raw command output, executable paths, username and hostname are excluded.
-- Static egress inspection passed for the current repo-local production `tools/m0` source set.
-- Tool-output gate quarantines raw capture/dump extensions before opening them.
-
-Verification already run for T-M0-003E:
-
-- `node tools/m0/run-tool-inventory-fixture-tests.mjs`: 7 PASS, including unsafe path and junction rejection with no outside write.
-- Egress and auto-update remain `NOT_EVALUATED_OFFLINE_ONLY`; this task does not open network or camera.
-- Full M0 regression suite and `git diff --check` passed before commit `d98f4f9`.
+- Evidence pipeline and measurement tooling have fixture coverage.
+- Electron `v37.10.3` camera-off candidate: local asset, explicit-consent/unavailable state and clean shutdown passed at `b010d16`.
+- Rust stable user-level: `rustc/cargo 1.97.0` via rustup; no system-wide tool was installed.
 
 Deferred M0 limitation:
 
-- Dynamic WPR egress/auto-update verification is `UNKNOWN / DEFERRED_M0_LIMITATION` because `wpr -start Network -filemode` failed with `0xc5585011`; WPR remained `not recording`, no ETL was created and no elevation/policy/system-setting change or retry is permitted.
-- This dynamic verification must be rerun before an external pilot/public release, or when the final measurement stack requires WPR.
+- Dynamic WPR egress/auto-update is `UNKNOWN / DEFERRED_M0_LIMITATION` after `wpr -start Network -filemode` failed `0xc5585011`; no elevation, policy change or retry is allowed.
 
-Still remaining in M0:
+Blocker requiring owner:
 
-- Continue only local/offline M0 tasks whose dependencies are ready; dynamic WPR egress verification remains an explicit M0 conclusion limitation.
+- Tauri `cargo check` cannot find MSVC linker `link.exe`. Visual C++ Build Tools/Windows SDK installation is not authorized.
 
 Next exact action:
 
-- Select the next local/offline candidate or measurement task that does not require a desktop-shell decision, camera, toolchain install or administrator permission.
+- Decide whether to authorize MSVC Build Tools/Windows SDK, or retain Tauri as environment-blocked without selecting a shell.
 
 Next exact command:
 
-- `node tools/m0/run-static-egress-inspection-fixture-tests.mjs`.
+- `cargo check --manifest-path candidates/tauri/src-tauri/Cargo.toml`.
 
 Known limit:
 
-- File-symlink integration in the manifest suite remains `SKIP (EPERM)` and must be rerun before an official benchmark.
+- Manifest file-symlink integration is `SKIP (EPERM)` and must rerun before an official benchmark.
