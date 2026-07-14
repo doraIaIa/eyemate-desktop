@@ -67,6 +67,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle("onboarding:complete-without-camera", (): void => completeOnboardingWithoutCamera());
   ipcMain.handle("privacy:withdraw-camera-consent", (): void => withdrawCameraConsent());
   ipcMain.handle("privacy:delete-all-local-data", (): "DELETED" | "PARTIALLY_DELETED" | "FAILED" => storage?.deleteAllLocalData() ?? "FAILED");
+  ipcMain.handle("reports:list-survey-only", () => storage?.listSurveyOnlyReports() ?? []);
 }
 
 async function createMainWindow(): Promise<BrowserWindow> {

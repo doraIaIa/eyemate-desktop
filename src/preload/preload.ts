@@ -31,6 +31,11 @@ const eyeMateApi: EyeMatePreloadApi = {
     const result: unknown = await ipcRenderer.invoke("privacy:delete-all-local-data");
     if (result !== "DELETED" && result !== "PARTIALLY_DELETED" && result !== "FAILED") throw new Error("PRELOAD_DELETE_RESULT_INVALID");
     return result;
+  },
+  async listSurveyOnlyReports() {
+    const result: unknown = await ipcRenderer.invoke("reports:list-survey-only");
+    if (!Array.isArray(result) || !result.every((value) => typeof value === "object" && value !== null)) throw new Error("PRELOAD_REPORT_LIST_INVALID");
+    return result as readonly { readonly status: string; readonly action: string; readonly createdAt: string }[];
   }
 };
 

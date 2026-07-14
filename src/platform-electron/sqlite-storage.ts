@@ -139,6 +139,13 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
     return "DELETED";
   }
 
+  listSurveyOnlyReports(): readonly { readonly status: string; readonly action: string; readonly createdAt: string }[] {
+    return this.#database.prepare("SELECT status, action, created_at FROM checkup_report_snapshot ORDER BY created_at DESC").all().map((row) => {
+      const value = row as { status: string; action: string; created_at: string };
+      return { status: value.status, action: value.action, createdAt: value.created_at };
+    });
+  }
+
   close(): void {
     this.#database.close();
   }

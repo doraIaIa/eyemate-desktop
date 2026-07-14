@@ -22,6 +22,7 @@ test("SQLite local tạo dữ liệu onboarding ngoài installation directory", 
     result.storage.save({ stage: "PRIVACY_SEEN", updatedAt: "2026-07-14T00:00:00.000Z" });
     result.storage.saveCameraConsent({ purpose: "CAMERA_MEASUREMENT", scope: "LOCAL_CAMERA", textVersion: "m1-camera-1", decision: "SKIPPED", decidedAt: "2026-07-14T00:00:00.000Z" });
     result.storage.saveSurveyOnlyReport({ reportId: "survey-only-0001", status: "COMPLETED", action: "REVIEW_YOUR_RESPONSES", provenanceVersion: "m1-report-0.1.0", createdAt: "2026-07-14T00:00:00.000Z" });
+    assert.equal(result.storage.listSurveyOnlyReports().length, 1);
     assert.deepEqual(result.storage.load(), { stage: "PRIVACY_SEEN", updatedAt: "2026-07-14T00:00:00.000Z" });
     assert.equal(result.storage.loadCameraConsent()?.decision, "SKIPPED");
     result.storage.close();

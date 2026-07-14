@@ -8,4 +8,5 @@ export interface EyeMatePreloadApi {
   completeOnboardingWithoutCamera(): Promise<void>;
   withdrawCameraConsent(): Promise<void>;
   deleteAllLocalData(): Promise<"DELETED" | "PARTIALLY_DELETED" | "FAILED">;
+  listSurveyOnlyReports(): Promise<readonly { readonly status: string; readonly action: string; readonly createdAt: string }[]>;
 }

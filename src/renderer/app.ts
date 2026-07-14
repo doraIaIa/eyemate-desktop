@@ -13,6 +13,7 @@ const onboardingButton = document.querySelector<HTMLButtonElement>("#complete-on
 const onboardingStatusElement = document.querySelector<HTMLParagraphElement>("#onboarding-status");
 const withdrawCameraButton = document.querySelector<HTMLButtonElement>("#withdraw-camera");
 const deleteLocalDataButton = document.querySelector<HTMLButtonElement>("#delete-local-data");
+const reportHistoryElement = document.querySelector<HTMLParagraphElement>("#report-history");
 
 async function renderRuntimeStatus(): Promise<void> {
   if (statusElement === null) {
@@ -39,12 +40,19 @@ async function renderPrivacySummary(): Promise<void> {
   }
 }
 
+async function renderReportHistory(): Promise<void> {
+  if (reportHistoryElement === null) return;
+  const reports = await window.eyeMate.listSurveyOnlyReports();
+  reportHistoryElement.textContent = reports.length === 0 ? "Chưa có báo cáo cục bộ." : `Có ${reports.length} báo cáo survey-only cục bộ.`;
+}
+
 function renderScreen(screenId: ScreenId): void {
   const screen = getScreen(screenId);
   if (pageTitleElement !== null) pageTitleElement.textContent = screen.title;
   if (pageBodyElement !== null) pageBodyElement.textContent = screen.body;
   if (pageStateElement !== null) pageStateElement.textContent = `Trạng thái: ${screen.state.replaceAll("_", " ")}`;
   if (screen.id === "privacy") void renderPrivacySummary();
+  if (screen.id === "reports") void renderReportHistory();
 
   for (const navigationButton of Array.from(document.querySelectorAll<HTMLButtonElement>("[data-screen]"))) {
     const selected = navigationButton.dataset.screen === screen.id;
