@@ -2,13 +2,13 @@
 
 Last updated: 2026-07-14
 Current milestone: M0 — Architecture POC
-Current task: T-M0-010 — Performance và reproducibility measurement
-Task state: DONE (camera-off local benchmark; not production performance budget)
+Current task: T-M0-011 — Decision matrix và ADR review
+Task state: DONE (ADR-003 accepted Electron for M1 shell; ADR-004 remains proposed)
 
 Git verification:
 
 - Latest verified task commit before this batch: `5679369`.
-- Working tree: T-M0-010 source/docs/status pending commit.
+- Working tree: T-M0-011 ADR/status pending commit.
 - V1 remains read-only at `F:\dry-eye-app`; required baseline commit is `77ad32f1b519418d882d2d476f13206644536df9`.
 
 Completed M0 evidence:
@@ -20,6 +20,7 @@ Completed M0 evidence:
 - Tauri SQLite fixture synthetic: clean install, N-1 backup/transaction/integrity and forced recovery passed.
 - Privacy sink gate fixtures passed for SQLite/log/crash/telemetry/temp synthetic outputs.
 - Static source inspection for `tools/m0` passed for current source set.
+- T-M0-011 ADR review: ADR-003 accepted Electron as the M1 desktop shell based on M0 evidence; ADR-004 remains proposed because real camera/runtime/model asset evidence is still missing.
 - T-M0-010 camera-off local performance/reproducibility report passed scanner type `resource-trace`:
   - Electron elapsed ms `3729/3593/3609`, peak working set `327729152` bytes, max process-tree count `4`, CPU delta observed `0`, normalized payload deterministic `true`, raw MSIX deterministic `false` due `MSIX_CONTAINER_OR_BLOCKMAP_METADATA`.
   - Tauri elapsed ms `4276/3991/3888`, peak working set `367284224` bytes, max process-tree count `8`, CPU delta observed `0`, normalized payload deterministic `true`, raw MSIX deterministic `false` due `MSIX_CONTAINER_OR_BLOCKMAP_METADATA`.
@@ -57,4 +58,4 @@ Known limits:
 
 Next M0 action:
 
-- T-M0-011 — Decision matrix và ADR review using the existing M0 evidence; dynamic WPR egress remains deferred/unknown.
+- T-M0-012 — Cleanup, archive và M0 exit record; dynamic WPR egress remains deferred/unknown.

@@ -1,97 +1,77 @@
 # ADR-003 — Desktop shell selection
 
-- Status: proposed
-- Decision status: tbd
+- Status: accepted
+- Decision status: accepted
 - Date: 2026-07-14
+- Accepted in: M0 / T-M0-011
 - Owner: tech-lead
 - Related requirements: `FR-M0-001`, `NFR-M0-001`, `NFR-M0-002`, `REL-M0-001`, `REL-M0-002`, `REL-M0-003`, `VAL-M0-001`, `AC-M0-011`, `AC-M0-012`, `AC-M0-013`
 - Supersedes: none
 
-## Context
-
-EyeMate V2 cần desktop shell Windows local-first có camera ổn định, local model/WASM assets, SQLite/recovery, MSIX/CI và khả năng đo tài nguyên. `ADR-001` đã xác nhận modular monolith + ports/adapters; shell phải là adapter boundary, không chi phối Domain Core. Source V1 chưa được cung cấp nên chi phí migration và compatibility chưa có bằng chứng.
-
-## Decision status
-
-- `confirmed`: workload so sánh phải giữ domain/shell boundary của ADR-001 và raw sensor RAM-only.
-- `proposed`: đánh giá Electron và Tauri bằng hai spike tương đương trong M0.
-- `tbd`: lựa chọn shell, trọng số decision matrix, device profiles/performance budget và V1 migration cost.
-
-## Decision drivers
-
-- Camera permission, start/stop, denied/busy/disconnected/device-change và runtime stability.
-- Core asset local/offline, không CDN fallback hoặc network ẩn.
-- SQLite binding, migration/backup/recovery và data path Windows.
-- MSIX/CI reproducibility, signing/update feasibility và supply-chain footprint.
-- Cold/warm startup, idle/active RAM, CPU camera session, p50/p95 processing, runtime error và artifact size.
-- Accessibility/keyboard/focus và overlay/native OS need nếu được chứng minh cần.
-- Chi phí migrate V1 dựa trên audit thật.
-- Team maintainability dựa trên code/CI evidence, không framework familiarity đơn thuần.
-- Windows 11 và Microsoft Store: package identity, capability declaration, restricted APIs, WebView/runtime dependency, signing channel và data migration behavior.
-- Debugging trên release-like build: khả năng tái hiện runtime crash/error, source map/symbol và diagnostics đã scrub.
-- Maintenance/migration effort: toolchain, security update cadence, candidate-specific code, V1 reuse theo file/module thật và effort có assumption range.
-
-## Options considered
-
-### Option A — Electron
-
-- Ưu điểm cần kiểm chứng: Chromium/runtime đồng nhất; hệ sinh thái web/camera và khả năng tái sử dụng V1 có thể cao nếu V1 là web-based.
-- Nhược điểm cần đo: runtime/artifact/RAM footprint; native packaging/update/signing complexity; Node boundary và dependency surface.
-- Rủi ro: dev-server/CDN path che giấu offline failure; IPC/preload làm rò dữ liệu nếu boundary sai.
-- Bằng chứng/POC: `tbd` qua `AC-M0-001`–`AC-M0-015`.
-
-### Option B — Tauri
-
-- Ưu điểm cần kiểm chứng: artifact/runtime footprint có thể thấp hơn; Rust command boundary có thể hỗ trợ native/storage control.
-- Nhược điểm cần đo: WebView2/camera variability; bridge/runtime/model integration; Rust + frontend build/CI complexity.
-- Rủi ro: khác biệt WebView2 theo máy; plugin/native binding chưa đáp ứng camera/model/MSIX/recovery.
-- Bằng chứng/POC: `tbd` qua cùng acceptance và workload Option A.
-
-### Option C — Trì hoãn lựa chọn
-
-- Ưu điểm: tránh quyết định khi gate hoặc V1 audit thiếu.
-- Nhược điểm: chặn repository scaffold production sau M0.
-- Dùng khi: cả hai candidate thiếu evidence, không đạt privacy/recovery/package gate hoặc số đo không so sánh được.
-
 ## Decision
 
-Chưa chọn Electron hoặc Tauri. M0 PHẢI chạy decision matrix có evidence link, raw measurement và cùng workload. Candidate vi phạm `PRIV-M0-001`, không build MSIX trong CI, không chạy offline local assets hoặc chạy DB nửa migrated bị loại bất kể điểm performance.
+Use **Electron** as the EyeMate V2 desktop shell for the next implementation phase.
 
-## Decision matrix bắt buộc
+This is an M0 architecture decision for the desktop shell boundary, not a production release approval and not a clinical/camera-runtime decision. ADR-004 still controls the camera runtime/local asset topology and remains proposed until real camera/runtime asset evidence exists.
 
-| Tiêu chí | Evidence tối thiểu |
-|---|---|
-| Tái sử dụng/migration V1 | File/module/config V1 cụ thể, phần reuse/rewrite và effort range; nếu thiếu source thì `NOT_EVALUATED` |
-| Camera/getUserMedia | Denied/busy/disconnect/device-change/start-stop pass rate và runtime errors |
-| MediaPipe/ONNX/WASM local | Package path, checksum/license, offline và corrupt-asset result |
-| Windows 11/MSIX/Store | Device/runtime profile, manifest capability/restricted API/identity/signing constraint |
-| Package/startup/resource | Installer size, cold/warm startup, idle RAM, active CPU/RAM, p50/p95 latency |
-| Accessibility/native/overlay | Keyboard/focus evidence, native API gap; overlay chỉ chấm nếu requirement được xác nhận |
-| Update/migration/signing | N-1/recovery fixture, channel/identity, test-signing và secret boundary |
-| CI reproducibility | Hai clean build, lockfile/toolchain, checksum/nondeterminism report |
-| Debugging | Release-like error reproduction, source-map/symbol feasibility, scrubbed diagnostics |
-| Maintenance risk | Toolchain/dependency owners, update path, candidate-specific surface và removal path |
+## Scope of acceptance
 
-Mỗi hàng dùng trạng thái `PASS`, `FAIL`, `NOT_EVALUATED` hoặc `NOT_APPLICABLE` kèm rationale; không dùng điểm số khi evidence thiếu.
+`confirmed`:
 
-## Evidence gate trước khi đổi sang accepted
+- Electron and Tauri were both implemented as minimal camera-off candidates using the same shared local asset/state fixture.
+- Both candidates passed synthetic state, migration/recovery, privacy sink, static egress, MSIX feasibility and camera-off benchmark gates.
+- Electron is selected because it has lower observed camera-off startup/peak working-set evidence in the latest M0 run, lower migration risk from V1's Electron baseline, and no observed WebView2 teardown diagnostic in the current smoke path.
+- Tauri remains technically viable and has a much smaller MSIX payload, but it carries Rust/MSVC toolchain complexity and the current M0 smoke path still has a WebView2 teardown diagnostic limitation.
 
-- `AC-M0-001`–`AC-M0-021` có result cho cả hai candidate hoặc exception được owner phê duyệt.
-- Device profile, sampling protocol và trọng số được khóa trước benchmark.
-- V1 audit có path/commit hoặc ghi chính thức “không migrate V1” bởi owner.
-- Privacy/security/release review chấp thuận evidence.
-- Command canonical và commit/artifact checksum được ghi.
-- Microsoft Store constraints được review mà không publish; debugging và maintenance evidence có owner.
+`proposed`:
+
+- M1 should keep shell-specific code behind ports/adapters and avoid importing Electron into Domain Core.
+- Tauri candidate should be archived, not maintained as a parallel production shell, unless a revisit criterion below is triggered.
+
+`tbd / limitation`:
+
+- Real camera permission/start/stop, busy, low-quality, device-change and active-disconnect behavior has not been benchmarked in this ADR.
+- Dynamic WPR egress/auto-update remains `UNKNOWN / DEFERRED_M0_LIMITATION` due host policy error `0xc5585011`.
+- Signed MSIX trust/install/uninstall remains `NOT_RUN`; test certificate signing passed, but trust-store/security policy was not changed.
+- CPU delta in camera-off synthetic benchmark was observed as `0`; this is not a production performance budget.
+- Raw MSIX package hash is not deterministic; normalized payload hash is deterministic and nondeterminism is scoped to MSIX container/block-map metadata.
+
+## Decision matrix
+
+| Criterion | Electron | Tauri | Decision impact |
+| --- | --- | --- | --- |
+| Shared camera-off/local asset state | `PASS`: `npm run test:state:m0`, `npm run test:electron:m0` | `PASS`: Tauri smoke/test mode with shared asset | Tie; both can host the minimal M0 UI/state. |
+| V1 migration/reuse | `PASS/PARTIAL`: V1 is Electron/Vite/TypeScript at commit `77ad32f1...`; reuse still requires contract rewrite | `NOT_EVALUATED`: no V1 Tauri baseline | Favors Electron for M1 delivery risk, without treating V1 behavior as source of truth. |
+| SQLite migration/recovery | `PASS`: `npm run test:storage:electron:m0` | `PASS`: `cargo test ... m0_storage` | Tie; both passed synthetic clean/N-1/failure fixtures. |
+| Privacy sink/static egress | `PASS`: privacy sink fixtures and static `tools/m0` inspection passed | `PASS`: same shared tooling gates passed | Tie; no raw frame/video/landmark persistence evidence in synthetic sinks. |
+| MSIX feasibility | `PASS_WITH_LIMIT`: signed internal MSIX built, size `138364591` bytes; trust verify `UNTRUSTED_TEST_CERT_OR_POLICY` | `PASS_WITH_LIMIT`: signed internal MSIX built, size `3695279` bytes; trust verify `UNTRUSTED_TEST_CERT_OR_POLICY` | Strongly favors Tauri on package size, but both satisfy M0 package feasibility. |
+| Package reproducibility | `PASS_WITH_LIMIT`: normalized payload deterministic; raw MSIX nondeterministic due container/block-map metadata | `PASS_WITH_LIMIT`: normalized payload deterministic; raw MSIX nondeterministic due container/block-map metadata | Tie; both need release pipeline handling for raw package nondeterminism. |
+| Camera-off startup/RAM evidence | `PASS`: elapsed ms `3729/3593/3609`, peak working set `327729152` bytes | `PASS`: elapsed ms `4276/3991/3888`, peak working set `367284224` bytes | Favors Electron in current DP-DEV camera-off run. |
+| Runtime diagnostics | `PASS`: no current smoke diagnostic captured in M0 Electron path | `LIMIT`: WebView2 teardown diagnostic `Chrome_WidgetWin_0` / `1412` observed earlier despite exit `0` | Favors Electron until Tauri diagnostic is explained or eliminated. |
+| Toolchain/maintenance | `PASS_WITH_LIMIT`: npm/Electron dependency footprint and larger runtime | `PASS_WITH_LIMIT`: Rust/MSVC/Windows SDK requirements and Tauri/WebView2 variance | Slightly favors Electron for near-term M1 velocity; Tauri remains better on artifact footprint. |
+| Store/publish readiness | `NOT_EVALUATED`: no Store submission, install/uninstall or production signing | `NOT_EVALUATED`: same | No candidate receives production release approval from M0. |
+
+## Evidence used
+
+- `a0f6d26` — T-M0-009 MSIX feasibility tooling.
+- `4442393` — T-M0-010 camera-off performance/reproducibility benchmark.
+- `PROJECT_STATUS.md` — current package hashes, benchmark summary and known limitations.
+- `tools/m0/README.md` — canonical commands for MSIX and benchmark harness.
+- `docs/audits/` — V1 read-only audit and migration risk baseline.
 
 ## Consequences
 
-- Positive: lựa chọn có thể audit, giảm rewrite theo sở thích.
-- Negative: tốn hai spike ngắn và Windows CI capacity.
-- Follow-up: sau khi accepted, scaffold production chỉ dùng candidate thắng; candidate còn lại được archive, không duy trì hai implementation song song.
+- M1 desktop foundation should build around Electron as the shell adapter.
+- Domain Core, data contracts, privacy gates and camera/runtime ports must remain shell-independent.
+- Tauri code remains useful archived evidence and can be removed or frozen during cleanup; it should not become a second production implementation without a new ADR.
+- Electron package size/runtime footprint becomes an explicit M1 engineering risk, not a reason to keep dual-shell development alive.
 
 ## Revisit criteria
 
-- Camera/runtime hoặc Windows packaging thay đổi làm acceptance quan trọng không còn đạt.
-- Requirement native/overlay/accessibility mới đã được xác nhận và candidate đã chọn không đáp ứng.
-- Dữ liệu production-like cho thấy performance/reliability vượt budget đã duyệt.
-- Không xem lại chỉ vì framework mới phổ biến hơn.
+Reopen this ADR if one of these occurs:
+
+- Electron fails real camera lifecycle, local asset, privacy sink or MSIX install gates that Tauri passes under the same workload.
+- Tauri's WebView2 diagnostic is resolved and Tauri materially outperforms Electron on real camera workload while preserving privacy/release gates.
+- Store/signing constraints reject Electron packaging but allow Tauri under the same policy.
+- M1 discovers V1 migration reuse is negligible or harmful, removing Electron's migration advantage.
+- A safety/privacy boundary conflict appears in Electron-specific IPC, preload, logging or crash behavior.

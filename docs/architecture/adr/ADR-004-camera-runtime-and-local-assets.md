@@ -121,3 +121,9 @@ Không có cạnh từ raw capture tới file, DB, logger, telemetry hoặc netw
 - Camera stability/performance không đạt budget đã duyệt trên device profile.
 - Shell/platform update phá local asset path, worker/native bridge hoặc resource cleanup.
 - Không xem lại để thêm ML thích ứng/cloud khi chưa có requirement, consent và validation.
+
+## M0 review result
+
+ADR-004 remains `proposed`. M0 selected Electron as desktop shell in ADR-003, but did not yet choose the camera runtime/model topology. The current evidence is camera-off/denied-state, storage, privacy sink, package and benchmark evidence only; it does not prove real camera permission/start/stop, busy, low-quality, device-change, active-disconnect, model/WASM asset checksum/license or frame-processing p50/p95 behavior.
+
+For M1, implement the camera/runtime work behind the ADR-004 port contract in the Electron shell. Do not persist/log/evidence raw frame, video, landmark, pixel buffer or exact per-frame series. Do not use CDN fallback for required runtime/model assets.
