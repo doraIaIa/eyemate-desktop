@@ -4,7 +4,7 @@
 
 - [x] `T-M1-001` Electron + TypeScript scaffold; secure BrowserWindow, preload API hẹp, offline local assets.
 - [x] `T-M1-002` Canonical lint/typecheck/unit/integration/acceptance/build và architecture boundary checks.
-- [ ] `T-M1-003` App shell/navigation và renderer state smoke.
+- [x] `T-M1-003` App shell/navigation và renderer state smoke.
 
 ## M1-B đến M1-K
 
