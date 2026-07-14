@@ -51,6 +51,7 @@ const eyeMateApi: EyeMatePreloadApi = {
   ,async previewProfessionalSummary() { const result: unknown = await ipcRenderer.invoke("m3:preview-professional-summary"); if (typeof result !== "string") throw new Error("PRELOAD_M3_PREVIEW_INVALID"); return result; }
   ,async resetM3Baseline() { const result: unknown = await ipcRenderer.invoke("m3:reset-baseline"); if (result !== "DELETED") throw new Error("PRELOAD_M3_RESET_INVALID"); return result; }
   ,async deleteM3Data() { const result: unknown = await ipcRenderer.invoke("m3:delete-data"); if (result !== "DELETED") throw new Error("PRELOAD_M3_DELETE_INVALID"); return result; }
+  ,async exportM3Report(destination, format) { const result: unknown = await ipcRenderer.invoke("m3:export", destination, format); if (typeof result !== "object" || result === null) throw new Error("PRELOAD_M3_EXPORT_INVALID"); return result as import("../shared/preload-contract.js").LocalExportResult; }
 };
 
 contextBridge.exposeInMainWorld("eyeMate", Object.freeze(eyeMateApi));

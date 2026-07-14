@@ -17,6 +17,7 @@ import { DEFAULT_TIMER_ONLY_CONFIG } from "../work-session/companion-config.js";
 import { fromSurveyOnly, fromWorkSession } from "../personal-intelligence/source-adapter.js";
 import { validateAnalyticsInput, type AnalyticsInput } from "../personal-intelligence/analytics.js";
 import { buildPersonalReport, renderProfessionalSummary, type PersonalReport } from "../personal-intelligence/report-service.js";
+import { writeLocalExport, type LocalExportFormat } from "../platform-electron/local-export.js";
 import type { NudgeResponse } from "../platform-electron/sqlite-storage.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -165,6 +166,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle("m3:preview-professional-summary", () => renderProfessionalSummary(generateM3Report()));
   ipcMain.handle("m3:reset-baseline", () => storage?.deleteM3Records("BASELINE") ?? "DELETED");
   ipcMain.handle("m3:delete-data", () => storage?.deleteM3Records() ?? "DELETED");
+  ipcMain.handle("m3:export", (_event, destination: string, format: LocalExportFormat) => { const report = generateM3Report(); const content = format === "JSON" ? JSON.stringify(report, null, 2) : renderProfessionalSummary(report); return writeLocalExport(destination, content); });
 }
 
 async function createMainWindow(): Promise<BrowserWindow> {
