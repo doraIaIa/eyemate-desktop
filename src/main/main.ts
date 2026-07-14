@@ -20,7 +20,8 @@ import { DEFAULT_TIMER_ONLY_CONFIG } from "../work-session/companion-config.js";
 import { fromSurveyOnly, fromWorkSession } from "../personal-intelligence/source-adapter.js";
 import { localDateFor, validateAnalyticsInput, type AnalyticsInput } from "../personal-intelligence/analytics.js";
 import { buildPersonalReport, renderProfessionalSummary, type PersonalReport } from "../personal-intelligence/report-service.js";
-import { writeLocalExport, type LocalExportFormat } from "../platform-electron/local-export.js";
+import { writeLocalExport, writeLocalPdfExport, type LocalExportFormat } from "../platform-electron/local-export.js";
+import { renderLocalPdf } from "../platform-electron/pdf-export.js";
 import type { NudgeResponse } from "../platform-electron/sqlite-storage.js";
 import { loadOrCreateProtectedStorageKey } from "../platform-electron/storage-crypto.js";
 
@@ -224,7 +225,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle("m3:generate-report", () => generateM3Report());
   ipcMain.handle("m3:list-reports", () => listM3Reports());
   ipcMain.handle("m3:preview-professional-summary", (_event, format: LocalExportFormat = "MARKDOWN") => {
-    if (!["JSON", "MARKDOWN"].includes(format)) throw new Error("INVALID_M3_PREVIEW_FORMAT");
+    if (!["JSON", "MARKDOWN", "PDF"].includes(format)) throw new Error("INVALID_M3_PREVIEW_FORMAT");
     const report = currentM3Report();
     return format === "JSON" ? JSON.stringify(report, null, 2) : renderProfessionalSummary(report);
   });
@@ -234,26 +235,26 @@ function registerIpcHandlers(): void {
     if (!["BASELINE", "PATTERN", "SUMMARY", "REPORT", "ALL"].includes(category)) throw new Error("INVALID_M3_DATA_CATEGORY");
     return storage?.deleteM3Category(category) ?? "DELETED";
   });
-  ipcMain.handle("m3:export", (_event, destination: string, format: LocalExportFormat, includeEvidence: boolean) => {
-    if (typeof destination !== "string" || !["JSON", "MARKDOWN"].includes(format) || typeof includeEvidence !== "boolean") throw new Error("INVALID_M3_EXPORT_REQUEST");
+  ipcMain.handle("m3:export", async (_event, destination: string, format: LocalExportFormat, includeEvidence: boolean) => {
+    if (typeof destination !== "string" || !["JSON", "MARKDOWN", "PDF"].includes(format) || typeof includeEvidence !== "boolean") throw new Error("INVALID_M3_EXPORT_REQUEST");
     const report = currentM3Report();
     const exportReport = includeEvidence ? report : { ...report, evidenceSourceIds: [], missingData: [], limitations: ["EVIDENCE_OMITTED_BY_USER"] };
     const content = format === "JSON" ? JSON.stringify(exportReport, null, 2) : renderProfessionalSummary(exportReport);
-    return writeLocalExport(destination, content);
+    return format === "PDF" ? writeLocalPdfExport(destination, await renderLocalPdf(content)) : writeLocalExport(destination, content);
   });
   ipcMain.handle("m3:export-with-dialog", async (_event, format: LocalExportFormat, includeEvidence: boolean) => {
-    if (!["JSON", "MARKDOWN"].includes(format) || typeof includeEvidence !== "boolean") throw new Error("INVALID_M3_EXPORT_REQUEST");
+    if (!["JSON", "MARKDOWN", "PDF"].includes(format) || typeof includeEvidence !== "boolean") throw new Error("INVALID_M3_EXPORT_REQUEST");
     const selected = await dialog.showSaveDialog({
       title: "Export EyeMate Personal Summary",
-      defaultPath: `eyemate-summary.${format === "JSON" ? "json" : "md"}`,
-      filters: [{ name: format === "JSON" ? "JSON" : "Markdown", extensions: [format === "JSON" ? "json" : "md"] }],
+      defaultPath: `eyemate-summary.${format === "JSON" ? "json" : format === "PDF" ? "pdf" : "md"}`,
+      filters: [{ name: format === "JSON" ? "JSON" : format === "PDF" ? "PDF" : "Markdown", extensions: [format === "JSON" ? "json" : format === "PDF" ? "pdf" : "md"] }],
       properties: ["showOverwriteConfirmation", "createDirectory"]
     });
     if (selected.canceled || !selected.filePath) return { status: "CANCELLED", reason: "USER_CANCELLED" };
     const report = currentM3Report();
     const exportReport = includeEvidence ? report : { ...report, evidenceSourceIds: [], missingData: [], limitations: ["EVIDENCE_OMITTED_BY_USER"] };
     const content = format === "JSON" ? JSON.stringify(exportReport, null, 2) : renderProfessionalSummary(exportReport);
-    return writeLocalExport(selected.filePath, content);
+    return format === "PDF" ? writeLocalPdfExport(selected.filePath, await renderLocalPdf(content)) : writeLocalExport(selected.filePath, content);
   });
   ipcMain.handle("settings:get", () => storage?.loadUserPreferences() ?? DEFAULT_USER_PREFERENCES);
   ipcMain.handle("settings:update", (_event, preferences: UserPreferences) => {

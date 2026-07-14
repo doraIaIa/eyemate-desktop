@@ -27,6 +27,7 @@
     "camera:validate:pilot": "npm run build && electron tools/pilot/run-camera-validation.mjs",
     "test:camera-harness": "npm run build && electron tools/pilot/run-camera-validation.mjs --smoke",
     "test:camera-runtime": "npm run build && node tools/pilot/run-camera-runtime-integration.mjs",
+    "test:pdf-export": "npm run build && electron tools/pilot/run-pdf-export-integration.mjs",
     "egress:observe:pilot": "npm run build && node tools/pilot/observe-tcp-egress.mjs",
     "build:msix:beta": "npm run build && node tools/m1/build-msix.mjs --beta",
     "pilot:signing-status": "node tools/pilot/sign-beta-msix.mjs --status",

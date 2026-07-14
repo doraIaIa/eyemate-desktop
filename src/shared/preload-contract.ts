@@ -3,7 +3,7 @@ import type { CheckupSummary, PrivacySummary, SurveyRequest } from "./m1-contrac
 import type { WorkSession } from "../work-session/session-state.js";
 import type { NudgeDecision } from "../work-session/companion-policy.js";
 import type { PersonalReport } from "../personal-intelligence/report-service.js";
-export type LocalExportFormat = "JSON" | "MARKDOWN";
+export type LocalExportFormat = "JSON" | "MARKDOWN" | "PDF";
 export interface LocalExportResult { readonly status: "EXPORTED" | "CANCELLED" | "FAILED"; readonly reason: string; }
 export type M3DataCategory = "BASELINE" | "PATTERN" | "SUMMARY" | "REPORT" | "ALL";
 export type NudgeResponse = "AUTO_CORRECTED" | "ACCEPTED" | "SNOOZED" | "DISMISSED" | "IGNORED" | "UNKNOWN";
