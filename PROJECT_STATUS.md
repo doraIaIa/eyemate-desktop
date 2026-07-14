@@ -4,9 +4,9 @@ Last updated: 2026-07-14
 Current milestone: M2 — Work Companion MVP
 Current batch: M2-A/B foundation
 Current task: T-M2-002 — Companion policy engine
-Task state: DONE
+Task state: DONE — M2 EXIT VERIFIED
 
-Latest verified commit: `d7c8892`
+Latest verified commit: `7e44df5`
 Task base commit: `d7c8892`
 Working tree: M2 task graph và session-state foundation chờ commit.
 
@@ -34,7 +34,7 @@ Verification:
 - command: `npm run build:msix:m1`
   result: PASS — MakeAppx package và smoke từ staged release-like Electron app.
 
-M2 exit verification: PASS — `npm run verify:m1` and `npm run build:msix:m1`; T-M2-002 through T-M2-006 complete.
+M2 exit verification: PASS — `npm run verify:m1`, `npm run acceptance:m2`, and `npm run build:msix:m1`; T-M2-001 through T-M2-006 complete.
 
 Remaining:
 
@@ -69,6 +69,15 @@ Important decisions:
 - M2 dùng Electron timer-only; camera runtime thật vẫn proposed/UNKNOWN.
 
 Do not redo:
+
+## M2 Exit Audit (2026-07-14)
+
+- Status: `ENGINEERING_COMPLETE_WITH_LIMITATIONS`.
+- `npm run acceptance:m2` PASS: Electron start/pause/resume, break nudge, response, finish, persisted summary.
+- `npm run verify:m1` PASS: 30 unit tests, 8 integration tests, architecture/privacy/Electron acceptance.
+- `npm run build:msix:m1` PASS: unsigned internal package smoke only.
+- Worktree clean after `7e44df5`; V1 `F:\dry-eye-app` unchanged.
+- Limitations: real camera UNKNOWN, dynamic WPR egress UNKNOWN (`0xc5585011`), encryption TBD, no public signing/release claim.
 
 - Không làm lại M0 hoặc mở lại ADR-003.
 - Không sửa `F:\dry-eye-app`.
