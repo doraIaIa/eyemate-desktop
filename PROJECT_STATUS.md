@@ -7,8 +7,8 @@ Task state: DONE
 
 Git verification:
 
-- Latest verified commit: `d98f4f9`.
-- Task base commit: `d98f4f9`.
+- Latest verified commit: `0c3363c`.
+- Task base commit: `0c3363c`.
 - Working tree: expected clean after this task commit.
 - Files currently modified: NONE after commit.
 - V1 remains read-only at `F:\dry-eye-app`; required baseline commit is `77ad32f1b519418d882d2d476f13206644536df9`.
