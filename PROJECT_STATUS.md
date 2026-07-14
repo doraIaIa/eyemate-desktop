@@ -2,7 +2,7 @@
 
 Last updated: 2026-07-14
 Current milestone: PILOT_READINESS
-Current batch: Automated gate closure and internal beta preparation
+Current batch: External-gate handoff and release-candidate preparation
 Current task: External-gate handoff
 Task state: PILOT_READY_WITH_EXTERNAL_GATES
 
@@ -17,10 +17,11 @@ Working tree expectation: clean after this status checkpoint; generated beta art
 - Encryption-at-rest: current SQLite plaintext is executable-test confirmed. ADR-005 keeps sensitive persistence `DISABLED`; no tamper/wrong-key/missing-key claim is made without an approved encryption and key-lifecycle design. Migration, interruption, backup/recovery, idempotent reset and physical plaintext purge tests pass.
 - Camera: guided local harness and pure lifecycle tests cover consent, denied/unavailable/busy, low quality, calibration abstention and disconnect without persistence of frame/video/landmark. Real-camera execution is `NOT_RUN_EXTERNAL_GATE`; accuracy remains `UNKNOWN` pending device and ground truth.
 - Clinical: OSDI-6 wording, scoring, severity and recommendation catalogue remain synthetic/internal and `DISABLED` pending Clinical/Product approval.
-- Egress: the one permitted WPR retry failed at `wpr -start Network -filemode` with `0xc5585011`; status afterward was not recording and no ETL was created. Process-attributed local TCP observation sampled 20 times and observed zero external TCP connections (`NOT_OBSERVED_TCP_ONLY`), but UDP/DNS/packet coverage is absent, so dynamic egress remains `UNKNOWN/DEGRADED` and there is no no-egress claim.
+- Egress: the latest single WPR retry also failed at `wpr -start Network -filemode` with `0xc5585011`; status afterward was not recording and no ETL was created. Process-attributed local TCP observation sampled 21 times and observed zero external TCP connections (`NOT_OBSERVED_TCP_ONLY`), but UDP/DNS/packet coverage is absent, so dynamic egress remains `UNKNOWN/DEGRADED` and there is no no-egress claim.
 - Release preparation: separate identity `EyeMate.Beta.Internal`, staged unsigned MSIX smoke, clean/update/skipped-version/rollback policy tests, CycloneDX SBOM, SHA-256 checksum, release manifest/notes, feature matrix, runbook and fail-closed signing interface are implemented. Certificate/Store identity remains `EXTERNAL_GATE`; no fake certificate and no publish action were used.
 - Canonical verification: `npm run verify` PASS with 54 unit and 13 integration tests plus architecture, privacy, security, accessibility, Electron M1/M2/M3 and UI functional acceptance. `npm run pilot:contract`, `npm run test:pilot-contract`, `npm run pilot:sensitive-storage-gate`, `npm run test:camera-harness`, `npm run egress:observe:pilot`, `npm run pilot:signing-status`, `npm run pilot:release` and `npm run pilot:verify-bundle` pass with their documented external-gate states.
 - V1 at `F:\dry-eye-app` was not modified.
+- Handoff: `pilot/external-gate-checklist.json` is validated by `npm run pilot:external-gates` and shipped as `EXTERNAL_GATES.json` in the generated beta release bundle. It records evidence, approvers and recheck commands for every remaining external gate; validation of the checklist is not approval of a gate.
 
 External gates before a real-person pilot:
 
