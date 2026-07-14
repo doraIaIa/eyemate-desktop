@@ -4,7 +4,8 @@ export interface WorkSessionAnalyticsSource { readonly summaryId: string; readon
 export interface SurveyAnalyticsSource { readonly reportId: string; readonly createdAt: string; readonly timezone: string; readonly schemaVersion: string; readonly symptomBurden: number | null; }
 
 export function fromWorkSession(source: WorkSessionAnalyticsSource): AnalyticsInput {
-  return validateAnalyticsInput({ sourceId: source.summaryId, sourceType: "WORK_SESSION", occurredAtUtc: source.createdAt, timezone: source.timezone, schemaVersion: ANALYTICS_SCHEMA_VERSION, algorithmVersion: source.schemaVersion, quality: "VALID", contextKey: "timer-only", sessionDurationMinutes: Math.round(source.elapsedActiveMs / 60_000), breakCompliance: null, symptomBurden: null, nearLoad: null, distanceDeviation: null, blinkDeviation: null });
+  if (!Number.isSafeInteger(source.elapsedActiveMs) || source.elapsedActiveMs <= 0) throw new Error("INVALID_WORK_SESSION_ANALYTICS_SOURCE");
+  return validateAnalyticsInput({ sourceId: source.summaryId, sourceType: "WORK_SESSION", occurredAtUtc: source.createdAt, timezone: source.timezone, schemaVersion: ANALYTICS_SCHEMA_VERSION, algorithmVersion: source.schemaVersion, quality: "VALID", contextKey: "timer-only", sessionDurationMinutes: Math.ceil(source.elapsedActiveMs / 60_000), breakCompliance: null, symptomBurden: null, nearLoad: null, distanceDeviation: null, blinkDeviation: null });
 }
 
 export function fromSurveyOnly(source: SurveyAnalyticsSource): AnalyticsInput {

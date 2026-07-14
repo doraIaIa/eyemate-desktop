@@ -9,3 +9,18 @@ test("VLI excludes missing values rather than treating them as zero", () => { co
 test("pattern abstains when required evidence is missing", () => { assert.equal(evaluateNearWorkPattern(valid, "2026-07-14T12:00:00.000Z").status, "PRESENT"); assert.equal(evaluateNearWorkPattern({ ...valid, nearLoad: null }, "2026-07-14T12:00:00.000Z").status, "INSUFFICIENT_DATA"); });
 test("daily and weekly keep missing coverage explicit", () => { const daily = aggregateDaily([valid], "2026-07-14", "Asia/Bangkok"); assert.equal(daily.status, "AVAILABLE"); assert.equal(aggregateWeekly([daily], "2026-07-14", "Asia/Bangkok").status, "INSUFFICIENT_DATA"); });
 test("daily grouping uses recorded IANA timezone rather than UTC date", () => assert.equal(localDateFor("2026-07-13T18:00:00.000Z", "Asia/Bangkok"), "2026-07-14"));
+test("VLI preserves real zero, clamps boundaries and excludes low-quality camera components", () => {
+  assert.equal(calculateVli({ ...valid, nearLoad: 0, breakCompliance: 100, distanceDeviation: 0, blinkDeviation: 0, symptomBurden: 0 }).score, 0);
+  assert.equal(calculateVli({ ...valid, nearLoad: 100, breakCompliance: 0, distanceDeviation: 100, blinkDeviation: 100, symptomBurden: 100 }).score, 100);
+  const low = calculateVli({ ...valid, quality: "LOW" });
+  assert.ok(low.missingComponents.includes("distanceDeviation"));
+  assert.ok(low.missingComponents.includes("blinkDeviation"));
+});
+test("daily summary aggregates all same-day sources and keeps a DST local date", () => {
+  const later = { ...valid, sourceId: "work-0004", sessionDurationMinutes: 20, nearLoad: 60, breakCompliance: 60 };
+  const daily = aggregateDaily([valid, later], "2026-07-14", "Asia/Bangkok");
+  assert.equal(daily.totalSessionMinutes, 50);
+  assert.equal(daily.breakCompliance, 50);
+  assert.equal(daily.actionKey, "TAKE_SHORT_BREAK");
+  assert.equal(localDateFor("2026-03-08T07:30:00.000Z", "America/New_York"), "2026-03-08");
+});

@@ -31,5 +31,5 @@ export interface EyeMatePreloadApi {
   resetM3Baseline(): Promise<"DELETED">;
   deleteM3Data(): Promise<"DELETED">;
   deleteM3Category(category: M3DataCategory): Promise<"DELETED">;
-  exportM3Report(destination: string, format: LocalExportFormat): Promise<LocalExportResult>;
+  exportM3Report(destination: string, format: LocalExportFormat, includeEvidence: boolean): Promise<LocalExportResult>;
 }

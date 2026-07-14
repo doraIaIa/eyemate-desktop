@@ -178,7 +178,13 @@ function registerIpcHandlers(): void {
     if (!["BASELINE", "PATTERN", "SUMMARY", "REPORT", "ALL"].includes(category)) throw new Error("INVALID_M3_DATA_CATEGORY");
     return storage?.deleteM3Category(category) ?? "DELETED";
   });
-  ipcMain.handle("m3:export", (_event, destination: string, format: LocalExportFormat) => { const report = generateM3Report(); const content = format === "JSON" ? JSON.stringify(report, null, 2) : renderProfessionalSummary(report); return writeLocalExport(destination, content); });
+  ipcMain.handle("m3:export", (_event, destination: string, format: LocalExportFormat, includeEvidence: boolean) => {
+    if (typeof destination !== "string" || !["JSON", "MARKDOWN"].includes(format) || typeof includeEvidence !== "boolean") throw new Error("INVALID_M3_EXPORT_REQUEST");
+    const report = generateM3Report();
+    const exportReport = includeEvidence ? report : { ...report, evidenceSourceIds: [], missingData: [], limitations: ["EVIDENCE_OMITTED_BY_USER"] };
+    const content = format === "JSON" ? JSON.stringify(exportReport, null, 2) : renderProfessionalSummary(exportReport);
+    return writeLocalExport(destination, content);
+  });
 }
 
 async function createMainWindow(): Promise<BrowserWindow> {

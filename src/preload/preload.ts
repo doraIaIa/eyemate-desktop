@@ -52,7 +52,7 @@ const eyeMateApi: EyeMatePreloadApi = {
   ,async resetM3Baseline() { const result: unknown = await ipcRenderer.invoke("m3:reset-baseline"); if (result !== "DELETED") throw new Error("PRELOAD_M3_RESET_INVALID"); return result; }
   ,async deleteM3Data() { const result: unknown = await ipcRenderer.invoke("m3:delete-data"); if (result !== "DELETED") throw new Error("PRELOAD_M3_DELETE_INVALID"); return result; }
   ,async deleteM3Category(category) { const result: unknown = await ipcRenderer.invoke("m3:delete-category", category); if (result !== "DELETED") throw new Error("PRELOAD_M3_CATEGORY_DELETE_INVALID"); return result; }
-  ,async exportM3Report(destination, format) { const result: unknown = await ipcRenderer.invoke("m3:export", destination, format); if (typeof result !== "object" || result === null) throw new Error("PRELOAD_M3_EXPORT_INVALID"); return result as import("../shared/preload-contract.js").LocalExportResult; }
+  ,async exportM3Report(destination, format, includeEvidence) { const result: unknown = await ipcRenderer.invoke("m3:export", destination, format, includeEvidence); if (typeof result !== "object" || result === null) throw new Error("PRELOAD_M3_EXPORT_INVALID"); return result as import("../shared/preload-contract.js").LocalExportResult; }
 };
 
 contextBridge.exposeInMainWorld("eyeMate", Object.freeze(eyeMateApi));
