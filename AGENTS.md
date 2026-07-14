@@ -1,83 +1,64 @@
-# Hướng dẫn tác nhân — EyeMate V2 M0
+# Hướng dẫn tác nhân — EyeMate V2 M1
 
 ## Phạm vi và nguồn sự thật
 
 - Repository V2: `F:\eyemate-desktop`.
-- V1: `F:\dry-eye-app` chỉ đọc; không sửa, không commit, không chạy thao tác phá huỷ. Baseline V1 được ghi trong `PROJECT_STATUS.md`.
-- Mục tiêu hiện tại là **M0 — Architecture POC**, không mở M1.
-- Đọc theo loại nội dung: feature behavior/acceptance từ `specs/`; data/privacy từ contract tương ứng; architecture/dependency từ ADR; build/release từ runbook/CI. Không lấy code cũ hay chat làm nguồn sự thật thay các tài liệu này.
-- Không tự chọn Electron/Tauri, encryption, clinical content, threshold hiệu năng hoặc retention cuối khi chưa có evidence/owner decision.
+- V1: `F:\dry-eye-app` chỉ đọc; không sửa, không commit, không sao chép mù quáng kiến trúc hay hành vi.
+- Milestone hiện hành: **M1 — Personal Checkup MVP**. Electron là desktop shell đã được chấp nhận tại `ADR-003`; không mở lại Electron/Tauri nếu không có evidence mới nghiêm trọng.
+- Dùng theo thứ tự: Git thực tế → `PROJECT_STATUS.md` → spec/acceptance/task hiện hành → code/test → `GOVERNANCE.md` → `MASTER_SPEC.md` → ADR accepted.
+- Đọc `docs/` và `specs/` theo feature đang làm; không dùng chat hay V1 làm nguồn sự thật cho behavior V2.
 
-## M0 Owner Delegation
+## Resume và thực thi liên tục
 
-- Project owner ủy quyền Codex tự chọn và thực hiện task M0 theo dependency; tạo/sửa code, test, fixture, harness, POC, docs trực tiếp cần cho M0; chạy local command/benchmark; cài dependency repo-local; commit nhỏ; cập nhật `PROJECT_STATUS.md` và tiếp tục sau commit.
-- Được tải dependency/toolchain chính thức trực tiếp cho Electron/Tauri từ npm, Rustup/Rust official distribution hoặc nguồn package chính thức; Rust stable và PATH cấp user do rustup là được phép.
-- Được tạo Electron/Tauri POC tối thiểu, chạy camera-off/camera-denied/benchmark local và chọn shell sau khi evidence hợp lệ đủ rõ. Có thể cập nhật ADR-003 thành `ACCEPTED` khi acceptance đạt, evidence hợp lệ, không còn contradiction lớn, rationale/limitation đã ghi.
-- Quy tắc chọn shell: safety/privacy/reproducibility → acceptance → build/package/maintenance → startup/RAM/CPU/bundle. Không chọn theo sở thích framework.
-- Báo cáo/checkpoint chỉ khi M0 hoàn thành, có blocker/decision nêu dưới đây, sau tối đa 5 commit liên tiếp hoặc khi quota/phiên sắp hết.
-- Vẫn phải dừng hỏi khi cần Administrator; Visual Studio Build Tools/Windows SDK/driver/certificate/toolchain system-wide ngoài Rust user-level; firewall/proxy/security policy; camera/thiết bị thật; signing/Store/publish/upload; chi phí; dữ liệu người thật; sửa V1; thay đổi safety/privacy/medical boundary; thao tác phá hủy ngoài repo; hoặc evidence benchmark mâu thuẫn khiến không thể chọn an toàn.
+1. Bắt đầu bằng `git status --short`, `git diff --stat`, `git diff --check`, `git log --oneline -10`, rồi đọc `PROJECT_STATUS.md` và task hiện hành.
+2. Nếu có diff, review, xác định task sở hữu và tiếp tục task đó. Không reset, stash, discard hoặc ghi đè thay đổi không rõ nguồn gốc.
+3. Mỗi task nhỏ: implement → test phù hợp → review diff → `git diff --check` → commit có chủ đích.
+4. Sau task PASS, tự đọc task sẵn sàng theo dependency và tiếp tục ngay. Không chờ xác nhận commit thông thường, không báo cáo từng task.
+5. Cập nhật `PROJECT_STATUS.md` theo batch, blocker hoặc milestone; gộp vào task commit khi phù hợp.
+6. Checkpoint/report chỉ khi: tối đa 5–10 commit, blocker thật, xung đột safety/privacy/data, cần quyền owner, hoặc M1 hoàn tất.
 
-## Resume protocol bắt buộc
+## Quyền tự chủ M1
 
-1. Chạy `git status --short`, `git diff --stat`, `git diff --check`, `git log --oneline -10`.
-2. Đọc `PROJECT_STATUS.md`.
-3. Đọc task hiện hành trong `specs/000-m0-architecture-poc/tasks.md` cùng spec/acceptance liên quan.
-4. Khi cần ngữ cảnh M0, đọc `MASTER_SPEC.md`, `GOVERNANCE.md` và `tools/m0/README.md`.
-5. Nếu có diff: review toàn bộ, xác định task sở hữu, bảo toàn diff và tiếp tục task đó. Không reset, stash, checkout để xoá diff.
-6. Task boundary chỉ phục vụ commit/test nhỏ: implement → test → review diff → `git diff --check` → commit. Sau task PASS, tự đọc task kế tiếp theo dependency và tiếp tục ngay; không chờ xác nhận commit, không dừng chỉ vì hoàn thành task nhỏ.
-7. Cập nhật `PROJECT_STATUS.md` theo batch, blocker hoặc milestone; không tạo checkpoint document hay status-only commit sau mỗi task. Không tạo readiness/adversarial-review document mới trừ khi trực tiếp gỡ blocker.
-8. Thực thi liên tục tối đa 5 task M0 hoặc 45 phút mỗi batch. Khi hết batch mà không có blocker, tự bắt đầu batch kế tiếp trong cùng mục tiêu/phiên.
+- Được tạo/sửa code, UI, test, fixture, harness, docs và dependency repo-local cần thiết trong V2; chạy npm install/build/test/package local; tạo SQLite fixture; chạy Electron local; commit nhỏ.
+- Dependency mới phải có requirement, module owner, license, hành vi network, ảnh hưởng build và đường thay thế/gỡ bỏ được ghi trong task hoặc package metadata.
+- Được triển khai camera mock/denied/unavailable; camera thật chỉ với action/consent rõ ràng và theo ADR-004.
 
-## Ranh giới bất biến
+## Phải dừng hỏi owner
 
-- Không sửa V1; không mở M1.
-- Không thêm cloud, account, telemetry, enterprise, federated/adaptive ML hoặc event-bus/plugin system.
-- Không dùng CDN cho asset bắt buộc; hành vi phải local-first/offline khi M0 yêu cầu.
-- Không persistence/log/evidence raw frame, video, raw landmark, dữ liệu sức khỏe thật, username, hostname, user path, serial, secret hoặc raw trace.
-- Chỉ dùng fixture synthetic. `UNKNOWN`, `NOT_MEASURED` và `SKIP` không phải `PASS`.
-- Artifact phải ở trong evidence root, qua scanner trước manifest; chặn traversal, path tuyệt đối/UNC/URI, symlink/junction escape và Windows case collision.
-- Không tuyên bố SHA-256 là chữ ký số/immutable attestation.
+- Sửa V1; cần Administrator hoặc system setting/toolchain ngoài phạm vi đã cho phép; signing/Store/public upload; cloud/account/telemetry; dữ liệu hoặc pilot người thật; clinical approval; thay đổi lớn consent/retention/data ownership; hoặc spec/acceptance/privacy/safety mâu thuẫn.
+- Cũng dừng nếu cần camera thật mà chưa có quyền rõ ràng, hoặc evidence mâu thuẫn khiến không thể chọn hành vi an toàn.
 
-## Limitation đã biết
+## Kiến trúc M1
 
-- Dynamic WPR egress/auto-update: `UNKNOWN / DEFERRED_M0_LIMITATION`.
-- `wpr -start Network -filemode` đã fail `0xc5585011`; WPR vẫn stopped, không có ETL.
-- Không retry WPR, elevation, đổi policy/system setting hay cài tool mới. Chỉ chạy lại trước external pilot/public release, hoặc khi measurement stack cuối cùng yêu cầu WPR.
-- Static inspection `tools/m0` chỉ là evidence của source set hiện tại, không chứng minh WPR/Windows/tool hệ thống không egress.
-- File-symlink integration manifest có thể `SKIP (EPERM)`; phải chạy lại trước benchmark chính thức.
+- Modular monolith + ports/adapters: `app-shell`, `onboarding-consent`, `safety`, `symptom-checkup`, `measurement-quality`, `camera`, `distance`, `reports`, `user-data`, `platform-electron`.
+- Domain không import Electron, DOM, MediaPipe, ONNX hoặc SQLite. Renderer không gọi SQLite/camera SDK trực tiếp. Preload chỉ cung cấp API hẹp, typed và allowlist.
+- Không event bus tổng quát, plugin system, microservice hoặc cloud abstraction.
+- `contextIsolation` phải bật; `nodeIntegration` phải tắt.
 
-## Khi phải dừng để hỏi owner
+## Invariant safety và privacy
 
-- Cần administrator, toolchain global, cài dependency/tool mới hoặc đổi system/network setting.
-- Cần camera thật, signing/Store/public release, network upload, hoặc chọn Electron/Tauri.
-- Safety/privacy/data contract mâu thuẫn; có raw-data/secret finding; hoặc có thay đổi Git không rõ nguồn gốc.
-- M0 hoàn thành và cần project owner review/decision.
+- Local Only mặc định; không account, cloud, telemetry hay CDN cho asset bắt buộc.
+- Không persistence/log/evidence raw frame, video, landmark, pixel buffer hoặc raw per-frame series; camera raw chỉ RAM.
+- `UNKNOWN`, `NOT_MEASURED`, `INSUFFICIENT_DATA` không được biến thành bình thường/0/PASS.
+- Không claim diagnosis, disease probability, treatment, camera xác nhận bệnh hoặc “không có vấn đề”.
+- Camera denied/unavailable không chặn survey-only. Quality rejected phải abstain.
+- Export cần preview; delete phải báo `DELETED`, `PARTIALLY_DELETED` hoặc `FAILED` trung thực.
+- Chặn traversal, symlink/junction escape và Windows case collision ở mọi path nhận từ ngoài.
 
-## Command M0 đã tồn tại
+## Giới hạn đã biết
 
-```text
-node tools/m0/validate-evidence-schema.mjs tools/m0/fixtures/valid-run.jsonl
-node tools/m0/run-fixture-tests.mjs
-node tools/m0/scan-evidence-artifact.mjs run-record tools/m0/fixtures/safe-artifact.json
-node tools/m0/run-scanner-fixture-tests.mjs
-node tools/m0/generate-evidence-manifest.mjs generate <evidence-root> lists/manifest-input.json manifests/m0-manifest.json
-node tools/m0/generate-evidence-manifest.mjs verify <evidence-root> manifests/m0-manifest.json --strict
-node tools/m0/run-manifest-fixture-tests.mjs
-node tools/m0/initialize-run-directory.mjs init <evidence-root> '<metadata-json>' --dry-run
-node tools/m0/run-initializer-fixture-tests.mjs
-node tools/m0/collect-measurement-tool-inventory.mjs collect <evidence-root> artifacts/measurement-tool-inventory.json
-node tools/m0/run-tool-inventory-fixture-tests.mjs
-node tools/m0/run-measurement-control-dry-run-fixture-tests.mjs
-node tools/m0/run-tool-egress-gate-fixture-tests.mjs
-node tools/m0/run-static-egress-inspection-fixture-tests.mjs
-node tools/m0/inspect-static-egress.mjs
-node tools/m0/run-tool-output-admission-fixture-tests.mjs
-```
+- Dynamic WPR egress/auto-update: `UNKNOWN / DEFERRED_M0_LIMITATION` do `0xc5585011`; không retry WPR/elevation/policy. Static scan không chứng minh “không egress”.
+- ADR-004 vẫn proposed: chưa chọn runtime/model camera; không dùng CDN fallback.
+- File-symlink integration M0: `SKIP (EPERM)`, phải chạy lại trước benchmark chính thức.
 
-Không bịa command build/app/camera/MSIX khi chưa có trong repository. Dùng `tools/m0/README.md` và `tasks.md` để xác minh command hiện hành.
+## Lệnh M1 chuẩn
 
-## Checkpoint và Definition of Done M0
+Chỉ thêm lệnh vào đây sau khi tồn tại và đã chạy thành công trong `package.json`. Không bịa lệnh app/camera/package.
 
-- Checkpoint ngắn trong `PROJECT_STATUS.md`: task/state, base commit, diff, command đã chạy/kết quả, limitation, next exact action/command.
-- Trước commit: status, diff/stat/check, relevant positive/negative/regression tests và review file thay đổi. Stage đúng file task; không `git add .`.
-- M0 chỉ DONE khi pipeline `initialize → validate → scan → manifest → verify` có evidence; measurement tooling/overhead có kiểm chứng; hai candidate có POC tương đương hoặc blocker có evidence; comparison/provenance hợp lệ; ADR-003 có recommendation dựa evidence; V1 sạch; limitation/UNKNOWN được ghi rõ.
+## Definition of Done M1
+
+- Electron app scaffold/build/test ổn định, lệnh lint/typecheck/unit/integration/acceptance/architecture/build chạy được.
+- Local storage migration/recovery, onboarding/Local Only/consent, survey-only checkup, Safety Gate versioned, report, export/delete/withdrawal và offline core đạt acceptance.
+- Camera-off/denied/unavailable và raw-data leak scan pass; camera measurement chỉ mở theo evidence ADR-004.
+- Release-like build chạy acceptance; V1 không đổi; không còn HIGH privacy/safety regression.
+- Có thể là `ENGINEERING_COMPLETE` nhưng chưa `PUBLIC_READY` nếu clinical content, questionnaire/license, camera thật, encryption hoặc signing còn UNKNOWN/TBD.

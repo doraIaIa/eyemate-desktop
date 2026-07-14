@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EyeMate</title>
+    <style>
+      :root { color: #172036; background: #f5f7fb; font-family: "Segoe UI", sans-serif; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
+      main { width: min(680px, calc(100% - 48px)); background: #fff; border-radius: 16px; padding: 36px; box-shadow: 0 12px 40px #18213b16; }
+      h1 { margin-top: 0; } .tag { color: #2856bd; font-weight: 700; } p { line-height: 1.55; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="tag">EyeMate · Local Only</p>
+      <h1>Kiểm tra cá nhân</h1>
+      <p>Ứng dụng hỗ trợ bạn ghi nhận thông tin checkup cá nhân. Ứng dụng không chẩn đoán, điều trị hoặc thay thế tư vấn chuyên môn.</p>
+      <p id="runtime-status" aria-live="polite">Đang kiểm tra trạng thái ứng dụng…</p>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

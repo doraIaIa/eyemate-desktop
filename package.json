@@ -1,9 +1,19 @@
 {
   "name": "eyemate-desktop",
   "private": true,
-  "version": "0.0.0-m0",
+  "version": "0.1.0-m1",
   "type": "module",
   "scripts": {
+    "clean": "node tools/m1/clean.mjs",
+    "dev": "npm run build && electron dist/main/main.js",
+    "lint": "node tools/m1/lint.mjs",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run clean && tsc -p tsconfig.json && node tools/m1/copy-assets.mjs",
+    "unit": "npm run build && node tools/m1/run-tests.mjs unit",
+    "integration": "npm run build && node tools/m1/run-tests.mjs integration",
+    "acceptance": "npm run build && node tools/m1/run-electron-smoke.mjs",
+    "architecture": "node tools/m1/check-architecture.mjs",
+    "verify:m1": "npm run lint && npm run typecheck && npm run unit && npm run integration && npm run architecture && npm run acceptance && npm run build",
     "test:state:m0": "node candidates/shared/run-state-fixture-tests.mjs",
     "test:electron:m0": "electron candidates/electron/main.mjs --test",
     "test:storage:electron:m0": "node candidates/electron/run-storage-fixture-tests.mjs",
@@ -19,6 +29,7 @@
     "check:tauri:m0": "cargo check --manifest-path candidates/tauri/src-tauri/Cargo.toml"
   },
   "devDependencies": {
-    "electron": "^37.10.3"
+    "electron": "^37.10.3",
+    "typescript": "^5.9.3"
   }
 }

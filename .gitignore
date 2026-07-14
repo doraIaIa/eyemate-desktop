@@ -2,3 +2,4 @@ node_modules/
 candidates/tauri/src-tauri/target/
 candidates/tauri/src-tauri/gen/
 .m0/
+dist/
