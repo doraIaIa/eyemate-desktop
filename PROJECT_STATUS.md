@@ -4,7 +4,7 @@ Last updated: 2026-07-14
 Current milestone: M2 — Work Companion MVP
 Current batch: M2-A/B foundation
 Current task: T-M2-002 — Companion policy engine
-Task state: DONE — M2 EXIT VERIFIED
+Task state: IN_PROGRESS — M3 PERSONAL INTELLIGENCE
 
 Latest verified commit: `b14bf01`
 Task base commit: `d7c8892`
@@ -35,6 +35,8 @@ Verification:
   result: PASS — MakeAppx package và smoke từ staged release-like Electron app.
 
 M2 exit verification: PASS — `npm run verify:m1`, `npm run acceptance:m2`, and `npm run build:msix:m1`; T-M2-001 through T-M2-006 complete.
+
+M3 batch: canonical aggregate sources, baseline/pattern/VLI, report preview, local Markdown/JSON export, M3 reset/delete and Electron smoke are implemented. `npm run verify:m1`, `npm run acceptance:m2`, `npm run acceptance:m3`, and `npm run build:msix:m1` PASS. M3 exit remains pending full coverage audit.
 
 Remaining:
 

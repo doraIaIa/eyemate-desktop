@@ -8,6 +8,12 @@
 - Dùng theo thứ tự: Git thực tế → `PROJECT_STATUS.md` → spec/acceptance/task hiện hành → code/test → `GOVERNANCE.md` → `MASTER_SPEC.md` → ADR accepted.
 - Đọc `docs/` và `specs/` theo feature đang làm; không dùng chat hay V1 làm nguồn sự thật cho behavior V2.
 
+## M3 extension
+
+- Current milestone: **M3 — Personal Intelligence, Trends & Reports**. Read `specs/013-m3-personal-intelligence/` after `PROJECT_STATUS.md`.
+- Continue M3 as a local-only vertical slice: typed aggregate source → baseline/pattern/VLI → daily/weekly report → preview/export → reset/delete → Electron smoke.
+- Preserve M1/M2 snapshots. Legacy rows without safe aggregate provenance must remain `UNKNOWN`/partial; do not infer camera or symptom values.
+
 ## Resume và thực thi liên tục
 
 1. Bắt đầu bằng `git status --short`, `git diff --stat`, `git diff --check`, `git log --oneline -10`, rồi đọc `PROJECT_STATUS.md` và task hiện hành.
