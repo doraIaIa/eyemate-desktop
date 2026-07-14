@@ -1,0 +1,8 @@
+{
+  "productName": "EyeMate M0 Tauri",
+  "version": "0.0.0",
+  "identifier": "com.eyemate.m0.tauri",
+  "build": { "frontendDist": "../../shared" },
+  "app": { "windows": [{ "title": "EyeMate M0 — POC không dùng camera", "width": 800, "height": 600 }] },
+  "bundle": { "active": false, "icon": ["icons/m0-placeholder.ico"] }
+}

@@ -1,2 +1,3 @@
 node_modules/
 candidates/tauri/src-tauri/target/
+candidates/tauri/src-tauri/gen/
