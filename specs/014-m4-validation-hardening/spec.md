@@ -20,7 +20,7 @@ M4 validates and hardens the existing local-only M0–M3 implementation. It does
 | Numeric distance | DISABLED | Ground-truth accuracy protocol and approved threshold. |
 | VLI camera components | DISABLED | Valid calibrated aggregate provenance. |
 | Internal unsigned MSIX | ENABLED | Reproducible package and staged smoke. |
-| Pilot with sensitive persisted data | DEGRADED | Encryption decision and protection evidence. |
+| Pilot with sensitive persisted data | DISABLED | ADR-005 gate requires approved encryption/key lifecycle evidence. |
 
 ## Invariants
 
