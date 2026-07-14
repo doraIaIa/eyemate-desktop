@@ -10,7 +10,7 @@ test("distance chỉ xuất zone sau calibration và dwell, không có centimet"
   assert.equal(state.zone, "NEAR");
 });
 test("quality lỗi hoặc đổi thiết bị chuyển UNKNOWN, không suy recovered", () => {
-  const comfort = { zone: "COMFORT" as const, consecutiveValidSamples: 2, calibrationRequired: false };
+  const comfort = { zone: "COMFORT" as const, candidateZone: "COMFORT" as const, consecutiveValidSamples: 2, calibrationRequired: false };
   assert.equal(applyDistanceObservation(comfort, { zone: "COMFORT", qualityAccepted: false, deviceProfileMatches: true }).zone, "UNKNOWN");
   assert.equal(applyDistanceObservation(comfort, { zone: "COMFORT", qualityAccepted: true, deviceProfileMatches: false }).calibrationRequired, true);
 });
