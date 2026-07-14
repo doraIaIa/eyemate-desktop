@@ -2,7 +2,7 @@ import type { RuntimeInfo } from "./runtime-contract.js";
 import type { CheckupSummary, PrivacySummary, SurveyRequest } from "./m1-contract.js";
 import type { WorkSession } from "../work-session/session-state.js";
 import type { NudgeDecision } from "../work-session/companion-policy.js";
-import type { NudgeResponse } from "../platform-electron/sqlite-storage.js";
+export type NudgeResponse = "AUTO_CORRECTED" | "ACCEPTED" | "SNOOZED" | "DISMISSED" | "IGNORED" | "UNKNOWN";
 
 export interface EyeMatePreloadApi {
   getRuntimeInfo(): Promise<RuntimeInfo>;

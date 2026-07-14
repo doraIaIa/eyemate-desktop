@@ -19,6 +19,11 @@ export function createSession(id: string, modeId: WorkSession["modeId"]): WorkSe
   return { id, state: "IDLE", modeId, startedMonotonicMs: null, lastMonotonicMs: null, elapsedActiveMs: 0 };
 }
 
+export function recoverSession(id: string, modeId: WorkSession["modeId"], elapsedActiveMs: number): WorkSession {
+  if (!/^[a-z0-9-]{8,64}$/i.test(id) || !Number.isSafeInteger(elapsedActiveMs) || elapsedActiveMs < 0) throw new Error("INVALID_RECOVERY_SESSION");
+  return { id, modeId, state: "RECOVERY_REQUIRED", startedMonotonicMs: null, lastMonotonicMs: null, elapsedActiveMs };
+}
+
 export function applySessionEvent(session: WorkSession, event: SessionEvent, monotonicNowMs: number): WorkSession {
   if (!Number.isFinite(monotonicNowMs) || monotonicNowMs < 0) throw new Error("INVALID_MONOTONIC_TIME");
   const idempotent: Partial<Record<SessionEvent, SessionState>> = { START: "STARTING", STARTED: "ACTIVE", PAUSE: "PAUSED", RESUME: "ACTIVE", FINISH: "COMPLETED", CANCEL: "CANCELLED" };

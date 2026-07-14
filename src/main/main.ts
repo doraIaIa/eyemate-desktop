@@ -9,7 +9,7 @@ import { createSurveyOnlyExportPreview, resolveDeletionResult } from "../user-da
 import { openLocalSqliteStorage, resolveDatabasePath, type LocalSqliteStorage } from "../platform-electron/sqlite-storage.js";
 import { createSurveyDraft, createSurveyOnlyReport, recordSurveyAnswer } from "../symptom-checkup/survey-only.js";
 import { evaluateSafetyGate, internalSafetyCatalogue } from "../safety/safety-gate.js";
-import { applySessionEvent, createSession, type WorkSession } from "../work-session/session-state.js";
+import { applySessionEvent, createSession, recoverSession, type WorkSession } from "../work-session/session-state.js";
 import { decideNudge, type NudgeDecision } from "../work-session/companion-policy.js";
 import { createSessionSummary } from "../work-session/session-summary.js";
 import { InProcessNudgeAdapter } from "../work-session/nudge-adapter.js";
@@ -20,8 +20,9 @@ const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const rendererIndexPath = path.join(currentDirectory, "../renderer/index.html");
 const preloadPath = path.join(currentDirectory, "../preload/preload.js");
 const smokeMode = process.argv.includes("--m1-smoke");
+const companionSmokeMode = process.argv.includes("--m2-smoke");
 
-if (smokeMode) {
+if (smokeMode || companionSmokeMode) {
   app.disableHardwareAcceleration();
 }
 
@@ -63,7 +64,7 @@ function startWorkSession(modeId: WorkSession["modeId"] = "TIMER_ONLY"): WorkSes
 function recoverPersistedSession(): void {
   const persisted = storage?.loadLatestSession();
   if (!persisted || !["ACTIVE", "PAUSED", "RECOVERY_REQUIRED"].includes(persisted.state)) return;
-  workSession = { id: persisted.sessionId, modeId: persisted.modeId as WorkSession["modeId"], state: "RECOVERY_REQUIRED", startedMonotonicMs: null, lastMonotonicMs: null, elapsedActiveMs: persisted.elapsedActiveMs };
+  workSession = recoverSession(persisted.sessionId, persisted.modeId as WorkSession["modeId"], persisted.elapsedActiveMs);
 }
 
 function requestBreakNudge(): NudgeDecision & { readonly nudgeId: string } {
@@ -176,15 +177,32 @@ async function runSmoke(window: BrowserWindow): Promise<void> {
   }
 }
 
+async function runCompanionSmoke(window: BrowserWindow): Promise<void> {
+  const result = await window.webContents.executeJavaScript(`(async () => {
+    const started = await window.eyeMate.startWorkSession('TIMER_ONLY');
+    const paused = await window.eyeMate.pauseWorkSession();
+    const resumed = await window.eyeMate.resumeWorkSession();
+    const nudge = await window.eyeMate.requestBreakNudge();
+    if (started.state !== 'ACTIVE' || paused.state !== 'PAUSED' || resumed.state !== 'ACTIVE' || nudge.action !== 'EMIT') return 'LIFECYCLE_INVALID';
+    if (!(await window.eyeMate.respondToNudge(nudge.nudgeId, 'ACCEPTED'))) return 'NUDGE_RESPONSE_INVALID';
+    await window.eyeMate.finishWorkSession();
+    const finished = await window.eyeMate.finishWorkSession();
+    const summaries = await window.eyeMate.listSessionSummaries();
+    return finished.state === 'COMPLETED' && summaries.length > 0 ? 'PASS' : 'SUMMARY_INVALID';
+  })()`, true);
+  if (result !== "PASS") throw new Error(`M2_COMPANION_SMOKE_${String(result)}`);
+}
+
 app.whenReady().then(async () => {
   const openedStorage = openLocalSqliteStorage(resolveDatabasePath(app.getPath("userData")));
   if (openedStorage.state === "READY") { storage = openedStorage.storage; recoverPersistedSession(); }
   registerIpcHandlers();
   const window = await createMainWindow();
 
-  if (smokeMode) {
+  if (smokeMode || companionSmokeMode) {
     try {
-      await runSmoke(window);
+      if (companionSmokeMode) await runCompanionSmoke(window);
+      else await runSmoke(window);
       app.exit(0);
     } catch (error) {
       console.error(error instanceof Error ? error.message : "M1_SMOKE_FAILED");

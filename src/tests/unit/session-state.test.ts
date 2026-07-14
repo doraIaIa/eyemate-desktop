@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applySessionEvent, createSession, tickSession } from "../../work-session/session-state.js";
+import { applySessionEvent, createSession, recoverSession, tickSession } from "../../work-session/session-state.js";
 
 test("session start pause resume finish giữ elapsed monotonic", () => {
   let session = createSession("session-0001", "TIMER_ONLY");
@@ -29,4 +29,11 @@ test("lặp lại event đã áp dụng là idempotent", () => {
   assert.equal(applySessionEvent(session, "STARTED", 3), session);
   session = applySessionEvent(session, "CANCEL", 4);
   assert.equal(applySessionEvent(session, "CANCEL", 5), session);
+});
+
+test("active persisted session recovers explicitly instead of auto-resuming", () => {
+  const recovered = recoverSession("session-0005", "TIMER_ONLY", 9000);
+  assert.equal(recovered.state, "RECOVERY_REQUIRED");
+  assert.equal(recovered.elapsedActiveMs, 9000);
+  assert.throws(() => recoverSession("bad", "TIMER_ONLY", 0), /INVALID_RECOVERY_SESSION/);
 });
