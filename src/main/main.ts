@@ -3,14 +3,19 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createSecureWindowOptions } from "./window-options.js";
 import type { RuntimeInfo } from "../shared/runtime-contract.js";
-import type { PrivacySummary } from "../shared/m1-contract.js";
+import type { CheckupSummary, PrivacySummary, SurveyResponse } from "../shared/m1-contract.js";
 import { createSurveyOnlyExportPreview, resolveDeletionResult } from "../user-data/data-controls.js";
 import { openLocalSqliteStorage, resolveDatabasePath, type LocalSqliteStorage } from "../platform-electron/sqlite-storage.js";
+import { createSurveyDraft, createSurveyOnlyReport, recordSurveyAnswer } from "../symptom-checkup/survey-only.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const rendererIndexPath = path.join(currentDirectory, "../renderer/index.html");
 const preloadPath = path.join(currentDirectory, "../preload/preload.js");
 const smokeMode = process.argv.includes("--m1-smoke");
+
+if (smokeMode) {
+  app.disableHardwareAcceleration();
+}
 
 function getRuntimeInfo(): RuntimeInfo {
   return {
@@ -32,9 +37,18 @@ function getPrivacySummary(): PrivacySummary {
   };
 }
 
+function runSurveyOnly(response: SurveyResponse): CheckupSummary {
+  const allowed: readonly SurveyResponse[] = ["NONE", "MILD", "NOTICEABLE", "UNSURE", "PREFER_NOT_TO_ANSWER"];
+  if (!allowed.includes(response)) throw new Error("INVALID_SURVEY_RESPONSE");
+  const draft = recordSurveyAnswer(createSurveyDraft(), "comfort_now", response);
+  const report = createSurveyOnlyReport(draft, "CONTINUE_SELF_CHECK");
+  return { status: report.status, source: report.source, camera: report.coverage.camera, action: report.action, missingData: report.missingData };
+}
+
 function registerIpcHandlers(): void {
   ipcMain.handle("runtime:get-info", (): RuntimeInfo => getRuntimeInfo());
   ipcMain.handle("privacy:get-summary", (): PrivacySummary => getPrivacySummary());
+  ipcMain.handle("checkup:run-survey-only", (_event, response: SurveyResponse): CheckupSummary => runSurveyOnly(response));
 }
 
 async function createMainWindow(): Promise<BrowserWindow> {
