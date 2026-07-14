@@ -10,6 +10,8 @@ node tools/m0/run-scanner-fixture-tests.mjs
 node tools/m0/generate-evidence-manifest.mjs generate <evidence-root> lists/manifest-input.json manifests/m0-manifest.json
 node tools/m0/generate-evidence-manifest.mjs verify <evidence-root> manifests/m0-manifest.json --strict
 node tools/m0/run-manifest-fixture-tests.mjs
+node tools/m0/initialize-run-directory.mjs init <evidence-root> '<metadata-json>' --dry-run
+node tools/m0/run-initializer-fixture-tests.mjs
 ```
 
 Validator chỉ đọc JSONL, in reason code tối thiểu và không echo record/input. Fixture là dữ liệu synthetic, không chứa raw frame/video/landmark, dữ liệu sức khỏe, đường dẫn người dùng hay secret.

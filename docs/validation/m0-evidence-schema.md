@@ -9,6 +9,12 @@ last_reviewed: 2026-07-14
 related: [VAL-M0-001, NFR-M0-001, NFR-M0-002, REL-M0-003, AC-M0-011, AC-M0-012, AC-M0-013]
 ```
 
+## Run-directory initialization lifecycle
+
+Trước measurement, initializer chỉ được tạo context theo `m0-run-initialization/0.1.0`; đây không phải run record `m0-benchmark-run/0.3.0` và không được đưa vào validator run-record. Context có `runId`, repository, candidate, device profile, workload/version, repetition, commit (`null` khi chưa biết), dirty-worktree, command ID, UTC initialization timestamp và relative `runRelative`. Nó tạo duy nhất `runs/<candidate>/<deviceProfileId>/<workloadId>/<runId>/` cùng `artifacts/`, `manifests/`, `reports/` rỗng. Không tạo run JSONL, artifact, manifest, report hoặc status measurement placeholder.
+
+`INITIALIZED` chỉ là kết quả CLI initializer, không phải `executionStatus`/`validity`/`outcome`. Measurement sau này mới tạo run record có ba trạng thái theo contract hiện có.
+
 ## Định dạng đề xuất
 
 Mỗi lần chạy ghi một UTF-8 JSON Lines record theo `schemaVersion: m0-benchmark-run/0.3.0`. Summary chỉ được sinh từ run records `VALID`; không sửa trực tiếp số liệu summary. Version `0.3.0-proposed` gộp contract QA (`0.2.0`) với privacy/security allowlist, pre-ingest và minimization; chưa có evidence cũ nào được phép nâng cấp ngầm.

@@ -8,6 +8,13 @@ review: { product: not-required, clinical: not-required, privacy: required, secu
 last_reviewed: 2026-07-14
 ```
 
+## T-M0-003C — Benchmark evidence run-directory initializer
+
+- Goal: khởi tạo atomically một run context `m0-run-initialization/0.1.0` và layout allowlist, không tạo measurement/artifact placeholder.
+- Dependencies: T-M0-003B (`07d2f29`); Node standard library.
+- Verification command: `node tools/m0/run-initializer-fixture-tests.mjs`.
+- Out of scope: camera, benchmark, Git/inventory tự động, manifest artifact, task tiếp theo.
+
 ## T-M0-003B — SHA-256 manifest evidence artifact
 
 - Goal: sinh và verify manifest SHA-256 deterministic cho artifact `artifacts/...` đã qua scanner, dùng relative path/type/size/hash/scanner version/schema version.
