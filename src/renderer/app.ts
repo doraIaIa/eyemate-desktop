@@ -16,6 +16,9 @@ const withdrawCameraButton = document.querySelector<HTMLButtonElement>("#withdra
 const deleteLocalDataButton = document.querySelector<HTMLButtonElement>("#delete-local-data");
 const reportHistoryElement = document.querySelector<HTMLParagraphElement>("#report-history");
 const sessionStatusElement = document.querySelector<HTMLParagraphElement>("#session-status");
+const sessionModeElement = document.querySelector<HTMLSelectElement>("#session-mode");
+const nudgeStatusElement = document.querySelector<HTMLParagraphElement>("#nudge-status");
+let currentNudgeId: string | null = null;
 const renderSession = (session: Awaited<ReturnType<typeof window.eyeMate.getWorkSession>>) => { if (sessionStatusElement) sessionStatusElement.textContent = session ? `Phiên ${session.state}; thời gian hoạt động ${session.elapsedActiveMs} ms.` : "Chưa có phiên."; };
 
 async function renderRuntimeStatus(): Promise<void> {
@@ -75,10 +78,16 @@ for (const navigationButton of Array.from(document.querySelectorAll<HTMLButtonEl
 renderScreen("home");
 void window.eyeMate.getWorkSession().then(renderSession);
 
-document.querySelector<HTMLButtonElement>("#session-start")?.addEventListener("click", async () => renderSession(await window.eyeMate.startWorkSession()));
+document.querySelector<HTMLButtonElement>("#session-start")?.addEventListener("click", async () => renderSession(await window.eyeMate.startWorkSession((sessionModeElement?.value ?? "TIMER_ONLY") as import("../work-session/session-state.js").WorkSession["modeId"])));
 document.querySelector<HTMLButtonElement>("#session-pause")?.addEventListener("click", async () => renderSession(await window.eyeMate.pauseWorkSession()));
 document.querySelector<HTMLButtonElement>("#session-resume")?.addEventListener("click", async () => renderSession(await window.eyeMate.resumeWorkSession()));
 document.querySelector<HTMLButtonElement>("#session-finish")?.addEventListener("click", async () => renderSession(await window.eyeMate.finishWorkSession()));
+document.querySelector<HTMLButtonElement>("#session-cancel")?.addEventListener("click", async () => renderSession(await window.eyeMate.cancelWorkSession()));
+document.querySelector<HTMLButtonElement>("#request-nudge")?.addEventListener("click", async () => { const decision = await window.eyeMate.requestBreakNudge(); currentNudgeId = decision.nudgeId; if (nudgeStatusElement) nudgeStatusElement.textContent = `${decision.action}: ${decision.reason}`; });
+async function respondNudge(response: import("../platform-electron/sqlite-storage.js").NudgeResponse): Promise<void> { if (currentNudgeId === null) return; const accepted = await window.eyeMate.respondToNudge(currentNudgeId, response); if (nudgeStatusElement) nudgeStatusElement.textContent = accepted ? `Nudge: ${response}` : "Nudge đã được xử lý trước đó."; }
+document.querySelector<HTMLButtonElement>("#accept-nudge")?.addEventListener("click", () => void respondNudge("ACCEPTED"));
+document.querySelector<HTMLButtonElement>("#snooze-nudge")?.addEventListener("click", () => void respondNudge("SNOOZED"));
+document.querySelector<HTMLButtonElement>("#dismiss-nudge")?.addEventListener("click", () => void respondNudge("DISMISSED"));
 
 onboardingButton?.addEventListener("click", async () => {
   await window.eyeMate.completeOnboardingWithoutCamera();

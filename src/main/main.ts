@@ -10,6 +10,8 @@ import { openLocalSqliteStorage, resolveDatabasePath, type LocalSqliteStorage } 
 import { createSurveyDraft, createSurveyOnlyReport, recordSurveyAnswer } from "../symptom-checkup/survey-only.js";
 import { evaluateSafetyGate, internalSafetyCatalogue } from "../safety/safety-gate.js";
 import { applySessionEvent, createSession, type WorkSession } from "../work-session/session-state.js";
+import { decideNudge, type NudgeDecision } from "../work-session/companion-policy.js";
+import type { NudgeResponse } from "../platform-electron/sqlite-storage.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const rendererIndexPath = path.join(currentDirectory, "../renderer/index.html");
@@ -30,9 +32,11 @@ function getRuntimeInfo(): RuntimeInfo {
 let storage: LocalSqliteStorage | null = null;
 let workSession: WorkSession | null = null;
 let sessionMonotonicMs = 0;
+let lastNudgeMonotonicMs: number | null = null;
+let nudgesInSession = 0;
 const sessionNow = (): number => { sessionMonotonicMs += 1; return sessionMonotonicMs; };
 
-function updateWorkSession(event: "START" | "STARTED" | "PAUSE" | "RESUME" | "FINISH"): WorkSession {
+function updateWorkSession(event: "START" | "STARTED" | "PAUSE" | "RESUME" | "FINISH" | "CANCEL"): WorkSession {
   const now = sessionNow();
   if (workSession === null) workSession = createSession(`session-${randomUUID().slice(0, 8)}`, "TIMER_ONLY");
   workSession = applySessionEvent(workSession, event, now);
@@ -41,9 +45,30 @@ function updateWorkSession(event: "START" | "STARTED" | "PAUSE" | "RESUME" | "FI
   return workSession;
 }
 
-function startWorkSession(): WorkSession {
+function startWorkSession(modeId: WorkSession["modeId"] = "TIMER_ONLY"): WorkSession {
+  if (!["BALANCED", "DEEP_FOCUS", "HIGH_SUPPORT", "TIMER_ONLY", "CUSTOM"].includes(modeId)) throw new Error("INVALID_WORK_MODE");
+  if (workSession === null || ["COMPLETED", "CANCELLED", "FAILED"].includes(workSession.state)) workSession = createSession(`session-${randomUUID().slice(0, 8)}`, modeId);
   updateWorkSession("START");
   return updateWorkSession("STARTED");
+}
+
+function recoverPersistedSession(): void {
+  const persisted = storage?.loadLatestSession();
+  if (!persisted || !["ACTIVE", "PAUSED", "RECOVERY_REQUIRED"].includes(persisted.state)) return;
+  workSession = { id: persisted.sessionId, modeId: persisted.modeId as WorkSession["modeId"], state: "RECOVERY_REQUIRED", startedMonotonicMs: null, lastMonotonicMs: null, elapsedActiveMs: persisted.elapsedActiveMs };
+}
+
+function requestBreakNudge(): NudgeDecision & { readonly nudgeId: string } {
+  if (workSession?.state !== "ACTIVE") throw new Error("SESSION_NOT_ACTIVE");
+  const now = sessionNow();
+  const decision = decideNudge({ mode: workSession.modeId, minuteOfDay: 600, cooldownMinutes: 10, frequencyCap: 3, nowMonotonicMs: now, lastNudgeMonotonicMs, nudgesInWindow: nudgesInSession, signal: "SUFFICIENT", nudgeType: "BREAK_REMINDER" });
+  const nudgeId = `nudge-${randomUUID().slice(0, 8)}`;
+  if (decision.action === "EMIT") {
+    lastNudgeMonotonicMs = now;
+    nudgesInSession += 1;
+    storage?.recordNudge({ nudgeId, sessionId: workSession.id, decision: decision.action, reason: decision.reason, policyVersion: decision.policyVersion, createdAt: new Date().toISOString() });
+  }
+  return { ...decision, nudgeId };
 }
 
 function getPrivacySummary(): PrivacySummary {
@@ -88,12 +113,15 @@ function registerIpcHandlers(): void {
   ipcMain.handle("privacy:withdraw-camera-consent", (): void => withdrawCameraConsent());
   ipcMain.handle("privacy:delete-all-local-data", (): "DELETED" | "PARTIALLY_DELETED" | "FAILED" => storage?.deleteAllLocalData() ?? "FAILED");
   ipcMain.handle("reports:list-survey-only", () => storage?.listSurveyOnlyReports() ?? []);
-  ipcMain.handle("work-session:start", () => startWorkSession());
+  ipcMain.handle("work-session:start", (_event, modeId?: WorkSession["modeId"]) => startWorkSession(modeId));
   ipcMain.handle("work-session:pause", () => updateWorkSession("PAUSE"));
   ipcMain.handle("work-session:resume", () => updateWorkSession("RESUME"));
   ipcMain.handle("work-session:finish", () => updateWorkSession("FINISH"));
+  ipcMain.handle("work-session:cancel", () => updateWorkSession("CANCEL"));
   ipcMain.handle("work-session:get", () => workSession);
   ipcMain.handle("work-session:list-summaries", () => storage?.listSessionSummaries() ?? []);
+  ipcMain.handle("work-session:request-break-nudge", () => requestBreakNudge());
+  ipcMain.handle("work-session:respond-nudge", (_event, nudgeId: string, response: NudgeResponse) => storage?.recordNudgeResponse(nudgeId, response, new Date().toISOString()) ?? false);
 }
 
 async function createMainWindow(): Promise<BrowserWindow> {
@@ -141,7 +169,7 @@ async function runSmoke(window: BrowserWindow): Promise<void> {
 
 app.whenReady().then(async () => {
   const openedStorage = openLocalSqliteStorage(resolveDatabasePath(app.getPath("userData")));
-  if (openedStorage.state === "READY") storage = openedStorage.storage;
+  if (openedStorage.state === "READY") { storage = openedStorage.storage; recoverPersistedSession(); }
   registerIpcHandlers();
   const window = await createMainWindow();
 

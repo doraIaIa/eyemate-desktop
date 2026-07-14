@@ -3,7 +3,7 @@ import { dirname, join, normalize, parse, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { CameraConsentRecord, CameraConsentRepository, OnboardingProgress, OnboardingProgressRepository, OnboardingStage } from "../user-data/ports.js";
 
-export const STORAGE_SCHEMA_VERSION = 5;
+export const STORAGE_SCHEMA_VERSION = 6;
 export const RECOVERY_REQUIRED = "MIGRATION_RECOVERY_REQUIRED";
 
 export type StorageOpenResult =
@@ -16,6 +16,7 @@ export interface OpenStorageOptions {
 
 export interface PersistedSession { readonly sessionId: string; readonly modeId: string; readonly state: string; readonly elapsedActiveMs: number; readonly updatedAt: string; }
 export interface PersistedNudge { readonly nudgeId: string; readonly sessionId: string; readonly decision: string; readonly reason: string; readonly policyVersion: string; readonly createdAt: string; }
+export type NudgeResponse = "AUTO_CORRECTED" | "ACCEPTED" | "SNOOZED" | "DISMISSED" | "IGNORED" | "UNKNOWN";
 export interface PersistedSummary { readonly summaryId: string; readonly sessionId: string; readonly status: string; readonly elapsedActiveMs: number; readonly createdAt: string; }
 
 function ensureDatabasePath(databasePath: string): string {
@@ -73,9 +74,15 @@ function createV4Schema(database: DatabaseSync): void {
 function createV5Schema(database: DatabaseSync): void {
   database.exec(`
     CREATE TABLE IF NOT EXISTS work_session (session_id TEXT PRIMARY KEY, mode_id TEXT NOT NULL, state TEXT NOT NULL, elapsed_active_ms INTEGER NOT NULL, updated_at TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS companion_nudge (nudge_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, decision TEXT NOT NULL, reason TEXT NOT NULL, policy_version TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS companion_nudge (nudge_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, decision TEXT NOT NULL, reason TEXT NOT NULL, policy_version TEXT NOT NULL, created_at TEXT NOT NULL, response TEXT, response_at TEXT);
     CREATE TABLE IF NOT EXISTS session_summary (summary_id TEXT PRIMARY KEY, session_id TEXT NOT NULL UNIQUE, status TEXT NOT NULL, elapsed_active_ms INTEGER NOT NULL, created_at TEXT NOT NULL);
   `);
+}
+
+function createV6Schema(database: DatabaseSync): void {
+  const columns = database.prepare("PRAGMA table_info(companion_nudge)").all() as unknown as readonly { name: string }[];
+  if (!columns.some((column) => column.name === "response")) database.exec("ALTER TABLE companion_nudge ADD COLUMN response TEXT;");
+  if (!columns.some((column) => column.name === "response_at")) database.exec("ALTER TABLE companion_nudge ADD COLUMN response_at TEXT;");
 }
 
 function getSchemaVersion(database: DatabaseSync): number {
@@ -156,9 +163,21 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
     return row ? { sessionId: String(row.session_id), modeId: String(row.mode_id), state: String(row.state), elapsedActiveMs: Number(row.elapsed_active_ms), updatedAt: String(row.updated_at) } : null;
   }
 
+  loadLatestSession(): PersistedSession | null {
+    const row = this.#database.prepare("SELECT session_id, mode_id, state, elapsed_active_ms, updated_at FROM work_session ORDER BY updated_at DESC LIMIT 1").get() as Record<string, unknown> | undefined;
+    return row ? { sessionId: String(row.session_id), modeId: String(row.mode_id), state: String(row.state), elapsedActiveMs: Number(row.elapsed_active_ms), updatedAt: String(row.updated_at) } : null;
+  }
+
   recordNudge(nudge: PersistedNudge): boolean {
     if (!/^[a-z0-9-]{8,64}$/i.test(nudge.nudgeId) || !/^[a-z0-9-]{8,64}$/i.test(nudge.sessionId) || Number.isNaN(Date.parse(nudge.createdAt))) throw new Error("INVALID_NUDGE_RECORD");
-    const result = this.#database.prepare("INSERT OR IGNORE INTO companion_nudge VALUES (?, ?, ?, ?, ?, ?)").run(nudge.nudgeId, nudge.sessionId, nudge.decision, nudge.reason, nudge.policyVersion, nudge.createdAt);
+    const result = this.#database.prepare("INSERT OR IGNORE INTO companion_nudge (nudge_id, session_id, decision, reason, policy_version, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(nudge.nudgeId, nudge.sessionId, nudge.decision, nudge.reason, nudge.policyVersion, nudge.createdAt);
+    return Number(result.changes) === 1;
+  }
+
+  recordNudgeResponse(nudgeId: string, response: NudgeResponse, responseAt: string): boolean {
+    if (!/^[a-z0-9-]{8,64}$/i.test(nudgeId) || Number.isNaN(Date.parse(responseAt))) throw new Error("INVALID_NUDGE_RESPONSE");
+    if (!["AUTO_CORRECTED", "ACCEPTED", "SNOOZED", "DISMISSED", "IGNORED", "UNKNOWN"].includes(response)) throw new Error("INVALID_NUDGE_RESPONSE");
+    const result = this.#database.prepare("UPDATE companion_nudge SET response = ?, response_at = ? WHERE nudge_id = ? AND response IS NULL").run(response, responseAt, nudgeId);
     return Number(result.changes) === 1;
   }
 
@@ -228,6 +247,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
       createV3Schema(database);
       createV4Schema(database);
       createV5Schema(database);
+      createV6Schema(database);
       database.exec(`PRAGMA user_version = ${STORAGE_SCHEMA_VERSION}; COMMIT;`);
       assertIntegrity(database);
       return { state: "READY", storage: new LocalSqliteStorage(database), migrated: false };
@@ -238,7 +258,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
       return { state: "READY", storage: new LocalSqliteStorage(database), migrated: false };
     }
 
-    if (version < 1 || version > 4) throw new Error("UNSUPPORTED_SCHEMA_VERSION");
+    if (version < 1 || version > 5) throw new Error("UNSUPPORTED_SCHEMA_VERSION");
 
     copyFileSync(safePath, `${safePath}.backup-v1`, 0);
     backupCreated = true;
@@ -248,6 +268,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
     createV3Schema(database);
     createV4Schema(database);
     createV5Schema(database);
+    createV6Schema(database);
     database.exec(`PRAGMA user_version = ${STORAGE_SCHEMA_VERSION}; COMMIT;`);
     assertIntegrity(database);
     database.prepare("INSERT INTO migration_record VALUES (?, ?, ?, ?, ?)").run(

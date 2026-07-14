@@ -37,12 +37,15 @@ const eyeMateApi: EyeMatePreloadApi = {
     if (!Array.isArray(result) || !result.every((value) => typeof value === "object" && value !== null)) throw new Error("PRELOAD_REPORT_LIST_INVALID");
     return result as readonly { readonly status: string; readonly action: string; readonly createdAt: string }[];
   },
-  async startWorkSession() { return await ipcRenderer.invoke("work-session:start"); },
+  async startWorkSession(modeId) { return await ipcRenderer.invoke("work-session:start", modeId); },
   async pauseWorkSession() { return await ipcRenderer.invoke("work-session:pause"); },
   async resumeWorkSession() { return await ipcRenderer.invoke("work-session:resume"); },
   async finishWorkSession() { return await ipcRenderer.invoke("work-session:finish"); },
+  async cancelWorkSession() { return await ipcRenderer.invoke("work-session:cancel"); },
   async getWorkSession() { return await ipcRenderer.invoke("work-session:get"); },
   async listSessionSummaries() { const result: unknown = await ipcRenderer.invoke("work-session:list-summaries"); if (!Array.isArray(result)) throw new Error("PRELOAD_SUMMARY_LIST_INVALID"); return result as readonly { readonly summaryId: string; readonly sessionId: string; readonly status: string; readonly elapsedActiveMs: number; readonly createdAt: string }[]; }
+  ,async requestBreakNudge() { return await ipcRenderer.invoke("work-session:request-break-nudge"); }
+  ,async respondToNudge(nudgeId, response) { return await ipcRenderer.invoke("work-session:respond-nudge", nudgeId, response); }
 };
 
 contextBridge.exposeInMainWorld("eyeMate", Object.freeze(eyeMateApi));

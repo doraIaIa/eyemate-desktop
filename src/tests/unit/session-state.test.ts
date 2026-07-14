@@ -21,3 +21,12 @@ test("transition không hợp lệ và monotonic regression bị từ chối", (
   let session = applySessionEvent(applySessionEvent(createSession("session-0003", "TIMER_ONLY"), "START", 0), "STARTED", 1);
   assert.throws(() => tickSession(session, 0), /MONOTONIC_CLOCK_REGRESSION/);
 });
+
+test("lặp lại event đã áp dụng là idempotent", () => {
+  let session = applySessionEvent(createSession("session-0004", "TIMER_ONLY"), "START", 0);
+  assert.equal(applySessionEvent(session, "START", 1), session);
+  session = applySessionEvent(session, "STARTED", 2);
+  assert.equal(applySessionEvent(session, "STARTED", 3), session);
+  session = applySessionEvent(session, "CANCEL", 4);
+  assert.equal(applySessionEvent(session, "CANCEL", 5), session);
+});

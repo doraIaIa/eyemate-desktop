@@ -21,6 +21,8 @@ export function createSession(id: string, modeId: WorkSession["modeId"]): WorkSe
 
 export function applySessionEvent(session: WorkSession, event: SessionEvent, monotonicNowMs: number): WorkSession {
   if (!Number.isFinite(monotonicNowMs) || monotonicNowMs < 0) throw new Error("INVALID_MONOTONIC_TIME");
+  const idempotent: Partial<Record<SessionEvent, SessionState>> = { START: "STARTING", STARTED: "ACTIVE", PAUSE: "PAUSED", RESUME: "ACTIVE", FINISH: "COMPLETED", CANCEL: "CANCELLED" };
+  if (idempotent[event] === session.state) return session;
   const next = transitions[session.state][event];
   if (next === undefined) throw new Error(`INVALID_SESSION_TRANSITION_${session.state}_${event}`);
   const elapsed = session.state === "ACTIVE" && session.lastMonotonicMs !== null ? session.elapsedActiveMs + Math.max(0, monotonicNowMs - session.lastMonotonicMs) : session.elapsedActiveMs;
