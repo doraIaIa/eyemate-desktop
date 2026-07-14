@@ -59,3 +59,10 @@ Nếu các external gate chưa đóng nhưng mọi phần tự động PASS, tr�
 ## Checklist external-gate
 
 Danh sách machine-readable để bàn giao: `pilot/external-gate-checklist.json`. Chạy `npm run pilot:external-gates` chỉ xác nhận checklist không che giấu evidence/approver; không thay thế phê duyệt hoặc bằng chứng thực tế.
+
+## Ký beta nội bộ và quan sát network có quyền Administrator
+
+- `tools/pilot/create-internal-msix-certificate.ps1` đọc Publisher từ beta manifest, tạo self-signed certificate CurrentUser, PFX private và CER public dưới `.pilot/signing/`. PFX/passphrase không được commit hoặc chia sẻ cho tester.
+- `tools/pilot/install-internal-msix-certificate.ps1` chỉ import CER public vào `TrustedPeople`; `LocalMachine` yêu cầu PowerShell Administrator. Subject certificate phải khớp Publisher manifest.
+- `tools/pilot/capture-pktmon-egress.ps1` yêu cầu PowerShell Administrator, capture NIC tối đa 60 giây và luôn dừng pktmon trong `finally`. ETL/TXT thô có thể chứa dữ liệu nhạy cảm, không commit; mặc định script xóa chúng. Chỉ dùng `-KeepRawCapture` khi cần inspection cục bộ đã được phê duyệt, sau đó scrub summary và xóa raw artifact.
+- Các script là hỗ trợ evidence nội bộ. Chữ ký self-signed chỉ phù hợp development/testing; kết quả pktmon chỉ có thể kết luận phạm vi workload/capture đã quan sát, không chứng minh tuyệt đối không egress.
