@@ -65,13 +65,14 @@ function recoverPersistedSession(): void {
   const persisted = storage?.loadLatestSession();
   if (!persisted || !["ACTIVE", "PAUSED", "RECOVERY_REQUIRED"].includes(persisted.state)) return;
   workSession = recoverSession(persisted.sessionId, persisted.modeId as WorkSession["modeId"], persisted.elapsedActiveMs);
+  nudgesInSession = storage?.countEmittedNudges(persisted.sessionId) ?? 0;
 }
 
 function requestBreakNudge(): NudgeDecision & { readonly nudgeId: string } {
   if (workSession?.state !== "ACTIVE") throw new Error("SESSION_NOT_ACTIVE");
   const now = sessionNow();
   const decision = decideNudge({ mode: workSession.modeId, minuteOfDay: 600, cooldownMinutes: DEFAULT_TIMER_ONLY_CONFIG.cooldownMinutes, frequencyCap: DEFAULT_TIMER_ONLY_CONFIG.maxNudgesPerSession, nowMonotonicMs: now, lastNudgeMonotonicMs, nudgesInWindow: nudgesInSession, signal: "SUFFICIENT", nudgeType: "BREAK_REMINDER" });
-  const nudgeId = `nudge-${randomUUID().slice(0, 8)}`;
+  const nudgeId = `nudge-${workSession.id}-break-${nudgesInSession + 1}`;
   if (decision.action === "EMIT") {
     lastNudgeMonotonicMs = now;
     nudgesInSession += 1;

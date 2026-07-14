@@ -17,6 +17,7 @@ test("session persistence is idempotent and recovery-safe", () => {
     assert.deepEqual(opened.storage.loadLatestSession(), session);
     assert.equal(opened.storage.recordNudge({ nudgeId: "nudge-0001", sessionId: session.sessionId, decision: "EMIT", reason: "EMIT", policyVersion: "m2-companion-policy/0.1.0", createdAt: session.updatedAt }), true);
     assert.equal(opened.storage.recordNudge({ nudgeId: "nudge-0001", sessionId: session.sessionId, decision: "EMIT", reason: "EMIT", policyVersion: "m2-companion-policy/0.1.0", createdAt: session.updatedAt }), false);
+    assert.equal(opened.storage.countEmittedNudges(session.sessionId), 1);
     assert.equal(opened.storage.recordNudgeResponse("nudge-0001", "ACCEPTED", session.updatedAt), true);
     assert.equal(opened.storage.recordNudgeResponse("nudge-0001", "DISMISSED", session.updatedAt), false);
     const summary = { summaryId: "summary-001", sessionId: session.sessionId, status: "COMPLETED", elapsedActiveMs: 1200, createdAt: session.updatedAt } as const;

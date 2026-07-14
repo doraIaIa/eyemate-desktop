@@ -192,6 +192,12 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
     return Number(result.changes) === 1;
   }
 
+  countEmittedNudges(sessionId: string): number {
+    if (!/^[a-z0-9-]{8,64}$/i.test(sessionId)) throw new Error("INVALID_SESSION_ID");
+    const row = this.#database.prepare("SELECT COUNT(*) AS count FROM companion_nudge WHERE session_id = ? AND delivery_state = 'EMITTED'").get(sessionId) as { count: number };
+    return Number(row.count);
+  }
+
   saveSessionSummary(summary: PersistedSummary): boolean {
     if (!/^[a-z0-9-]{8,64}$/i.test(summary.summaryId) || !/^[a-z0-9-]{8,64}$/i.test(summary.sessionId) || !Number.isSafeInteger(summary.elapsedActiveMs) || summary.elapsedActiveMs < 0 || Number.isNaN(Date.parse(summary.createdAt))) throw new Error("INVALID_SESSION_SUMMARY");
     try { this.#database.prepare("INSERT INTO session_summary (summary_id, session_id, status, elapsed_active_ms, created_at, summary_json) VALUES (?, ?, ?, ?, ?, ?)").run(summary.summaryId, summary.sessionId, summary.status, summary.elapsedActiveMs, summary.createdAt, summary.summaryJson ?? null); return true; } catch (error) { if (error instanceof Error && error.message.includes("UNIQUE")) return false; throw error; }
