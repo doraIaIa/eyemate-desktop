@@ -6,7 +6,7 @@ Current batch: M3 exit verification
 Current task: T-M3-006 — Regression, MSIX smoke and M3 exit
 Task state: ENGINEERING_COMPLETE_WITH_LIMITATIONS
 
-Latest verified commit: `23a2f89`
+Latest verified commit: `40472b7`
 Task base commit: `024bff9`
 Working tree: clean after M3 exit verification.
 
