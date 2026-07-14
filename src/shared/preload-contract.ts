@@ -5,4 +5,5 @@ export interface EyeMatePreloadApi {
   getRuntimeInfo(): Promise<RuntimeInfo>;
   getPrivacySummary(): Promise<PrivacySummary>;
   runSurveyOnly(response: SurveyResponse): Promise<CheckupSummary>;
+  completeOnboardingWithoutCamera(): Promise<void>;
 }

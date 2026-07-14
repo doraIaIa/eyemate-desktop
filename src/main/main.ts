@@ -41,16 +41,25 @@ function getPrivacySummary(): PrivacySummary {
 function runSurveyOnly(response: SurveyResponse): CheckupSummary {
   const allowed: readonly SurveyResponse[] = ["NONE", "MILD", "NOTICEABLE", "UNSURE", "PREFER_NOT_TO_ANSWER"];
   if (!allowed.includes(response)) throw new Error("INVALID_SURVEY_RESPONSE");
+  if (storage?.load()?.stage !== "COMPLETE") throw new Error("ONBOARDING_REQUIRED");
   const draft = recordSurveyAnswer(createSurveyDraft(), "comfort_now", response);
   const report = createSurveyOnlyReport(draft, "CONTINUE_SELF_CHECK");
   storage?.saveSurveyOnlyReport({ reportId: randomUUID(), status: report.status, action: report.action, provenanceVersion: report.provenance.reportSchemaVersion, createdAt: new Date().toISOString() });
   return { status: report.status, source: report.source, camera: report.coverage.camera, action: report.action, missingData: report.missingData };
 }
 
+function completeOnboardingWithoutCamera(): void {
+  if (storage === null) throw new Error("LOCAL_STORAGE_UNAVAILABLE");
+  const now = new Date().toISOString();
+  storage.save({ stage: "COMPLETE", updatedAt: now });
+  storage.saveCameraConsent({ purpose: "CAMERA_MEASUREMENT", scope: "LOCAL_CAMERA", textVersion: "m1-camera-1", decision: "SKIPPED", decidedAt: now });
+}
+
 function registerIpcHandlers(): void {
   ipcMain.handle("runtime:get-info", (): RuntimeInfo => getRuntimeInfo());
   ipcMain.handle("privacy:get-summary", (): PrivacySummary => getPrivacySummary());
   ipcMain.handle("checkup:run-survey-only", (_event, response: SurveyResponse): CheckupSummary => runSurveyOnly(response));
+  ipcMain.handle("onboarding:complete-without-camera", (): void => completeOnboardingWithoutCamera());
 }
 
 async function createMainWindow(): Promise<BrowserWindow> {
@@ -88,7 +97,7 @@ async function runSmoke(window: BrowserWindow): Promise<void> {
   }
 
   const surveyResult = await window.webContents.executeJavaScript(
-    "window.eyeMate.runSurveyOnly('MILD').then((value) => `${value.status}:${value.source}:${value.camera}`)",
+    "window.eyeMate.completeOnboardingWithoutCamera().then(() => window.eyeMate.runSurveyOnly('MILD')).then((value) => `${value.status}:${value.source}:${value.camera}`)",
     true
   );
   if (surveyResult !== "COMPLETED:SURVEY_ONLY:NOT_MEASURED") {

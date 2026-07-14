@@ -20,6 +20,9 @@ const eyeMateApi: EyeMatePreloadApi = {
     const result: unknown = await ipcRenderer.invoke("checkup:run-survey-only", response);
     if (!isCheckupSummary(result)) throw new Error("PRELOAD_CHECKUP_CONTRACT_INVALID");
     return result;
+  },
+  async completeOnboardingWithoutCamera() {
+    await ipcRenderer.invoke("onboarding:complete-without-camera");
   }
 };
 

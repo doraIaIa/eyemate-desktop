@@ -9,6 +9,8 @@ const privacySummaryElement = document.querySelector<HTMLParagraphElement>("#pri
 const surveySelect = document.querySelector<HTMLSelectElement>("#survey-response");
 const surveyButton = document.querySelector<HTMLButtonElement>("#run-survey");
 const checkupSummaryElement = document.querySelector<HTMLParagraphElement>("#checkup-summary");
+const onboardingButton = document.querySelector<HTMLButtonElement>("#complete-onboarding");
+const onboardingStatusElement = document.querySelector<HTMLParagraphElement>("#onboarding-status");
 
 async function renderRuntimeStatus(): Promise<void> {
   if (statusElement === null) {
@@ -58,6 +60,11 @@ for (const navigationButton of Array.from(document.querySelectorAll<HTMLButtonEl
 }
 
 renderScreen("home");
+
+onboardingButton?.addEventListener("click", async () => {
+  await window.eyeMate.completeOnboardingWithoutCamera();
+  if (onboardingStatusElement !== null) onboardingStatusElement.textContent = "Onboarding hoàn tất. Camera vẫn tắt; bạn có thể dùng checkup survey-only.";
+});
 
 surveyButton?.addEventListener("click", async () => {
   if (surveySelect === null || checkupSummaryElement === null) return;
