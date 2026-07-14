@@ -11,3 +11,10 @@ await mkdir(destinationDirectory, { recursive: true });
 for (const asset of ["index.html", "styles.css"]) {
   await cp(path.join(sourceDirectory, asset), path.join(destinationDirectory, asset));
 }
+
+const vendorDirectory = path.join(destinationDirectory, "vendor");
+await mkdir(vendorDirectory, { recursive: true });
+await cp(path.join(repositoryRoot, "node_modules", "@mediapipe", "tasks-vision", "vision_bundle.mjs"), path.join(vendorDirectory, "vision_bundle.mjs"));
+await cp(path.join(repositoryRoot, "node_modules", "@mediapipe", "tasks-vision", "wasm"), path.join(vendorDirectory, "wasm"), { recursive: true });
+await mkdir(path.join(destinationDirectory, "models"), { recursive: true });
+await cp(path.join(repositoryRoot, "assets", "camera", "face_landmarker.task"), path.join(destinationDirectory, "models", "face_landmarker.task"));

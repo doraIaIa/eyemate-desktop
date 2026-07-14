@@ -52,7 +52,10 @@
     "check:tauri:m0": "cargo check --manifest-path candidates/tauri/src-tauri/Cargo.toml"
   },
   "devDependencies": {
-    "electron": "^37.10.3",
+    "electron": "^39.8.5",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.35"
   }
 }
