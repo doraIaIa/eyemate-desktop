@@ -1,14 +1,34 @@
 # Project Status
 
 Last updated: 2026-07-14
-Current milestone: UI/UX Integration & Functional Completion
-Current batch: Product completion exit
-Current task: Local-only application shell, functional flows and visual verification
-Task state: PRODUCT_ENGINEERING_COMPLETE_WITH_LIMITATIONS
+Current milestone: PILOT_READINESS
+Current batch: Automated gate closure and internal beta preparation
+Current task: External-gate handoff
+Task state: PILOT_READY_WITH_EXTERNAL_GATES
 
-Latest verified commit: `fc42ec1`
-Task base commit: `fcaeaca`
-Working tree: clean after product completion verification.
+Latest implementation commit: `8fd7da6`
+Task base commit: `d289d54`
+Working tree expectation: clean after this status checkpoint; generated beta artifacts are ignored under `.pilot/`.
+
+## Pilot Readiness Exit Record (2026-07-14)
+
+- Status: `PILOT_READY_WITH_EXTERNAL_GATES`; this is an engineering package for internal synthetic use, not approval to enroll real participants and not `PUBLIC_READY`.
+- Automated enabled slice: survey-only checkup, Timer Only companion and local aggregate Personal Intelligence. Markdown/JSON export remains enabled; PDF is intentionally deferred because it is not required for this beta.
+- Encryption-at-rest: current SQLite plaintext is executable-test confirmed. ADR-005 keeps sensitive persistence `DISABLED`; no tamper/wrong-key/missing-key claim is made without an approved encryption and key-lifecycle design. Migration, interruption, backup/recovery, idempotent reset and physical plaintext purge tests pass.
+- Camera: guided local harness and pure lifecycle tests cover consent, denied/unavailable/busy, low quality, calibration abstention and disconnect without persistence of frame/video/landmark. Real-camera execution is `NOT_RUN_EXTERNAL_GATE`; accuracy remains `UNKNOWN` pending device and ground truth.
+- Clinical: OSDI-6 wording, scoring, severity and recommendation catalogue remain synthetic/internal and `DISABLED` pending Clinical/Product approval.
+- Egress: the one permitted WPR retry failed at `wpr -start Network -filemode` with `0xc5585011`; status afterward was not recording and no ETL was created. Process-attributed local TCP observation sampled 20 times and observed zero external TCP connections (`NOT_OBSERVED_TCP_ONLY`), but UDP/DNS/packet coverage is absent, so dynamic egress remains `UNKNOWN/DEGRADED` and there is no no-egress claim.
+- Release preparation: separate identity `EyeMate.Beta.Internal`, staged unsigned MSIX smoke, clean/update/skipped-version/rollback policy tests, CycloneDX SBOM, SHA-256 checksum, release manifest/notes, feature matrix, runbook and fail-closed signing interface are implemented. Certificate/Store identity remains `EXTERNAL_GATE`; no fake certificate and no publish action were used.
+- Canonical verification: `npm run verify` PASS with 54 unit and 13 integration tests plus architecture, privacy, security, accessibility, Electron M1/M2/M3 and UI functional acceptance. `npm run pilot:contract`, `npm run test:pilot-contract`, `npm run pilot:sensitive-storage-gate`, `npm run test:camera-harness`, `npm run egress:observe:pilot`, `npm run pilot:signing-status`, `npm run pilot:release` and `npm run pilot:verify-bundle` pass with their documented external-gate states.
+- V1 at `F:\dry-eye-app` was not modified.
+
+External gates before a real-person pilot:
+
+- Security/Privacy approval plus authenticated encryption and key lifecycle evidence for sensitive persistence.
+- Explicit real-camera run and approved ground-truth protocol for any accuracy-dependent capability.
+- Clinical/Product approval for OSDI-6 content, scoring and recommendations.
+- Real signing certificate/beta distribution identity and approved participant consent/incident ownership.
+- Broader dynamic egress verification when host permissions or an approved measurement stack become available.
 
 ## Product Completion Exit Record (2026-07-14)
 
