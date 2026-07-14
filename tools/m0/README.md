@@ -7,6 +7,9 @@ node tools/m0/validate-evidence-schema.mjs tools/m0/fixtures/valid-run.jsonl
 node tools/m0/run-fixture-tests.mjs
 node tools/m0/scan-evidence-artifact.mjs run-record tools/m0/fixtures/safe-artifact.json
 node tools/m0/run-scanner-fixture-tests.mjs
+node tools/m0/generate-evidence-manifest.mjs generate <evidence-root> lists/manifest-input.json manifests/m0-manifest.json
+node tools/m0/generate-evidence-manifest.mjs verify <evidence-root> manifests/m0-manifest.json --strict
+node tools/m0/run-manifest-fixture-tests.mjs
 ```
 
 Validator chỉ đọc JSONL, in reason code tối thiểu và không echo record/input. Fixture là dữ liệu synthetic, không chứa raw frame/video/landmark, dữ liệu sức khỏe, đường dẫn người dùng hay secret.
@@ -18,3 +21,5 @@ Validator chỉ dùng `node:fs` để đọc file. Fixture runner dùng `node:ch
 Nó không thay scanner sink runtime, scrubber, checksum-manifest generator, network capture hoặc privacy review sau khi có artifact thật.
 
 `scan-evidence-artifact.mjs` chỉ scan artifact text tối đa 1 MiB theo artifact type allowlist. Nó từ chối type không biết, binary, forbidden field/value cơ bản và không echo input. Scanner này là lớp pre-ingest tối thiểu, không thay thế quét sink runtime hoặc scrubber.
+
+`generate-evidence-manifest.mjs` dùng SHA-256 của Node, chỉ nhận list và manifest relative bên trong evidence root; entry bắt buộc nằm dưới `artifacts/`. Trước khi hash, mỗi entry phải qua scanner. Generate ghi manifest bằng temporary file cùng thư mục rồi rename; manifest deterministic không có timestamp, absolute path, username, hostname hoặc machine identifier. Verify thường kiểm hash/size/scanner/schema/path; `--strict` còn từ chối file dưới `artifacts/` không có trong manifest. Exit `0` là hợp lệ, `1` là reject/invalid contract, `2` là usage hoặc input/root không đọc được. SHA-256 chỉ chứng minh integrity sau khi manifest được tạo; nó không phải chữ ký số hay immutable attestation.

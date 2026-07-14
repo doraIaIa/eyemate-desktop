@@ -3,6 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { scanArtifact } from './scan-evidence-artifact.mjs';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const scanner = join(directory, 'scan-evidence-artifact.mjs');
@@ -18,7 +19,9 @@ let failures = 0;
 for (const testCase of cases) {
   const result = spawnSync(process.execPath, [scanner, testCase.type, join(directory, 'fixtures', testCase.file)], { encoding: 'utf8' });
   const output = `${result.stdout}${result.stderr}`;
-  const passed = result.status === testCase.status && output.includes(testCase.code);
+  const imported = scanArtifact(testCase.type, join(directory, 'fixtures', testCase.file));
+  const passed = result.status === testCase.status && output.includes(testCase.code)
+    && imported.exitCode === result.status && imported.code.includes(testCase.code.replace('SAFE:', 'SAFE'));
   console.log(`${passed ? 'PASS' : 'FAIL'}: ${testCase.name}`);
   if (!passed) failures += 1;
 }

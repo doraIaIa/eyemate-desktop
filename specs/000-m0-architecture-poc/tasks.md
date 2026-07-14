@@ -8,6 +8,18 @@ review: { product: not-required, clinical: not-required, privacy: required, secu
 last_reviewed: 2026-07-14
 ```
 
+## T-M0-003B — SHA-256 manifest evidence artifact
+
+- Goal: sinh và verify manifest SHA-256 deterministic cho artifact `artifacts/...` đã qua scanner, dùng relative path/type/size/hash/scanner version/schema version.
+- Requirements/acceptance: `REL-M0-003`, `SEC-M0-001`, `VAL-M0-001`, `AC-M0-011`, `AC-M0-013`.
+- Dependencies: T-M0-003 (`fc7ae96`) và T-M0-003A (`d0e51c6`); Node standard library.
+- Do not modify: V1, camera/runtime, application candidate, dependency/OS setting, `AGENTS.template.md`/`AGENTS.md`.
+- Out of scope: chữ ký số, immutable attestation, retention/purge, benchmark thật, scanner sink runtime hoặc task kế tiếp.
+- Tests to add/update: deterministic generate/verify; modified/missing/duplicate/unsafe/scanner-rejected/unsupported-schema/strict-extra reject; fixture chỉ synthetic.
+- Verification command: `node tools/m0/run-manifest-fixture-tests.mjs`.
+- Expected evidence: manifest schema versioned, atomic write, reason/exit code tối thiểu và không có absolute/user/machine identifier.
+- Stop condition: đọc/follow symlink ngoài evidence root, scanner không chạy trước hash, cần dependency/network hoặc manifest tuyên bố attestation.
+
 > Chỉ thực hiện sau khi người dùng duyệt plan. Không task nào xây toàn bộ EyeMate V2. Command có dấu `<...>` là placeholder chưa xác minh và phải được thay bằng command thật sau khi manifest tồn tại.
 
 ## Thứ tự và dependency

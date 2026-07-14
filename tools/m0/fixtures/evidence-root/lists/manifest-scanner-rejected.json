@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "m0-evidence-artifact-list/0.1.0",
+  "artifacts": [
+    { "path": "artifacts/rejected-artifact.txt", "type": "resource-trace" }
+  ]
+}

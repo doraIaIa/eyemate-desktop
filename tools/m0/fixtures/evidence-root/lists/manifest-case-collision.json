@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "m0-evidence-artifact-list/0.1.0",
+  "artifacts": [
+    { "path": "artifacts/valid-artifact.json", "type": "run-record" },
+    { "path": "artifacts/VALID-artifact.json", "type": "run-record" }
+  ]
+}

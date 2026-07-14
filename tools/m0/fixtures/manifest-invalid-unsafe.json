@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "m0-evidence-manifest/0.1.0",
+  "scannerVersion": "m0-artifact-scanner/0.1.0",
+  "entryCount": 1,
+  "entries": [
+    { "path": "artifacts/../outside.json", "type": "run-record", "byteSize": 0, "sha256": "0000000000000000000000000000000000000000000000000000000000000000", "scannerVersion": "m0-artifact-scanner/0.1.0" }
+  ]
+}
