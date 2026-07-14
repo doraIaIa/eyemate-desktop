@@ -1,5 +1,6 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import path from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { createSecureWindowOptions } from "./window-options.js";
@@ -10,7 +11,7 @@ import { openLocalSqliteStorage, resolveDatabasePath, type LocalSqliteStorage } 
 import type { M3DataCategory } from "../shared/preload-contract.js";
 import { createSurveyDraft, createSurveyOnlyReport, recordSurveyAnswer } from "../symptom-checkup/survey-only.js";
 import { evaluateSafetyGate, internalSafetyCatalogue } from "../safety/safety-gate.js";
-import { applySessionEvent, createSession, recoverSession, type WorkSession } from "../work-session/session-state.js";
+import { applySessionEvent, createSession, recoverSession, tickSession, type WorkSession } from "../work-session/session-state.js";
 import { decideNudge, type NudgeDecision } from "../work-session/companion-policy.js";
 import { createSessionSummary } from "../work-session/session-summary.js";
 import { InProcessNudgeAdapter } from "../work-session/nudge-adapter.js";
@@ -27,8 +28,11 @@ const preloadPath = path.join(currentDirectory, "../preload/preload.js");
 const smokeMode = process.argv.includes("--m1-smoke");
 const companionSmokeMode = process.argv.includes("--m2-smoke");
 const intelligenceSmokeMode = process.argv.includes("--m3-smoke");
+const uiValidationMode = process.argv.includes("--ui-validate");
+const uiCaptureArgument = process.argv.find((argument) => argument.startsWith("--ui-screenshot-dir="));
+const uiScreenshotDirectory = uiCaptureArgument?.slice("--ui-screenshot-dir=".length) ?? null;
 
-if (smokeMode || companionSmokeMode || intelligenceSmokeMode) {
+if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode) {
   app.disableHardwareAcceleration();
 }
 
@@ -45,7 +49,16 @@ let sessionMonotonicMs = 0;
 let lastNudgeMonotonicMs: number | null = null;
 let nudgesInSession = 0;
 const nudgeAdapter = new InProcessNudgeAdapter();
-const sessionNow = (): number => { sessionMonotonicMs += 1; return sessionMonotonicMs; };
+const sessionNow = (): number => {
+  sessionMonotonicMs = Math.max(sessionMonotonicMs + 1, Math.round(performance.now()));
+  return sessionMonotonicMs;
+};
+
+function persistActiveSessionBeforeExit(): void {
+  if (workSession?.state !== "ACTIVE") return;
+  workSession = tickSession(workSession, sessionNow());
+  storage?.saveSession({ sessionId: workSession.id, modeId: workSession.modeId, state: workSession.state, elapsedActiveMs: workSession.elapsedActiveMs, updatedAt: new Date().toISOString() });
+}
 
 function updateWorkSession(event: "START" | "STARTED" | "PAUSE" | "RESUME" | "FINISH" | "CANCEL"): WorkSession {
   const now = sessionNow();
@@ -187,6 +200,20 @@ function registerIpcHandlers(): void {
     const content = format === "JSON" ? JSON.stringify(exportReport, null, 2) : renderProfessionalSummary(exportReport);
     return writeLocalExport(destination, content);
   });
+  ipcMain.handle("m3:export-with-dialog", async (_event, format: LocalExportFormat, includeEvidence: boolean) => {
+    if (!["JSON", "MARKDOWN"].includes(format) || typeof includeEvidence !== "boolean") throw new Error("INVALID_M3_EXPORT_REQUEST");
+    const selected = await dialog.showSaveDialog({
+      title: "Export EyeMate Personal Summary",
+      defaultPath: `eyemate-summary.${format === "JSON" ? "json" : "md"}`,
+      filters: [{ name: format === "JSON" ? "JSON" : "Markdown", extensions: [format === "JSON" ? "json" : "md"] }],
+      properties: ["showOverwriteConfirmation", "createDirectory"]
+    });
+    if (selected.canceled || !selected.filePath) return { status: "CANCELLED", reason: "USER_CANCELLED" };
+    const report = generateM3Report();
+    const exportReport = includeEvidence ? report : { ...report, evidenceSourceIds: [], missingData: [], limitations: ["EVIDENCE_OMITTED_BY_USER"] };
+    const content = format === "JSON" ? JSON.stringify(exportReport, null, 2) : renderProfessionalSummary(exportReport);
+    return writeLocalExport(selected.filePath, content);
+  });
 }
 
 async function createMainWindow(): Promise<BrowserWindow> {
@@ -264,15 +291,100 @@ async function runIntelligenceSmoke(window: BrowserWindow): Promise<void> {
   if (result !== "PASS") throw new Error(`M3_INTELLIGENCE_SMOKE_${String(result)}`);
 }
 
+async function runUiValidation(window: BrowserWindow): Promise<void> {
+  const wait = async (milliseconds = 180): Promise<void> => await new Promise((resolve) => setTimeout(resolve, milliseconds));
+  const evaluate = async <T>(source: string): Promise<T> => await window.webContents.executeJavaScript(source, true) as T;
+  const requireTrue = (value: unknown, reason: string): void => { if (value !== true) throw new Error(reason); };
+  const capture = async (name: string, width = 1280, height = 800): Promise<void> => {
+    if (uiScreenshotDirectory === null) return;
+    window.setSize(width, height);
+    await wait(420);
+    requireTrue(await evaluate("document.documentElement.scrollWidth <= window.innerWidth && document.querySelector('.app-shell').getBoundingClientRect().right <= window.innerWidth + 1"), `UI_LAYOUT_OVERFLOW_${width}x${height}`);
+    const image = await window.webContents.capturePage();
+    await mkdir(uiScreenshotDirectory, { recursive: true });
+    await writeFile(path.join(uiScreenshotDirectory, `${name}-${width}x${height}.png`), image.toPNG());
+  };
+
+  await wait(300);
+  requireTrue(await evaluate("location.hash === '#/home' && Boolean(document.querySelector('.vitals-orb'))"), "UI_HOME_ROUTE_INVALID");
+  await capture("home");
+  await capture("home", 1024, 768);
+
+  await evaluate("document.querySelector('[data-route=checkup]').click(); true"); await wait();
+  requireTrue(await evaluate("location.hash === '#/checkup' && Boolean(document.querySelector('#checkup-consent'))"), "UI_CHECKUP_ROUTE_INVALID");
+  await evaluate("document.querySelector('#checkup-consent').click(); true"); await wait();
+  await evaluate("document.querySelector('input[value=MILD]').click(); document.querySelector('#checkup-survey-next').click(); true"); await wait();
+  await evaluate("document.querySelector('#checkup-camera-next').click(); true"); await wait();
+  await evaluate("document.querySelector('#checkup-finish').click(); true"); await wait(350);
+  requireTrue(await evaluate("Boolean(document.querySelector('#checkup-done')) && document.body.textContent.includes('Survey-only')"), "UI_CHECKUP_FLOW_INVALID");
+  await capture("checkup-result");
+  await capture("checkup-result", 1024, 768);
+  await capture("checkup-result");
+
+  await evaluate("document.querySelector('[data-route=companion]').click(); true"); await wait();
+  await evaluate("document.querySelector('#session-start').click(); true"); await wait(300);
+  requireTrue(await evaluate("Boolean(document.querySelector('#session-toggle')) && document.body.textContent.includes('Phiên đang hoạt động')"), "UI_SESSION_START_INVALID");
+  await wait(1_050);
+  requireTrue(await evaluate("document.querySelector('#session-timer').textContent !== '00:00:00'"), "UI_SESSION_TIMER_NOT_COUNTING");
+  await capture("session-active");
+  await capture("session-active", 1024, 768);
+  await evaluate("document.querySelector('#session-toggle').click(); true"); await wait();
+  requireTrue(await evaluate("document.body.textContent.includes('Đang tạm dừng')"), "UI_SESSION_PAUSE_INVALID");
+  const pausedTimer = await evaluate<string>("document.querySelector('#session-timer').textContent");
+  await wait(350);
+  requireTrue(await evaluate(`document.querySelector('#session-timer').textContent === ${JSON.stringify(pausedTimer)}`), "UI_SESSION_PAUSE_TIMER_MOVED");
+  await evaluate("document.querySelector('#session-toggle').click(); true"); await wait();
+  await evaluate("document.querySelector('#session-nudge').click(); true"); await wait();
+  requireTrue(await evaluate("Boolean(document.querySelector('[data-nudge=ACCEPTED]'))"), "UI_NUDGE_MISSING");
+  await evaluate("document.querySelector('[data-nudge=ACCEPTED]').click(); document.querySelector('#session-end').click(); true"); await wait();
+  await evaluate("document.querySelector('#confirm-session-end').click(); true"); await wait(300);
+  requireTrue(await evaluate("document.body.textContent.includes('Phiên đã hoàn thành')"), "UI_SESSION_SUMMARY_INVALID");
+  await evaluate("document.querySelector('#modal-close').click(); true");
+
+  await evaluate("document.querySelector('[data-route=reports]').click(); true"); await wait();
+  await evaluate("document.querySelector('#report-generate').click(); true"); await wait(350);
+  requireTrue(await evaluate("location.hash === '#/reports' && Boolean(document.querySelector('[data-report-tab=history]'))"), "UI_REPORTS_INVALID");
+  await evaluate("document.querySelector('#toast-region').replaceChildren(); true");
+  await capture("reports");
+  await capture("reports", 1024, 768);
+  await evaluate("document.querySelector('[data-report-tab=history]').click(); true"); await wait();
+  requireTrue(await evaluate("document.querySelector('#report-content').textContent.includes('Work session')"), "UI_HISTORY_INVALID");
+
+  await evaluate("document.querySelector('[data-route=privacy]').click(); true"); await wait();
+  await capture("privacy");
+  await capture("privacy", 1024, 768);
+  await evaluate("document.querySelector('#privacy-delete').click(); true"); await wait();
+  requireTrue(await evaluate("Boolean(document.querySelector('#delete-next'))"), "UI_DELETE_STEP_ONE_INVALID");
+  await evaluate("document.querySelector('#delete-next').click(); true"); await wait();
+  requireTrue(await evaluate("Boolean(document.querySelector('#delete-confirm'))"), "UI_DELETE_STEP_TWO_INVALID");
+  await evaluate("document.querySelector('#delete-confirm').click(); true"); await wait(300);
+  requireTrue(await evaluate("document.querySelector('#toast-region').textContent.includes('DELETED')"), "UI_DELETE_RESULT_MISSING");
+
+  await evaluate("document.querySelector('[data-route=settings]').click(); true"); await wait();
+  await evaluate("document.querySelector('#sound-toggle').click(); true"); await wait(650);
+  requireTrue(await evaluate("localStorage.getItem('eyemate.sound') === 'on'"), "UI_SETTINGS_AUTOSAVE_INVALID");
+
+  await evaluate("location.hash = '#/privacy'; true"); await wait();
+  await evaluate("location.hash = '#/reports'; true"); await wait();
+  await evaluate("history.back(); true"); await wait();
+  requireTrue(await evaluate("location.hash === '#/privacy'"), "UI_HISTORY_BACK_INVALID");
+  await evaluate("history.forward(); true"); await wait();
+  requireTrue(await evaluate("location.hash === '#/reports'"), "UI_HISTORY_FORWARD_INVALID");
+  await evaluate("history.back(); true"); await wait();
+  await window.webContents.reload(); await wait(350);
+  requireTrue(await evaluate("location.hash === '#/privacy' && Boolean(document.querySelector('#privacy-delete'))"), "UI_RELOAD_RESTORE_INVALID");
+}
+
 app.whenReady().then(async () => {
   const openedStorage = openLocalSqliteStorage(resolveDatabasePath(app.getPath("userData")));
   if (openedStorage.state === "READY") { storage = openedStorage.storage; recoverPersistedSession(); }
   registerIpcHandlers();
   const window = await createMainWindow();
 
-  if (smokeMode || companionSmokeMode || intelligenceSmokeMode) {
+  if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode) {
     try {
-      if (intelligenceSmokeMode) await runIntelligenceSmoke(window);
+      if (uiValidationMode) await runUiValidation(window);
+      else if (intelligenceSmokeMode) await runIntelligenceSmoke(window);
       else if (companionSmokeMode) await runCompanionSmoke(window);
       else await runSmoke(window);
       app.exit(0);
@@ -298,4 +410,4 @@ app.on("window-all-closed", () => {
   }
 });
 
-app.on("before-quit", () => storage?.close());
+app.on("before-quit", () => { persistActiveSessionBeforeExit(); storage?.close(); });

@@ -5,53 +5,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'" />
     <title>EyeMate</title>
-    <style>
-      :root { color: #172036; background: #f5f7fb; font-family: "Segoe UI", sans-serif; }
-      body { margin: 0; min-height: 100vh; }
-      .layout { min-height: 100vh; display: grid; grid-template-columns: 220px 1fr; }
-      nav { padding: 24px 16px; background: #172036; color: #fff; } nav h1 { font-size: 1.15rem; }
-      nav button { display: block; width: 100%; border: 0; border-radius: 8px; padding: 10px; margin: 6px 0; text-align: left; color: inherit; background: transparent; cursor: pointer; }
-      button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #2856bd; outline-offset: 3px; }
-      nav button[aria-current="page"] { background: #2856bd; }
-      main { width: min(720px, calc(100% - 48px)); align-self: center; margin: 48px auto; background: #fff; border-radius: 16px; padding: 36px; box-shadow: 0 12px 40px #18213b16; }
-      h2 { margin-top: 0; } .tag { color: #2856bd; font-weight: 700; } p { line-height: 1.55; } .state { color: #4b5d7b; font-weight: 600; }
-    </style>
+    <link rel="stylesheet" href="./styles.css" />
   </head>
-  <body>
-    <div class="layout">
-      <nav aria-label="Điều hướng chính">
-        <h1>EyeMate</h1>
-        <button type="button" data-screen="home">Trang chủ</button>
-        <button type="button" data-screen="checkup">Checkup</button>
-        <button type="button" data-screen="reports">Báo cáo</button>
-        <button type="button" data-screen="privacy">Quyền riêng tư</button>
-        <button type="button" data-screen="settings">Cài đặt</button>
-      </nav>
-      <main>
-        <p class="tag">EyeMate · Local Only</p>
-        <h2 id="page-title">Đang tải</h2>
-        <p id="page-body"></p>
-        <p id="page-state" class="state" aria-live="polite"></p>
-        <p id="privacy-summary" aria-live="polite"></p>
-        <button id="withdraw-camera" type="button">Rút consent camera</button>
-        <button id="delete-local-data" type="button">Xóa toàn bộ dữ liệu cục bộ</button>
-        <button id="complete-onboarding" type="button">Tiếp tục Local Only, không bật camera</button>
-        <p id="onboarding-status" aria-live="polite"></p>
-        <label for="survey-response">Mức độ thoải mái mắt hiện tại</label>
-        <select id="survey-response"><option value="NONE">Không có khó chịu</option><option value="MILD">Nhẹ</option><option value="NOTICEABLE">Đáng chú ý</option><option value="UNSURE">Chưa chắc</option><option value="PREFER_NOT_TO_ANSWER">Không muốn trả lời</option></select>
-        <button id="run-survey" type="button">Tạo báo cáo survey-only</button>
-        <label for="safety-response">Trạng thái Safety Gate</label>
-        <select id="safety-response"><option value="NEGATIVE">Không có tín hiệu cần dừng</option><option value="CONFIRMED">Có tín hiệu cần dừng</option><option value="UNSURE">Chưa chắc</option><option value="PREFER_NOT_TO_ANSWER">Không muốn trả lời</option></select>
-        <p id="checkup-summary" aria-live="polite"></p>
-        <p id="report-history" aria-live="polite"></p>
-        <section aria-labelledby="companion-title"><h3 id="companion-title">Work Companion — timer-only</h3><button id="session-start" type="button">Bắt đầu</button><button id="session-pause" type="button">Tạm dừng</button><button id="session-resume" type="button">Tiếp tục</button><button id="session-finish" type="button">Kết thúc</button><button id="session-cancel" type="button">Hủy phiên</button><p id="session-status" aria-live="polite">Chưa có phiên.</p></section>
-        <p>Ứng dụng không chẩn đoán, điều trị hoặc thay thế tư vấn chuyên môn.</p>
-        <p id="runtime-status" aria-live="polite">Đang kiểm tra trạng thái ứng dụng…</p>
-        <label for="session-mode">Mode</label><select id="session-mode"><option value="TIMER_ONLY">Timer Only</option><option value="BALANCED">Balanced</option><option value="DEEP_FOCUS">Deep Focus</option><option value="HIGH_SUPPORT">High Support</option><option value="CUSTOM">Custom</option></select>
-        <button id="request-nudge" type="button">Kiểm tra nhắc nghỉ</button><button id="accept-nudge" type="button">Chấp nhận</button><button id="snooze-nudge" type="button">Nhắc lại sau</button><button id="dismiss-nudge" type="button">Bỏ qua</button><p id="nudge-status" aria-live="polite"></p>
-        <section aria-labelledby="m3-title"><h3 id="m3-title">Personal Intelligence</h3><p>Chỉ số hành vi cục bộ, không phải chẩn đoán.</p><button id="m3-generate" type="button">Tạo báo cáo cá nhân</button><button id="m3-list" type="button">Xem snapshot gần nhất</button><button id="m3-preview" type="button">Xem Professional Summary</button><label for="m3-export-path">Đường dẫn export cục bộ</label><input id="m3-export-path" type="text" autocomplete="off" /><label for="m3-export-format">Định dạng export</label><select id="m3-export-format"><option value="MARKDOWN">Markdown dễ đọc</option><option value="JSON">JSON có cấu trúc</option></select><label><input id="m3-export-evidence" type="checkbox" checked /> Bao gồm evidence và giới hạn</label><button id="m3-export" type="button">Export cục bộ</button><button id="m3-reset" type="button">Reset baseline</button><label for="m3-delete-category">Nhóm dữ liệu cần xóa</label><select id="m3-delete-category"><option value="REPORT">Báo cáo</option><option value="SUMMARY">Tóm tắt ngày/tuần và báo cáo</option><option value="PATTERN">Pattern và báo cáo liên quan</option><option value="BASELINE">Baseline</option><option value="ALL">Toàn bộ dữ liệu M3</option></select><button id="m3-delete" type="button">Xóa nhóm đã chọn</button><p id="m3-status" aria-live="polite"></p><section id="m3-report-details" aria-live="polite"></section><pre id="m3-preview-output" aria-live="polite"></pre></section>
+  <body class="theme-default">
+    <header class="titlebar" aria-label="Thanh tiêu đề ứng dụng">
+      <span class="titlebar-mark" aria-hidden="true"></span>
+      <span>EyeMate</span>
+      <span class="titlebar-caption">Local companion for healthier screen time</span>
+    </header>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="#/home" aria-label="EyeMate — Trang chủ">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M5 24c5-9 11-14 19-14s14 5 19 14c-5 9-11 14-19 14S10 33 5 24Z"/><circle cx="24" cy="24" r="7"/></svg>
+          <span><strong>EyeMate</strong><small>visual wellbeing</small></span>
+        </a>
+        <nav class="primary-nav" aria-label="Điều hướng chính">
+          <a href="#/home" data-route="home"><span aria-hidden="true">◉</span> Tổng quan</a>
+          <a href="#/checkup" data-route="checkup"><span aria-hidden="true">◇</span> Khám mắt</a>
+          <a href="#/companion" data-route="companion"><span aria-hidden="true">◷</span> Đồng hành</a>
+          <a href="#/reports" data-route="reports"><span aria-hidden="true">⌁</span> Báo cáo</a>
+          <a href="#/privacy" data-route="privacy"><span aria-hidden="true">⌾</span> Quyền riêng tư</a>
+          <a href="#/settings" data-route="settings"><span aria-hidden="true">⚙</span> Cài đặt</a>
+        </nav>
+        <footer class="sidebar-footer">
+          <span class="local-badge"><span aria-hidden="true">●</span> Local Only</span>
+          <small>Không cần mạng · dữ liệu ở thiết bị</small>
+        </footer>
+      </aside>
+      <main id="app-main" tabindex="-1">
+        <div id="view" aria-live="polite"></div>
       </main>
     </div>
+    <div id="toast-region" class="toast-region" aria-live="assertive"></div>
+    <div id="modal-root"></div>
     <script type="module" src="./app.js"></script>
   </body>
 </html>

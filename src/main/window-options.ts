@@ -7,7 +7,13 @@ export function createSecureWindowOptions(preloadPath: string): BrowserWindowCon
     minWidth: 900,
     minHeight: 620,
     show: false,
-    backgroundColor: "#f5f7fb",
+    backgroundColor: "#090F1A",
+    titleBarStyle: "hidden",
+    titleBarOverlay: {
+      color: "#090F1A",
+      symbolColor: "#7A9BBF",
+      height: 38
+    },
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

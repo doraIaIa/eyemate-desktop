@@ -4,8 +4,10 @@ import { fileURLToPath } from "node:url";
 
 const toolDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(toolDirectory, "../..");
-const source = path.join(repositoryRoot, "src", "renderer", "index.html");
+const sourceDirectory = path.join(repositoryRoot, "src", "renderer");
 const destinationDirectory = path.join(repositoryRoot, "dist", "renderer");
 
 await mkdir(destinationDirectory, { recursive: true });
-await cp(source, path.join(destinationDirectory, "index.html"));
+for (const asset of ["index.html", "styles.css"]) {
+  await cp(path.join(sourceDirectory, asset), path.join(destinationDirectory, asset));
+}
