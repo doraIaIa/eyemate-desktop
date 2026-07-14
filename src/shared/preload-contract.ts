@@ -15,4 +15,5 @@ export interface EyeMatePreloadApi {
   resumeWorkSession(): Promise<WorkSession>;
   finishWorkSession(): Promise<WorkSession>;
   getWorkSession(): Promise<WorkSession | null>;
+  listSessionSummaries(): Promise<readonly { readonly summaryId: string; readonly sessionId: string; readonly status: string; readonly elapsedActiveMs: number; readonly createdAt: string }[]>;
 }

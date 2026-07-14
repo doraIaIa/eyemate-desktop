@@ -93,6 +93,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle("work-session:resume", () => updateWorkSession("RESUME"));
   ipcMain.handle("work-session:finish", () => updateWorkSession("FINISH"));
   ipcMain.handle("work-session:get", () => workSession);
+  ipcMain.handle("work-session:list-summaries", () => storage?.listSessionSummaries() ?? []);
 }
 
 async function createMainWindow(): Promise<BrowserWindow> {

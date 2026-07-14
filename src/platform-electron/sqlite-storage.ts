@@ -167,6 +167,10 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
     try { this.#database.prepare("INSERT INTO session_summary VALUES (?, ?, ?, ?, ?)").run(summary.summaryId, summary.sessionId, summary.status, summary.elapsedActiveMs, summary.createdAt); return true; } catch (error) { if (error instanceof Error && error.message.includes("UNIQUE")) return false; throw error; }
   }
 
+  listSessionSummaries(): readonly PersistedSummary[] {
+    return this.#database.prepare("SELECT summary_id, session_id, status, elapsed_active_ms, created_at FROM session_summary ORDER BY created_at DESC").all().map((row) => { const value = row as Record<string, unknown>; return { summaryId: String(value.summary_id), sessionId: String(value.session_id), status: String(value.status), elapsedActiveMs: Number(value.elapsed_active_ms), createdAt: String(value.created_at) }; });
+  }
+
   deleteAllLocalData(): "DELETED" {
     this.#database.exec("BEGIN IMMEDIATE; DELETE FROM session_summary; DELETE FROM companion_nudge; DELETE FROM work_session; DELETE FROM checkup_report_snapshot; DELETE FROM camera_consent; DELETE FROM onboarding_progress; COMMIT;");
     return "DELETED";

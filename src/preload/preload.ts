@@ -41,7 +41,8 @@ const eyeMateApi: EyeMatePreloadApi = {
   async pauseWorkSession() { return await ipcRenderer.invoke("work-session:pause"); },
   async resumeWorkSession() { return await ipcRenderer.invoke("work-session:resume"); },
   async finishWorkSession() { return await ipcRenderer.invoke("work-session:finish"); },
-  async getWorkSession() { return await ipcRenderer.invoke("work-session:get"); }
+  async getWorkSession() { return await ipcRenderer.invoke("work-session:get"); },
+  async listSessionSummaries() { const result: unknown = await ipcRenderer.invoke("work-session:list-summaries"); if (!Array.isArray(result)) throw new Error("PRELOAD_SUMMARY_LIST_INVALID"); return result as readonly { readonly summaryId: string; readonly sessionId: string; readonly status: string; readonly elapsedActiveMs: number; readonly createdAt: string }[]; }
 };
 
 contextBridge.exposeInMainWorld("eyeMate", Object.freeze(eyeMateApi));
