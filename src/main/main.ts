@@ -25,8 +25,9 @@ const rendererIndexPath = path.join(currentDirectory, "../renderer/index.html");
 const preloadPath = path.join(currentDirectory, "../preload/preload.js");
 const smokeMode = process.argv.includes("--m1-smoke");
 const companionSmokeMode = process.argv.includes("--m2-smoke");
+const intelligenceSmokeMode = process.argv.includes("--m3-smoke");
 
-if (smokeMode || companionSmokeMode) {
+if (smokeMode || companionSmokeMode || intelligenceSmokeMode) {
   app.disableHardwareAcceleration();
 }
 
@@ -228,15 +229,30 @@ async function runCompanionSmoke(window: BrowserWindow): Promise<void> {
   if (result !== "PASS") throw new Error(`M2_COMPANION_SMOKE_${String(result)}`);
 }
 
+async function runIntelligenceSmoke(window: BrowserWindow): Promise<void> {
+  const result = await window.webContents.executeJavaScript(`(async () => {
+    await window.eyeMate.completeOnboardingWithoutCamera();
+    await window.eyeMate.runSurveyOnly({ response: 'MILD', safety: 'NEGATIVE' });
+    await window.eyeMate.startWorkSession('TIMER_ONLY');
+    await window.eyeMate.finishWorkSession();
+    await window.eyeMate.finishWorkSession();
+    const report = await window.eyeMate.generateM3Report();
+    const preview = await window.eyeMate.previewProfessionalSummary();
+    return report.disclaimer === 'NOT_A_DIAGNOSIS' && report.dataSource === 'MIXED' && preview.includes('not a diagnosis') ? 'PASS' : 'REPORT_INVALID';
+  })()`, true);
+  if (result !== "PASS") throw new Error(`M3_INTELLIGENCE_SMOKE_${String(result)}`);
+}
+
 app.whenReady().then(async () => {
   const openedStorage = openLocalSqliteStorage(resolveDatabasePath(app.getPath("userData")));
   if (openedStorage.state === "READY") { storage = openedStorage.storage; recoverPersistedSession(); }
   registerIpcHandlers();
   const window = await createMainWindow();
 
-  if (smokeMode || companionSmokeMode) {
+  if (smokeMode || companionSmokeMode || intelligenceSmokeMode) {
     try {
-      if (companionSmokeMode) await runCompanionSmoke(window);
+      if (intelligenceSmokeMode) await runIntelligenceSmoke(window);
+      else if (companionSmokeMode) await runCompanionSmoke(window);
       else await runSmoke(window);
       app.exit(0);
     } catch (error) {
