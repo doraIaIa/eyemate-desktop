@@ -1,4 +1,4 @@
-import { aggregateDaily, aggregateWeekly, buildBaseline, evaluateNearWorkPattern, type AnalyticsInput, type BaselineSnapshot, type DailySummary, type WeeklyDigest } from "./analytics.js";
+import { aggregateDaily, aggregateWeekly, buildBaseline, evaluateNearWorkPattern, localDateFor, type AnalyticsInput, type BaselineSnapshot, type DailySummary, type WeeklyDigest } from "./analytics.js";
 
 export const PERSONAL_REPORT_SCHEMA = "m3-personal-report/0.1.0" as const;
 export interface PersonalReport { readonly schemaVersion: typeof PERSONAL_REPORT_SCHEMA; readonly generatedAt: string; readonly timezone: string; readonly dataSource: "TIMER_ONLY" | "SURVEY_ONLY" | "MIXED" | "NO_DATA"; readonly baseline: BaselineSnapshot; readonly daily: DailySummary; readonly weekly: WeeklyDigest; readonly evidenceSourceIds: readonly string[]; readonly missingData: readonly string[]; readonly limitations: readonly string[]; readonly disclaimer: "NOT_A_DIAGNOSIS"; }
@@ -6,7 +6,8 @@ export interface PersonalReport { readonly schemaVersion: typeof PERSONAL_REPORT
 export function buildPersonalReport(inputs: readonly AnalyticsInput[], localDate: string, timezone: string, generatedAt: string): PersonalReport {
   if (Number.isNaN(Date.parse(generatedAt))) throw new Error("INVALID_REPORT_TIME");
   const daily = aggregateDaily(inputs, localDate, timezone);
-  const weekly = aggregateWeekly([daily], localDate, timezone);
+  const weeklyDays = [...new Set(inputs.filter((input) => input.timezone === timezone).map((input) => localDateFor(input.occurredAtUtc, timezone)))].sort().map((date) => aggregateDaily(inputs, date, timezone));
+  const weekly = aggregateWeekly(weeklyDays, localDate, timezone);
   const baseline = buildBaseline(inputs, "timer-only", { version: "m3-baseline/0.1.0", minimumSamples: 3, staleAfterDays: 14 }, generatedAt);
   const hasWork = inputs.some((input) => input.sourceType === "WORK_SESSION");
   const hasSurvey = inputs.some((input) => input.sourceType === "SURVEY_ONLY_CHECKUP");

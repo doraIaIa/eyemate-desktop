@@ -15,7 +15,7 @@ import { createSessionSummary } from "../work-session/session-summary.js";
 import { InProcessNudgeAdapter } from "../work-session/nudge-adapter.js";
 import { DEFAULT_TIMER_ONLY_CONFIG } from "../work-session/companion-config.js";
 import { fromSurveyOnly, fromWorkSession } from "../personal-intelligence/source-adapter.js";
-import { validateAnalyticsInput, type AnalyticsInput } from "../personal-intelligence/analytics.js";
+import { localDateFor, validateAnalyticsInput, type AnalyticsInput } from "../personal-intelligence/analytics.js";
 import { buildPersonalReport, renderProfessionalSummary, type PersonalReport } from "../personal-intelligence/report-service.js";
 import { writeLocalExport, type LocalExportFormat } from "../platform-electron/local-export.js";
 import type { NudgeResponse } from "../platform-electron/sqlite-storage.js";
@@ -138,7 +138,7 @@ function generateM3Report(): PersonalReport {
   const inputs = analyticsInputs();
   const timezone = inputs[0]?.timezone ?? "UTC";
   const now = new Date().toISOString();
-  const report = buildPersonalReport(inputs, now.slice(0, 10), timezone, now);
+  const report = buildPersonalReport(inputs, localDateFor(now, timezone), timezone, now);
   storage?.saveM3Record({ id: `baseline-${report.baseline.contextKey}-${now.slice(0, 10)}`, kind: "BASELINE", createdAt: now, payloadJson: JSON.stringify(report.baseline) });
   storage?.saveM3Record({ id: `daily-${report.daily.localDate}-${timezone.replace(/[^a-z0-9]/gi, "-")}`, kind: "DAILY", createdAt: now, payloadJson: JSON.stringify(report.daily) });
   storage?.saveM3Record({ id: `weekly-${report.weekly.startDate}-${timezone.replace(/[^a-z0-9]/gi, "-")}`, kind: "WEEKLY", createdAt: now, payloadJson: JSON.stringify(report.weekly) });

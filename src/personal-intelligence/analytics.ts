@@ -56,8 +56,12 @@ export function evaluateNearWorkPattern(input: AnalyticsInput, generatedAt: stri
 }
 
 export interface DailySummary { readonly localDate: string; readonly timezone: string; readonly status: "AVAILABLE" | "INSUFFICIENT_DATA"; readonly totalSessionMinutes: number; readonly longestSessionMinutes: number; readonly sourceIds: readonly string[]; readonly vli: VliResult; readonly patterns: readonly PatternResult[]; readonly missingData: readonly string[]; readonly version: string; }
+export function localDateFor(utc: string, timezone: string): string {
+  if (Number.isNaN(Date.parse(utc))) throw new Error("INVALID_ANALYTICS_TIME");
+  try { const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(utc)); const byType = Object.fromEntries(parts.map((part) => [part.type, part.value])); return `${byType.year}-${byType.month}-${byType.day}`; } catch { throw new Error("INVALID_ANALYTICS_TIMEZONE"); }
+}
 export function aggregateDaily(inputs: readonly AnalyticsInput[], localDate: string, timezone: string): DailySummary {
-  const dayInputs = inputs.filter((input) => input.occurredAtUtc.slice(0, 10) === localDate && input.timezone === timezone && input.sourceType === "WORK_SESSION");
+  const dayInputs = inputs.filter((input) => localDateFor(input.occurredAtUtc, timezone) === localDate && input.timezone === timezone && input.sourceType === "WORK_SESSION");
   const durations = dayInputs.map((input) => input.sessionDurationMinutes).filter((value): value is number => value !== null);
   const representative = dayInputs[0];
   const vli = representative ? calculateVli(representative) : { status: "INSUFFICIENT_DATA" as const, score: null, dataConfidence: 0, missingComponents: ["all"], version: ANALYTICS_RULE_VERSION, limitations: ["NO_DATA"] };
