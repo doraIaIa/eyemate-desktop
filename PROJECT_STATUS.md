@@ -2,13 +2,13 @@
 
 Last updated: 2026-07-14
 Current milestone: M4 — Validation, Hardening & Pilot Readiness
-Current batch: M4 validation/hardening
-Current task: T-M4-002 — Privacy/security/storage recovery hardening
-Task state: IN_PROGRESS
+Current batch: M4 exit verification
+Current task: T-M4-006 — Release provenance, internal pilot candidate and exit audit
+Task state: ENGINEERING_COMPLETE_WITH_LIMITATIONS
 
-Latest verified commit: `65e0d8e`
+Latest verified commit: `0346fc9`
 Task base commit: `82c7a3e`
-Working tree: clean after M4 runtime observation.
+Working tree: clean after M4 release verification.
 
 Completed:
 
@@ -40,14 +40,15 @@ M3 exit: `ENGINEERING_COMPLETE_WITH_LIMITATIONS`. Typed M1/M2 aggregate inputs f
 
 Remaining:
 
-- M4 remains in progress. Sensitive pilot data is DISABLED by ADR-005 until encryption/key lifecycle evidence exists.
+- M4 is `ENGINEERING_COMPLETE_WITH_LIMITATIONS`; see `docs/validation/m4-exit-record.md`.
+- Sensitive pilot data is DISABLED by ADR-005 until encryption/key lifecycle evidence exists.
 - Real camera lifecycle and blink/distance accuracy remain UNKNOWN; timer-only/survey-only are the safe enabled modes.
 - Dynamic egress remains UNKNOWN due to prior WPR host-policy failure; no retry without changed conditions.
 - Signing, clinical approval and public distribution remain external gates.
 
 Next exact action:
 
-- Continue T-M4-002 with privacy/storage recovery hardening.
+- Await a new approved milestone objective; do not open public/pilot distribution automatically.
 
 Next exact command:
 
