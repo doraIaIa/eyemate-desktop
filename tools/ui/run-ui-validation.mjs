@@ -9,7 +9,10 @@ const electron = process.platform === "win32"
   ? path.join(root, "node_modules", "electron", "dist", "electron.exe")
   : path.join(root, "node_modules", "electron", "dist", "electron");
 const userData = await mkdtemp(path.join(os.tmpdir(), "eyemate-ui-"));
-const screenshots = path.join(root, "docs", "validation", "ui-screenshots");
+const temporaryScreenshots = await mkdtemp(path.join(os.tmpdir(), "eyemate-ui-screenshots-"));
+const screenshots = process.env.EYEMATE_UPDATE_UI_EVIDENCE === "1"
+  ? path.join(root, "docs", "validation", "ui-screenshots")
+  : temporaryScreenshots;
 await mkdir(screenshots, { recursive: true });
 
 async function run(argumentsList) {
@@ -23,5 +26,6 @@ const seedCode = await run(["--ui-recovery-seed"]);
 if (seedCode !== 0) throw new Error(`UI_RECOVERY_SEED_FAILED:${String(seedCode)}`);
 const recoveryCode = await run(["--ui-recovery-check"]);
 await rm(userData, { recursive: true, force: true });
+await rm(temporaryScreenshots, { recursive: true, force: true });
 if (recoveryCode !== 0) throw new Error(`UI_RECOVERY_CHECK_FAILED:${String(recoveryCode)}`);
 console.log("UI_FUNCTIONAL_VALIDATION_PASS");
