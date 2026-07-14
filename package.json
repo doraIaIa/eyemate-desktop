@@ -22,6 +22,7 @@
     "release:verify": "npm run verify && npm run build:msix:m1",
     "release:provenance": "npm run build:msix:m1 && node tools/m4/generate-release-provenance.mjs",
     "accessibility": "node tools/m4/check-accessibility.mjs",
+    "performance:m4": "npm run build:msix:m1 && node tools/m4/measure-runtime.mjs",
     "test:state:m0": "node candidates/shared/run-state-fixture-tests.mjs",
     "test:electron:m0": "electron candidates/electron/main.mjs --test",
     "test:storage:electron:m0": "node candidates/electron/run-storage-fixture-tests.mjs",
