@@ -8,6 +8,15 @@
 - Đọc theo loại nội dung: feature behavior/acceptance từ `specs/`; data/privacy từ contract tương ứng; architecture/dependency từ ADR; build/release từ runbook/CI. Không lấy code cũ hay chat làm nguồn sự thật thay các tài liệu này.
 - Không tự chọn Electron/Tauri, encryption, clinical content, threshold hiệu năng hoặc retention cuối khi chưa có evidence/owner decision.
 
+## M0 Owner Delegation
+
+- Project owner ủy quyền Codex tự chọn và thực hiện task M0 theo dependency; tạo/sửa code, test, fixture, harness, POC, docs trực tiếp cần cho M0; chạy local command/benchmark; cài dependency repo-local; commit nhỏ; cập nhật `PROJECT_STATUS.md` và tiếp tục sau commit.
+- Được tải dependency/toolchain chính thức trực tiếp cho Electron/Tauri từ npm, Rustup/Rust official distribution hoặc nguồn package chính thức; Rust stable và PATH cấp user do rustup là được phép.
+- Được tạo Electron/Tauri POC tối thiểu, chạy camera-off/camera-denied/benchmark local và chọn shell sau khi evidence hợp lệ đủ rõ. Có thể cập nhật ADR-003 thành `ACCEPTED` khi acceptance đạt, evidence hợp lệ, không còn contradiction lớn, rationale/limitation đã ghi.
+- Quy tắc chọn shell: safety/privacy/reproducibility → acceptance → build/package/maintenance → startup/RAM/CPU/bundle. Không chọn theo sở thích framework.
+- Chỉ báo cáo sau 5–10 commit, khi M0 hoàn thành, hoặc gặp điều kiện dừng dưới đây.
+- Vẫn phải dừng hỏi khi cần Administrator; Visual Studio Build Tools/Windows SDK/driver/certificate/toolchain system-wide ngoài Rust user-level; firewall/proxy/security policy; camera/thiết bị thật; signing/Store/publish/upload; chi phí; dữ liệu người thật; sửa V1; thay đổi safety/privacy/medical boundary; thao tác phá hủy ngoài repo; hoặc evidence benchmark mâu thuẫn khiến không thể chọn an toàn.
+
 ## Resume protocol bắt buộc
 
 1. Chạy `git status --short`, `git diff --stat`, `git diff --check`, `git log --oneline -10`.
