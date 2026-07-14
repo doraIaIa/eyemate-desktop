@@ -9,9 +9,10 @@ const electron = process.platform === "win32"
   ? path.join(root, "node_modules", "electron", "dist", "electron.exe")
   : path.join(root, "node_modules", "electron", "dist", "electron");
 const userData = await mkdtemp(path.join(os.tmpdir(), "eyemate-camera-runtime-"));
+const fullMeasurement = process.argv.includes("--full-measurement");
 
 try {
-  const child = spawn(electron, ["dist/main/main.js", "--camera-runtime-test", `--user-data-dir=${userData}`], {
+  const child = spawn(electron, ["dist/main/main.js", fullMeasurement ? "--camera-runtime-full-test" : "--camera-runtime-test", `--user-data-dir=${userData}`], {
     cwd: root,
     shell: false,
     stdio: "inherit",

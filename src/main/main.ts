@@ -36,6 +36,7 @@ const uiRecoverySeedMode = process.argv.includes("--ui-recovery-seed");
 const uiRecoveryCheckMode = process.argv.includes("--ui-recovery-check");
 const egressObservationMode = process.argv.includes("--egress-observe");
 const cameraRuntimeTestMode = process.argv.includes("--camera-runtime-test");
+const cameraRuntimeFullTestMode = process.argv.includes("--camera-runtime-full-test");
 const uiCaptureArgument = process.argv.find((argument) => argument.startsWith("--ui-screenshot-dir="));
 const uiScreenshotDirectory = uiCaptureArgument?.slice("--ui-screenshot-dir=".length) ?? null;
 
@@ -511,7 +512,7 @@ async function runEgressObservation(window: BrowserWindow): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 6_000));
 }
 
-async function runCameraRuntimeTest(window: BrowserWindow): Promise<void> {
+async function runCameraRuntimeTest(window: BrowserWindow, fullMeasurement: boolean): Promise<void> {
   const evaluate = async <T>(source: string): Promise<T> => await window.webContents.executeJavaScript(source, true) as T;
   const waitFor = async (predicate: string, timeoutMs = 30_000): Promise<boolean> => {
     const deadline = Date.now() + timeoutMs;
@@ -530,9 +531,23 @@ async function runCameraRuntimeTest(window: BrowserWindow): Promise<void> {
   await evaluate("document.querySelector('#checkup-open-camera').click(); true");
   const settled = await waitFor("document.querySelector('#camera-runtime-state')?.textContent?.includes('đang xử lý cục bộ') || /từ chối|Không tìm thấy|đang được ứng dụng khác|gặp lỗi/.test(document.querySelector('#camera-runtime-state')?.textContent ?? '')");
   const state = await evaluate<string>("document.querySelector('#camera-runtime-state')?.textContent ?? 'CAMERA_STATE_MISSING'");
-  await evaluate("location.hash = '#/home'; true");
   if (!settled || !state.includes("đang xử lý cục bộ")) throw new Error(`CAMERA_RUNTIME_INTEGRATION_FAILED:${state}`);
-  console.log("CAMERA_RUNTIME_INTEGRATION_PASS");
+  if (!fullMeasurement) {
+    await evaluate("location.hash = '#/home'; true");
+    console.log("CAMERA_RUNTIME_INTEGRATION_PASS lifecycle=START_STOP accuracy=UNKNOWN");
+    return;
+  }
+  if (!await waitFor("document.querySelector('#camera-quality-state')?.textContent === 'Chất lượng phù hợp'", 15_000)) throw new Error("CAMERA_RUNTIME_QUALITY_NOT_ACCEPTABLE");
+  await evaluate("document.querySelector('#calibration-distance').value = '60'; document.querySelector('#checkup-calibrate').click(); true");
+  if (!await waitFor("document.querySelector('#checkup-measure-next')?.disabled === false")) throw new Error("CAMERA_RUNTIME_CALIBRATION_FAILED");
+  await evaluate("document.querySelector('#checkup-measure-next').click(); true");
+  if (!await waitFor("Boolean(document.querySelector('#checkup-measure-start'))")) throw new Error("CAMERA_RUNTIME_MEASUREMENT_UI_MISSING");
+  await evaluate("document.querySelector('#checkup-measure-start').click(); true");
+  if (!await waitFor("Boolean(document.querySelector('#checkup-done'))", 40_000)) throw new Error("CAMERA_RUNTIME_MEASUREMENT_TIMEOUT");
+  const resultText = await evaluate<string>("document.querySelector('.wizard-card')?.textContent ?? ''");
+  if (!resultText.includes("Camera") || resultText.includes("Survey-only · camera không đo")) throw new Error("CAMERA_RUNTIME_AGGREGATE_MISSING");
+  await evaluate("location.hash = '#/home'; true");
+  console.log("CAMERA_RUNTIME_INTEGRATION_PASS measurementWindow=30s calibrationReference=SYNTHETIC accuracy=UNKNOWN");
 }
 
 app.whenReady().then(async () => {
@@ -545,9 +560,9 @@ app.whenReady().then(async () => {
   registerIpcHandlers();
   const window = await createMainWindow();
 
-  if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode || uiRecoverySeedMode || uiRecoveryCheckMode || egressObservationMode || cameraRuntimeTestMode) {
+  if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode || uiRecoverySeedMode || uiRecoveryCheckMode || egressObservationMode || cameraRuntimeTestMode || cameraRuntimeFullTestMode) {
     try {
-      if (cameraRuntimeTestMode) await runCameraRuntimeTest(window);
+      if (cameraRuntimeTestMode || cameraRuntimeFullTestMode) await runCameraRuntimeTest(window, cameraRuntimeFullTestMode);
       else if (egressObservationMode) await runEgressObservation(window);
       else if (uiValidationMode) await runUiValidation(window);
       else if (uiRecoverySeedMode) {
