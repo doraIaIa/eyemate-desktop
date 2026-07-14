@@ -1,3 +1,5 @@
+mod m0_storage;
+
 fn main() {
   let test_mode = std::env::args().any(|argument| argument == "--test");
   let app = tauri::Builder::default()

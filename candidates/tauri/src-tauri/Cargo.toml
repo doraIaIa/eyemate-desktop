@@ -7,4 +7,5 @@ edition = "2021"
 tauri-build = "2"
 
 [dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
 tauri = "2"
