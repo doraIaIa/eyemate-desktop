@@ -2,7 +2,7 @@ export const COMPANION_POLICY_VERSION = "m2-companion-policy/0.1.0" as const;
 
 export type CompanionMode = "BALANCED" | "DEEP_FOCUS" | "HIGH_SUPPORT" | "TIMER_ONLY" | "CUSTOM";
 export type NudgeType = "DISTANCE_NEAR" | "BREAK_REMINDER";
-export type NudgeReason = "EMIT" | "QUIET_HOURS" | "DEEP_FOCUS" | "COOLDOWN" | "FREQUENCY_CAP" | "TIMER_ONLY" | "INSUFFICIENT_SIGNAL";
+export type NudgeReason = "EMIT" | "QUIET_HOURS" | "DEEP_FOCUS" | "COOLDOWN" | "FREQUENCY_CAP" | "TIMER_ONLY" | "INSUFFICIENT_SIGNAL" | "NUDGE_DISABLED";
 
 export interface CompanionPolicyInput {
   readonly mode: CompanionMode;
@@ -16,6 +16,7 @@ export interface CompanionPolicyInput {
   readonly nudgesInWindow: number;
   readonly signal: "SUFFICIENT" | "LOW" | "UNKNOWN";
   readonly nudgeType?: NudgeType;
+  readonly enabledNudgeTypes?: readonly NudgeType[];
 }
 
 export interface NudgeDecision {
@@ -45,6 +46,7 @@ export function decideNudge(input: CompanionPolicyInput): NudgeDecision {
   const remaining = input.lastNudgeMonotonicMs === null ? 0 : Math.max(0, input.cooldownMinutes * 60_000 - (input.nowMonotonicMs - input.lastNudgeMonotonicMs));
   const abstain = (reason: NudgeReason): NudgeDecision => ({ policyVersion: COMPANION_POLICY_VERSION, action: "ABSTAIN", reason, suggestedActionKey: null, dataSufficiency: input.signal === "SUFFICIENT" ? "SUFFICIENT" : "INSUFFICIENT", cooldownRemainingMs: remaining });
   if (input.signal !== "SUFFICIENT") return abstain("INSUFFICIENT_SIGNAL");
+  if (input.nudgeType !== undefined && input.enabledNudgeTypes !== undefined && !input.enabledNudgeTypes.includes(input.nudgeType)) return abstain("NUDGE_DISABLED");
   if (input.mode === "TIMER_ONLY" && input.nudgeType !== "BREAK_REMINDER") return abstain("TIMER_ONLY");
   if (input.mode === "DEEP_FOCUS") return abstain("DEEP_FOCUS");
   if (inQuietHours(input.minuteOfDay, input.quietHours)) return abstain("QUIET_HOURS");

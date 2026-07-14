@@ -71,7 +71,7 @@ function recoverPersistedSession(): void {
 function requestBreakNudge(): NudgeDecision & { readonly nudgeId: string } {
   if (workSession?.state !== "ACTIVE") throw new Error("SESSION_NOT_ACTIVE");
   const now = sessionNow();
-  const decision = decideNudge({ mode: workSession.modeId, minuteOfDay: 600, cooldownMinutes: DEFAULT_TIMER_ONLY_CONFIG.cooldownMinutes, frequencyCap: DEFAULT_TIMER_ONLY_CONFIG.maxNudgesPerSession, nowMonotonicMs: now, lastNudgeMonotonicMs, nudgesInWindow: nudgesInSession, signal: "SUFFICIENT", nudgeType: "BREAK_REMINDER" });
+  const decision = decideNudge({ mode: workSession.modeId, minuteOfDay: 600, cooldownMinutes: DEFAULT_TIMER_ONLY_CONFIG.cooldownMinutes, frequencyCap: DEFAULT_TIMER_ONLY_CONFIG.maxNudgesPerSession, nowMonotonicMs: now, lastNudgeMonotonicMs, nudgesInWindow: nudgesInSession, signal: "SUFFICIENT", nudgeType: "BREAK_REMINDER", enabledNudgeTypes: DEFAULT_TIMER_ONLY_CONFIG.enabledNudgeTypes });
   const nudgeId = `nudge-${workSession.id}-break-${nudgesInSession + 1}`;
   if (decision.action === "EMIT") {
     lastNudgeMonotonicMs = now;

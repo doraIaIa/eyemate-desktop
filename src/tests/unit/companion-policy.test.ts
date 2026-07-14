@@ -20,4 +20,8 @@ test("timer-only can emit bounded break reminder without camera measurement", ()
   assert.equal(decision.action, "EMIT");
   assert.equal(decision.suggestedActionKey, "TAKE_SHORT_BREAK");
 });
+test("disabled nudge type abstains explicitly", () => {
+  const decision = decideNudge({ ...base, nudgeType: "BREAK_REMINDER", enabledNudgeTypes: ["DISTANCE_NEAR"] });
+  assert.equal(decision.reason, "NUDGE_DISABLED");
+});
 test("invalid policy input fails closed", () => assert.throws(() => decideNudge({ ...base, frequencyCap: -1 }), /INVALID_POLICY_INPUT/));

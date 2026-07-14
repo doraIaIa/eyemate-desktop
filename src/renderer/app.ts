@@ -49,7 +49,8 @@ async function renderPrivacySummary(): Promise<void> {
 async function renderReportHistory(): Promise<void> {
   if (reportHistoryElement === null) return;
   const reports = await window.eyeMate.listSurveyOnlyReports();
-  reportHistoryElement.textContent = reports.length === 0 ? "Chưa có báo cáo cục bộ." : `Có ${reports.length} báo cáo survey-only cục bộ.`;
+  const sessions = await window.eyeMate.listSessionSummaries();
+  reportHistoryElement.textContent = reports.length === 0 && sessions.length === 0 ? "Chưa có báo cáo cục bộ." : `Có ${reports.length} survey-only và ${sessions.length} Session Summary cục bộ. ${sessions.map((summary) => `${summary.status} ${summary.elapsedActiveMs} ms`).join("; ")}`;
 }
 
 function renderScreen(screenId: ScreenId): void {
