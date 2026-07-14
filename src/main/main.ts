@@ -7,6 +7,7 @@ import type { RuntimeInfo } from "../shared/runtime-contract.js";
 import type { CheckupSummary, PrivacySummary, SurveyRequest } from "../shared/m1-contract.js";
 import { createSurveyOnlyExportPreview, resolveDeletionResult } from "../user-data/data-controls.js";
 import { openLocalSqliteStorage, resolveDatabasePath, type LocalSqliteStorage } from "../platform-electron/sqlite-storage.js";
+import type { M3DataCategory } from "../shared/preload-contract.js";
 import { createSurveyDraft, createSurveyOnlyReport, recordSurveyAnswer } from "../symptom-checkup/survey-only.js";
 import { evaluateSafetyGate, internalSafetyCatalogue } from "../safety/safety-gate.js";
 import { applySessionEvent, createSession, recoverSession, type WorkSession } from "../work-session/session-state.js";
@@ -142,6 +143,7 @@ function generateM3Report(): PersonalReport {
   storage?.saveM3Record({ id: `baseline-${report.baseline.contextKey}-${now.slice(0, 10)}`, kind: "BASELINE", createdAt: now, payloadJson: JSON.stringify(report.baseline) });
   storage?.saveM3Record({ id: `daily-${report.daily.localDate}-${timezone.replace(/[^a-z0-9]/gi, "-")}`, kind: "DAILY", createdAt: now, payloadJson: JSON.stringify(report.daily) });
   storage?.saveM3Record({ id: `weekly-${report.weekly.startDate}-${timezone.replace(/[^a-z0-9]/gi, "-")}`, kind: "WEEKLY", createdAt: now, payloadJson: JSON.stringify(report.weekly) });
+  for (const pattern of report.daily.patterns) storage?.saveM3Record({ id: `pattern-${report.daily.localDate}-${pattern.patternId.toLowerCase().replaceAll("_", "-")}`, kind: "PATTERN", createdAt: now, payloadJson: JSON.stringify(pattern) });
   storage?.saveM3Record({ id: `report-${randomUUID().slice(0, 12)}`, kind: "REPORT", createdAt: now, payloadJson: JSON.stringify(report) });
   return report;
 }
@@ -172,6 +174,10 @@ function registerIpcHandlers(): void {
   ipcMain.handle("m3:preview-professional-summary", () => renderProfessionalSummary(generateM3Report()));
   ipcMain.handle("m3:reset-baseline", () => { const now = new Date().toISOString(); storage?.saveM3Record({ id: `baseline-reset-${randomUUID().slice(0, 12)}`, kind: "BASELINE", createdAt: now, payloadJson: JSON.stringify({ state: "RESET", version: "m3-baseline/0.1.0" }) }); return "DELETED"; });
   ipcMain.handle("m3:delete-data", () => storage?.deleteM3Records() ?? "DELETED");
+  ipcMain.handle("m3:delete-category", (_event, category: M3DataCategory) => {
+    if (!["BASELINE", "PATTERN", "SUMMARY", "REPORT", "ALL"].includes(category)) throw new Error("INVALID_M3_DATA_CATEGORY");
+    return storage?.deleteM3Category(category) ?? "DELETED";
+  });
   ipcMain.handle("m3:export", (_event, destination: string, format: LocalExportFormat) => { const report = generateM3Report(); const content = format === "JSON" ? JSON.stringify(report, null, 2) : renderProfessionalSummary(report); return writeLocalExport(destination, content); });
 }
 

@@ -21,7 +21,24 @@ const nudgeStatusElement = document.querySelector<HTMLParagraphElement>("#nudge-
 const m3StatusElement = document.querySelector<HTMLParagraphElement>("#m3-status");
 const m3PreviewElement = document.querySelector<HTMLPreElement>("#m3-preview-output");
 const m3ExportPathElement = document.querySelector<HTMLInputElement>("#m3-export-path");
+const m3ExportFormatElement = document.querySelector<HTMLSelectElement>("#m3-export-format");
+const m3DeleteCategoryElement = document.querySelector<HTMLSelectElement>("#m3-delete-category");
+const m3DetailsElement = document.querySelector<HTMLElement>("#m3-report-details");
 let currentNudgeId: string | null = null;
+function renderM3Report(report: import("../personal-intelligence/report-service.js").PersonalReport): void {
+  if (m3DetailsElement === null) return;
+  const pattern = report.daily.patterns[0];
+  m3DetailsElement.textContent = [
+    `Nguồn dữ liệu: ${report.dataSource}.`,
+    `Baseline: ${report.baseline.state}; mẫu hợp lệ ${report.baseline.sampleCount}; độ phủ ${Math.round(report.baseline.coverage * 100)}%.`,
+    `Ngày ${report.daily.localDate}: ${report.daily.totalSessionMinutes} phút; phiên dài nhất ${report.daily.longestSessionMinutes} phút.`,
+    `VLI: ${report.daily.vli.score ?? "CHƯA ĐỦ DỮ LIỆU"}; độ tin cậy dữ liệu ${Math.round(report.daily.vli.dataConfidence * 100)}%.`,
+    `Pattern: ${pattern?.status ?? "CHƯA ĐỦ DỮ LIỆU"}; bằng chứng ${pattern?.evidence.join(", ") || "không có"}; thiếu ${pattern?.missingData.join(", ") || "không có"}.`,
+    `Tuần: ${report.weekly.status}; ${report.weekly.daysWithData} ngày có dữ liệu, ${report.weekly.missingDays} ngày thiếu.`,
+    `Giới hạn: ${[...report.missingData, ...report.limitations].join(", ") || "không có"}.`,
+    "EyeMate không chẩn đoán hoặc thay thế tư vấn chuyên môn."
+  ].join(" ");
+}
 const renderSession = (session: Awaited<ReturnType<typeof window.eyeMate.getWorkSession>>) => { if (sessionStatusElement) sessionStatusElement.textContent = session ? `Phiên ${session.state}; thời gian hoạt động ${session.elapsedActiveMs} ms.` : "Chưa có phiên."; };
 
 async function renderRuntimeStatus(): Promise<void> {
@@ -92,11 +109,12 @@ async function respondNudge(response: import("../shared/preload-contract.js").Nu
 document.querySelector<HTMLButtonElement>("#accept-nudge")?.addEventListener("click", () => void respondNudge("ACCEPTED"));
 document.querySelector<HTMLButtonElement>("#snooze-nudge")?.addEventListener("click", () => void respondNudge("SNOOZED"));
 document.querySelector<HTMLButtonElement>("#dismiss-nudge")?.addEventListener("click", () => void respondNudge("DISMISSED"));
-document.querySelector<HTMLButtonElement>("#m3-generate")?.addEventListener("click", async () => { const report = await window.eyeMate.generateM3Report(); if (m3StatusElement) m3StatusElement.textContent = `Baseline ${report.baseline.state}; VLI ${report.daily.vli.score ?? "INSUFFICIENT_DATA"}; confidence ${report.daily.vli.dataConfidence}.`; });
+document.querySelector<HTMLButtonElement>("#m3-generate")?.addEventListener("click", async () => { const report = await window.eyeMate.generateM3Report(); renderM3Report(report); if (m3StatusElement) m3StatusElement.textContent = "Báo cáo cục bộ đã được tạo từ snapshot dữ liệu hiện có."; });
+document.querySelector<HTMLButtonElement>("#m3-list")?.addEventListener("click", async () => { const reports = await window.eyeMate.listM3Reports(); const report = reports.at(-1); if (report === undefined) { if (m3StatusElement) m3StatusElement.textContent = "Chưa có snapshot báo cáo; hãy tạo báo cáo trước."; return; } renderM3Report(report); if (m3StatusElement) m3StatusElement.textContent = `Đang xem snapshot tạo lúc ${report.generatedAt}.`; });
 document.querySelector<HTMLButtonElement>("#m3-preview")?.addEventListener("click", async () => { if (m3PreviewElement) m3PreviewElement.textContent = await window.eyeMate.previewProfessionalSummary(); });
-document.querySelector<HTMLButtonElement>("#m3-export")?.addEventListener("click", async () => { const result = await window.eyeMate.exportM3Report(m3ExportPathElement?.value ?? "", "MARKDOWN"); if (m3StatusElement) m3StatusElement.textContent = `Export: ${result.status} (${result.reason}).`; });
+document.querySelector<HTMLButtonElement>("#m3-export")?.addEventListener("click", async () => { const format = (m3ExportFormatElement?.value ?? "MARKDOWN") as import("../shared/preload-contract.js").LocalExportFormat; const result = await window.eyeMate.exportM3Report(m3ExportPathElement?.value ?? "", format); if (m3StatusElement) m3StatusElement.textContent = `Export: ${result.status} (${result.reason}).`; });
 document.querySelector<HTMLButtonElement>("#m3-reset")?.addEventListener("click", async () => { if (!window.confirm("Reset baseline sẽ không xóa báo cáo cũ.")) return; await window.eyeMate.resetM3Baseline(); if (m3StatusElement) m3StatusElement.textContent = "Baseline đã reset; lần đo mới sẽ bắt đầu LEARNING."; });
-document.querySelector<HTMLButtonElement>("#m3-delete")?.addEventListener("click", async () => { if (!window.confirm("Xóa dữ liệu phân tích M3?")) return; await window.eyeMate.deleteM3Data(); if (m3StatusElement) m3StatusElement.textContent = "Dữ liệu phân tích M3 đã được xóa."; });
+document.querySelector<HTMLButtonElement>("#m3-delete")?.addEventListener("click", async () => { const category = (m3DeleteCategoryElement?.value ?? "ALL") as import("../shared/preload-contract.js").M3DataCategory; if (!window.confirm(`Xóa nhóm dữ liệu ${category}?`)) return; await window.eyeMate.deleteM3Category(category); if (m3StatusElement) m3StatusElement.textContent = `Đã xóa nhóm dữ liệu ${category}.`; if (m3DetailsElement) m3DetailsElement.textContent = ""; });
 
 onboardingButton?.addEventListener("click", async () => {
   await window.eyeMate.completeOnboardingWithoutCamera();

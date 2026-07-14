@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openLocalSqliteStorage } from "../../platform-electron/sqlite-storage.js";
+import { createV8StorageFixture, openLocalSqliteStorage } from "../../platform-electron/sqlite-storage.js";
 
 test("session persistence is idempotent and recovery-safe", () => {
   const root = mkdtempSync(join(tmpdir(), "eyemate-m2-"));
@@ -29,6 +29,31 @@ test("session persistence is idempotent and recovery-safe", () => {
     assert.equal(opened.storage.deleteAllLocalData(), "DELETED");
     assert.equal(opened.storage.loadSession(session.sessionId), null);
     assert.equal(opened.storage.listM3Records("SOURCE").length, 0);
+    opened.storage.close();
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("M3 schema migrates a v8 database and deletes derived categories safely", () => {
+  const root = mkdtempSync(join(tmpdir(), "eyemate-m3-migration-"));
+  const databasePath = join(root, "state.sqlite");
+  try {
+    createV8StorageFixture(databasePath);
+    const opened = openLocalSqliteStorage(databasePath);
+    assert.equal(opened.state, "READY");
+    if (opened.state !== "READY") return;
+    assert.equal(opened.migrated, true);
+    const createdAt = "2026-07-14T00:00:00.000Z";
+    for (const kind of ["SOURCE", "BASELINE", "PATTERN", "DAILY", "WEEKLY", "REPORT"] as const) {
+      assert.equal(opened.storage.saveM3Record({ id: `${kind.toLowerCase()}-0001`, kind, createdAt, payloadJson: "{}" }), true);
+    }
+    assert.equal(opened.storage.deleteM3Category("SUMMARY"), "DELETED");
+    assert.equal(opened.storage.listM3Records("DAILY").length, 0);
+    assert.equal(opened.storage.listM3Records("WEEKLY").length, 0);
+    assert.equal(opened.storage.listM3Records("REPORT").length, 0);
+    assert.equal(opened.storage.listM3Records("SOURCE").length, 1);
+    assert.equal(opened.storage.deleteM3Category("PATTERN"), "DELETED");
+    assert.equal(opened.storage.listM3Records("PATTERN").length, 0);
+    assert.equal(opened.storage.listM3Records("DAILY").length, 0);
     opened.storage.close();
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

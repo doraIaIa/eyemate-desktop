@@ -18,7 +18,7 @@ export interface PersistedSession { readonly sessionId: string; readonly modeId:
 export interface PersistedNudge { readonly nudgeId: string; readonly sessionId: string; readonly decision: string; readonly reason: string; readonly policyVersion: string; readonly createdAt: string; readonly action?: string | null; readonly deliveryState?: "EMITTED" | "ABSTAINED"; }
 export type NudgeResponse = "AUTO_CORRECTED" | "ACCEPTED" | "SNOOZED" | "DISMISSED" | "IGNORED" | "UNKNOWN";
 export interface PersistedSummary { readonly summaryId: string; readonly sessionId: string; readonly status: string; readonly elapsedActiveMs: number; readonly createdAt: string; readonly summaryJson?: string; }
-export interface M3StoredRecord { readonly id: string; readonly kind: "SOURCE" | "BASELINE" | "DAILY" | "WEEKLY" | "REPORT"; readonly createdAt: string; readonly payloadJson: string; }
+export interface M3StoredRecord { readonly id: string; readonly kind: "SOURCE" | "BASELINE" | "PATTERN" | "DAILY" | "WEEKLY" | "REPORT"; readonly createdAt: string; readonly payloadJson: string; }
 
 function ensureDatabasePath(databasePath: string): string {
   const normalized = normalize(resolve(databasePath));
@@ -216,7 +216,7 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
   }
 
   saveM3Record(record: M3StoredRecord): boolean {
-    if (!/^[a-z0-9-]{4,100}$/i.test(record.id) || !["SOURCE", "BASELINE", "DAILY", "WEEKLY", "REPORT"].includes(record.kind) || Number.isNaN(Date.parse(record.createdAt)) || record.payloadJson.length === 0 || record.payloadJson.length > 100_000) throw new Error("INVALID_M3_RECORD");
+    if (!/^[a-z0-9-]{4,100}$/i.test(record.id) || !["SOURCE", "BASELINE", "PATTERN", "DAILY", "WEEKLY", "REPORT"].includes(record.kind) || Number.isNaN(Date.parse(record.createdAt)) || record.payloadJson.length === 0 || record.payloadJson.length > 100_000) throw new Error("INVALID_M3_RECORD");
     try { JSON.parse(record.payloadJson); } catch { throw new Error("INVALID_M3_RECORD"); }
     const result = this.#database.prepare("INSERT OR IGNORE INTO m3_record VALUES (?, ?, ?, ?)").run(record.id, record.kind, record.createdAt, record.payloadJson);
     return Number(result.changes) === 1;
@@ -230,6 +230,28 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
     if (kind === undefined) this.#database.exec("DELETE FROM m3_record;");
     else this.#database.prepare("DELETE FROM m3_record WHERE kind = ?").run(kind);
     return "DELETED";
+  }
+
+  deleteM3Category(category: "BASELINE" | "PATTERN" | "SUMMARY" | "REPORT" | "ALL"): "DELETED" {
+    if (category === "ALL") return this.deleteM3Records();
+    if (category === "BASELINE") {
+      this.deleteM3Records("BASELINE");
+      return "DELETED";
+    }
+    if (category === "REPORT") {
+      this.deleteM3Records("REPORT");
+      return "DELETED";
+    }
+    this.#database.exec("BEGIN IMMEDIATE;");
+    try {
+      if (category === "PATTERN") this.#database.exec("DELETE FROM m3_record WHERE kind IN ('PATTERN', 'DAILY', 'WEEKLY', 'REPORT');");
+      else this.#database.exec("DELETE FROM m3_record WHERE kind IN ('DAILY', 'WEEKLY', 'REPORT');");
+      this.#database.exec("COMMIT;");
+      return "DELETED";
+    } catch (error) {
+      this.#database.exec("ROLLBACK;");
+      throw error;
+    }
   }
 
   deleteAllLocalData(): "DELETED" {
@@ -265,6 +287,25 @@ export function createV1StorageFixture(databasePath: string): void {
     database.exec("PRAGMA journal_mode = WAL;");
     createV1Schema(database);
     database.exec("PRAGMA user_version = 1;");
+  } finally {
+    database.close();
+  }
+}
+
+export function createV8StorageFixture(databasePath: string): void {
+  const safePath = ensureDatabasePath(databasePath);
+  mkdirSync(dirname(safePath), { recursive: true });
+  const database = new DatabaseSync(safePath);
+  try {
+    createV1Schema(database);
+    createV2Schema(database);
+    createV3Schema(database);
+    createV4Schema(database);
+    createV5Schema(database);
+    createV6Schema(database);
+    createV7Schema(database);
+    createV8Schema(database);
+    database.exec("PRAGMA user_version = 8;");
   } finally {
     database.close();
   }
