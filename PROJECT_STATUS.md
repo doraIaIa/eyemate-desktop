@@ -17,7 +17,7 @@ Working tree expectation: clean after this status checkpoint; generated beta art
 - Privacy camera: raw frame, video, landmark và per-frame series chỉ ở RAM; aggregate không biến missing thành zero. Route change, window hidden, device change, disconnect và shutdown đều dừng track hoặc yêu cầu hiệu chỉnh lại.
 - Sensitive storage: AES-256-GCM bảo vệ payload; record identity dùng AAD; master key ngẫu nhiên được Electron `safeStorage`/Windows user context bảo vệ. Tamper, wrong/missing key, restart, plaintext migration, interruption/retry, encrypted backup, physical plaintext scan và delete/reset PASS. Security/Privacy approval vẫn `PENDING`; real-person sensitive pilot tiếp tục `DISABLED`.
 - Export: Markdown, JSON và PDF A4 nhiều trang chạy local qua preview + native Save dialog, atomic write, Unicode tiếng Việt, cancel/no-overwrite tests; không có cloud/CDN.
-- Questionnaire: definition và scoring adapter versioned, stable IDs, missing-answer handling và feature gate đã có. OSDI-6 thật vẫn `DISABLED` vì thiếu approved content/license/translation/scoring và Clinical/Product evidence.
+- Questionnaire: definition và scoring adapter versioned, stable IDs, missing-answer handling và feature gate đã có. Adapter OSDI 12 mục/thang 0–4 vẫn `DISABLED` vì thiếu approved content/license/translation/scoring và Clinical/Product evidence.
 - Release: beta identity, MSIX, SBOM, checksum, release manifest, provenance, rollback policy, SignTool discovery, input boundary và post-sign verification đã sẵn sàng. `SIGNING=READY_FOR_EXTERNAL_CERTIFICATE`; không có certificate giả hoặc publish.
 - Egress: process tree TCP và UDP-endpoint observation ghi 0 observation; DNS/remote-UDP/packet content không có coverage. Kết luận duy nhất là `UNKNOWN_NO_TCP_OBSERVED`; WPR vẫn blocked `0xc5585011`, không có claim no-egress.
 - Canonical verification: `npm run verify:pilot` PASS với 65 unit, 17 integration, architecture/privacy/security/accessibility, Electron M1–M3, UI acceptance, protected-storage gate, camera lifecycle smoke, PDF test, signing interface, MSIX build và release-bundle verification.
@@ -31,7 +31,7 @@ External gates còn lại: Security/Privacy approval; full operator camera/groun
 - Automated enabled slice: survey-only checkup, Timer Only companion and local aggregate Personal Intelligence. Markdown/JSON export remains enabled; PDF is intentionally deferred because it is not required for this beta.
 - Encryption-at-rest: current SQLite plaintext is executable-test confirmed. ADR-005 keeps sensitive persistence `DISABLED`; no tamper/wrong-key/missing-key claim is made without an approved encryption and key-lifecycle design. Migration, interruption, backup/recovery, idempotent reset and physical plaintext purge tests pass.
 - Camera: guided local harness and pure lifecycle tests cover consent, denied/unavailable/busy, low quality, calibration abstention and disconnect without persistence of frame/video/landmark. Real-camera execution is `NOT_RUN_EXTERNAL_GATE`; accuracy remains `UNKNOWN` pending device and ground truth.
-- Clinical: OSDI-6 wording, scoring, severity and recommendation catalogue remain synthetic/internal and `DISABLED` pending Clinical/Product approval.
+- Clinical: OSDI 12 mục wording, scoring, severity và recommendation catalogue remain unshipped and `DISABLED` pending Clinical/Product approval.
 - Egress: the latest single WPR retry also failed at `wpr -start Network -filemode` with `0xc5585011`; status afterward was not recording and no ETL was created. Process-attributed local TCP observation sampled 21 times and observed zero external TCP connections (`NOT_OBSERVED_TCP_ONLY`), but UDP/DNS/packet coverage is absent, so dynamic egress remains `UNKNOWN/DEGRADED` and there is no no-egress claim.
 - Release preparation: separate identity `EyeMate.Beta.Internal`, staged unsigned MSIX smoke, clean/update/skipped-version/rollback policy tests, CycloneDX SBOM, SHA-256 checksum, release manifest/notes, feature matrix, runbook and fail-closed signing interface are implemented. Certificate/Store identity remains `EXTERNAL_GATE`; no fake certificate and no publish action were used.
 - Canonical verification: `npm run verify` PASS with 54 unit and 13 integration tests plus architecture, privacy, security, accessibility, Electron M1/M2/M3 and UI functional acceptance. `npm run pilot:contract`, `npm run test:pilot-contract`, `npm run pilot:sensitive-storage-gate`, `npm run test:camera-harness`, `npm run egress:observe:pilot`, `npm run pilot:signing-status`, `npm run pilot:release` and `npm run pilot:verify-bundle` pass with their documented external-gate states.
@@ -42,7 +42,7 @@ External gates before a real-person pilot:
 
 - Security/Privacy approval plus authenticated encryption and key lifecycle evidence for sensitive persistence.
 - Explicit real-camera run and approved ground-truth protocol for any accuracy-dependent capability.
-- Clinical/Product approval for OSDI-6 content, scoring and recommendations.
+- Clinical/Product approval for licensed OSDI 12-item content, Vietnamese translation, scoring and recommendations.
 - Real signing certificate/beta distribution identity and approved participant consent/incident ownership.
 - Broader dynamic egress verification when host permissions or an approved measurement stack become available.
 
@@ -55,7 +55,7 @@ External gates before a real-person pilot:
 - UI evidence: Home, checkup result, active session, Personal Intelligence, Reports, Privacy và Settings ở 1024×768/1280×800; hai lần sinh liên tiếp có hash giống nhau.
 - Functional closure: SQLite preferences/data inventory, N-1 migration, mutation timeout/retry, native export preview, report/baseline/data deletion, session cancel/recovery, quiet-hours policy và toàn bộ nudge responses đã được nối qua typed preload IPC.
 - Safe enabled slice: survey-only checkup và Timer Only Work Companion, hoàn toàn local.
-- Disabled/UNKNOWN: camera runtime/calibration/30-second measurement, clinically approved OSDI-6, PDF, encryption-at-rest, dynamic WPR egress, signing và public distribution.
+- Disabled/UNKNOWN: camera runtime/calibration/30-second measurement, clinically approved OSDI 12 mục, PDF, encryption-at-rest, dynamic WPR egress, signing và public distribution.
 - Không có tuyên bố `PUBLIC_READY`; không có dữ liệu camera raw, cloud, account hoặc telemetry được thêm.
 - V1 không bị sửa; hai file untracked có sẵn trong V1 vẫn được bảo toàn.
 
@@ -99,7 +99,7 @@ Remaining:
 
 Next exact action:
 
-- Await clinical approval/runtime assets before enabling OSDI-6 or real-camera measurement; current survey-only/timer-only UI remains the safe enabled product slice.
+- Await clinical approval/runtime assets before enabling licensed OSDI 12 mục or real-camera measurement; current survey-only/timer-only UI remains the safe enabled product slice.
 
 Next exact command:
 
@@ -132,7 +132,7 @@ Important decisions:
 - Screenshots: Home, checkup result, active session, reports and privacy at 1024×768 and 1280×800 under `docs/validation/ui-screenshots/`.
 - Wired: local onboarding/survey, work-session lifecycle, nudge response, local reports/history, native-dialog Markdown/JSON export, baseline reset, consent withdrawal and two-step local deletion.
 - Disabled/abstained: camera modes/settings, raw EAR/blink/distance values and 30-day inference when evidence is unavailable.
-- Limitations: real camera/calibration/30-second measurement, clinically approved OSDI-6, PDF generation and dynamic egress verification remain UNKNOWN/TBD; no UI claim upgrades them to PASS.
+- Limitations: real camera/calibration/30-second measurement, clinically approved OSDI 12 mục, PDF generation and dynamic egress verification remain UNKNOWN/TBD; no UI claim upgrades them to PASS.
 - V1 was not modified.
 
 ## M3 Exit Record (2026-07-14)

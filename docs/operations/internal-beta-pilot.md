@@ -20,7 +20,7 @@ Nguồn trạng thái máy đọc được là `pilot/feature-matrix.json`. Vali
 | Sensitive payload encryption | Implementation PASS; cần Security/Privacy approval | `SENSITIVE_PILOT=DISABLED`; ADR-005 chờ approval |
 | Camera lifecycle/calibration | Start/stop thật PASS; full measurement cần operator/ground truth | `DISABLED` cho accuracy-dependent use |
 | Blink/distance accuracy | Cần ground truth, protocol và threshold | `UNKNOWN`; không hiển thị số |
-| OSDI-6/recommendation | Cần Clinical/Product approval | Nội dung synthetic hiện tại, không clinical scoring |
+| OSDI 12 mục/recommendation | Cần Clinical/Product approval | Không phân phối câu hỏi; chỉ có adapter kỹ thuật 12 mục, thang 0–4, đang tắt |
 | PDF | Local implementation và multipage acceptance PASS | Markdown/JSON/PDF được hỗ trợ |
 | Dynamic egress | WPR cần host permission; local observation chỉ coverage một phần | `DEGRADED/UNKNOWN`, không claim no-egress |
 | Signing/Store | Cần certificate và Store identity | Unsigned internal MSIX |

@@ -19,7 +19,7 @@
     {
       "id": "clinical-content",
       "state": "EXTERNAL_GATE",
-      "evidenceNeeded": ["Approved OSDI-6 wording/license if applicable", "Approved scoring, severity and recommendation catalogue"],
+      "evidenceNeeded": ["Approved 12-item OSDI wording/license if applicable", "Approved Vietnamese translation, scoring, severity and recommendation catalogue"],
       "approvers": ["Clinical owner", "Product owner"],
       "recheck": "npm run pilot:external-gates"
     },

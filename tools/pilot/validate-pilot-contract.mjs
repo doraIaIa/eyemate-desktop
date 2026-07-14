@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 export const PILOT_SCHEMA_VERSION = "eyemate-pilot-feature-matrix/0.1.0";
 const STATES = new Set(["ENABLED", "DEGRADED", "DISABLED"]);
 const GATE_CLASSES = new Set(["AUTOMATED", "REAL_DEVICE", "GROUND_TRUTH", "CLINICAL_APPROVAL", "SECURITY_PRIVACY_APPROVAL", "CERTIFICATE_STORE", "SYSTEM_PERMISSION"]);
-const REQUIRED_DISABLED = new Set(["sensitive-persistence", "camera-lifecycle", "blink-distance-accuracy", "clinical-osdi-6", "signed-msix"]);
+const REQUIRED_DISABLED = new Set(["sensitive-persistence", "camera-lifecycle", "blink-distance-accuracy", "clinical-osdi-12", "signed-msix"]);
 
 export function validatePilotContract(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return { ok: false, reason: "INVALID_ROOT" };

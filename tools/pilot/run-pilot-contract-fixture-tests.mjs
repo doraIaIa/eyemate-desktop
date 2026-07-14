@@ -10,8 +10,8 @@ unsafeEncryption.features.find((feature) => feature.id === "sensitive-persistenc
 assert.equal(validatePilotContract(unsafeEncryption).reason, "EXTERNAL_GATE_ENABLED");
 
 const unsafeClinical = structuredClone(valid);
-unsafeClinical.features.find((feature) => feature.id === "clinical-osdi-6").gateClass = "AUTOMATED";
-unsafeClinical.features.find((feature) => feature.id === "clinical-osdi-6").state = "ENABLED";
+unsafeClinical.features.find((feature) => feature.id === "clinical-osdi-12").gateClass = "AUTOMATED";
+unsafeClinical.features.find((feature) => feature.id === "clinical-osdi-12").state = "ENABLED";
 assert.match(validatePilotContract(unsafeClinical).reason, /^REQUIRED_DISABLED_/);
 
 const duplicate = structuredClone(valid);
