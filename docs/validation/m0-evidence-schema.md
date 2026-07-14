@@ -100,7 +100,6 @@ Nếu công cụ sinh artifact cấm, dừng ngay, cô lập quyền truy cập,
 
 | Tài liệu | Version | Owner | Reviewer role | Decision | Review date | Blocking comments | Next review trigger |
 |---|---|---|---|---|---|---|---|
-| `m0-evidence-schema.md` | `0.1.0-proposed` | Tech + QA | Tech | `NOT_REVIEWED` | — | Chưa chốt validator/tool/checksum command | Khi command registry được đề xuất |
+| `m0-evidence-schema.md` | `0.1.0-proposed` | Tech + QA | Tech | `CHANGES_REQUIRED` | 2026-07-14 | Chưa có validator, command registry, artifact scrubber hoặc checksum/index verification chạy được | Khi T-M0-003 được phép và command được xác minh trên clean checkout |
 | `m0-evidence-schema.md` | `0.1.0-proposed` | Tech + QA | QA | `NOT_REVIEWED` | — | Chưa chạy schema/link validation | Review riêng sau Tech |
 | `m0-evidence-schema.md` | `0.1.0-proposed` | Tech + QA | Privacy + Security | `NOT_REVIEWED` | — | Cần duyệt artifact allowlist/retention | Trước thu evidence thật |
-

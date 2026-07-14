@@ -237,8 +237,8 @@ Các command bổ sung dưới đây cũng là **đề xuất chưa xác minh**,
 | `FR-M0-004` | `AC-M0-001`, `AC-M0-014` | `T-M0-004`, `T-M0-005`, `T-M0-008` | Packaged asset manifest/checksum và blocked-network trace |
 | `DATA-M0-001` | `AC-M0-007`, `AC-M0-008`, `AC-M0-018` | `T-M0-006`, `T-M0-007`, `T-M0-008` | Schema dump và DB/backup forbidden-payload scan |
 | `DATA-M0-002` | `AC-M0-009`, `AC-M0-010` | `T-M0-006`, `T-M0-007` | N-1/forced-failure fixture, backup và integrity output |
-| `PRIV-M0-001` | `AC-M0-007`, `AC-M0-018`, `AC-M0-019` | `T-M0-007` | Tách DB/backup scan khỏi log/crash/telemetry/temp scan |
-| `SEC-M0-001` | `AC-M0-001`, `AC-M0-014`, `AC-M0-019` | `T-M0-007` | Network capture và sanitized diagnostics scan |
+| `PRIV-M0-001` | `AC-M0-007`, `AC-M0-018`, `AC-M0-019` | `T-M0-008` | Tách DB/backup scan khỏi log/crash/telemetry/temp scan cho cả hai candidate |
+| `SEC-M0-001` | `AC-M0-001`, `AC-M0-014`, `AC-M0-019` | `T-M0-008` | Network capture và sanitized diagnostics scan cho cả hai candidate |
 | `NFR-M0-001` | `AC-M0-012`, `AC-M0-016` | `T-M0-002`, `T-M0-010` | Protocol, startup/RAM/CPU/latency raw samples |
 | `NFR-M0-002` | `AC-M0-012`, `AC-M0-013` | `T-M0-002`, `T-M0-010`, `T-M0-011` | Locked workload/sampling và normalized matrix |
 | `NFR-M0-003` | `AC-M0-012`, `AC-M0-020` | `T-M0-002`, `T-M0-009` | Windows 11 device/runtime evidence |
