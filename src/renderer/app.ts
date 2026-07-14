@@ -11,6 +11,8 @@ const surveyButton = document.querySelector<HTMLButtonElement>("#run-survey");
 const checkupSummaryElement = document.querySelector<HTMLParagraphElement>("#checkup-summary");
 const onboardingButton = document.querySelector<HTMLButtonElement>("#complete-onboarding");
 const onboardingStatusElement = document.querySelector<HTMLParagraphElement>("#onboarding-status");
+const withdrawCameraButton = document.querySelector<HTMLButtonElement>("#withdraw-camera");
+const deleteLocalDataButton = document.querySelector<HTMLButtonElement>("#delete-local-data");
 
 async function renderRuntimeStatus(): Promise<void> {
   if (statusElement === null) {
@@ -64,6 +66,17 @@ renderScreen("home");
 onboardingButton?.addEventListener("click", async () => {
   await window.eyeMate.completeOnboardingWithoutCamera();
   if (onboardingStatusElement !== null) onboardingStatusElement.textContent = "Onboarding hoàn tất. Camera vẫn tắt; bạn có thể dùng checkup survey-only.";
+});
+
+withdrawCameraButton?.addEventListener("click", async () => {
+  await window.eyeMate.withdrawCameraConsent();
+  await renderPrivacySummary();
+});
+
+deleteLocalDataButton?.addEventListener("click", async () => {
+  if (!window.confirm("Xóa onboarding, consent và báo cáo cục bộ? File export ngoài ứng dụng không bị xóa.")) return;
+  const result = await window.eyeMate.deleteAllLocalData();
+  if (privacySummaryElement !== null) privacySummaryElement.textContent = `Kết quả xóa dữ liệu cục bộ: ${result}. File export ngoài ứng dụng không bị xóa.`;
 });
 
 surveyButton?.addEventListener("click", async () => {

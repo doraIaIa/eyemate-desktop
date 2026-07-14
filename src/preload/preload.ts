@@ -23,6 +23,14 @@ const eyeMateApi: EyeMatePreloadApi = {
   },
   async completeOnboardingWithoutCamera() {
     await ipcRenderer.invoke("onboarding:complete-without-camera");
+  },
+  async withdrawCameraConsent() {
+    await ipcRenderer.invoke("privacy:withdraw-camera-consent");
+  },
+  async deleteAllLocalData() {
+    const result: unknown = await ipcRenderer.invoke("privacy:delete-all-local-data");
+    if (result !== "DELETED" && result !== "PARTIALLY_DELETED" && result !== "FAILED") throw new Error("PRELOAD_DELETE_RESULT_INVALID");
+    return result;
   }
 };
 

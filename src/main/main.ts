@@ -55,11 +55,18 @@ function completeOnboardingWithoutCamera(): void {
   storage.saveCameraConsent({ purpose: "CAMERA_MEASUREMENT", scope: "LOCAL_CAMERA", textVersion: "m1-camera-1", decision: "SKIPPED", decidedAt: now });
 }
 
+function withdrawCameraConsent(): void {
+  if (storage === null) throw new Error("LOCAL_STORAGE_UNAVAILABLE");
+  storage.saveCameraConsent({ purpose: "CAMERA_MEASUREMENT", scope: "LOCAL_CAMERA", textVersion: "m1-camera-1", decision: "WITHDRAWN", decidedAt: new Date().toISOString() });
+}
+
 function registerIpcHandlers(): void {
   ipcMain.handle("runtime:get-info", (): RuntimeInfo => getRuntimeInfo());
   ipcMain.handle("privacy:get-summary", (): PrivacySummary => getPrivacySummary());
   ipcMain.handle("checkup:run-survey-only", (_event, response: SurveyResponse): CheckupSummary => runSurveyOnly(response));
   ipcMain.handle("onboarding:complete-without-camera", (): void => completeOnboardingWithoutCamera());
+  ipcMain.handle("privacy:withdraw-camera-consent", (): void => withdrawCameraConsent());
+  ipcMain.handle("privacy:delete-all-local-data", (): "DELETED" | "PARTIALLY_DELETED" | "FAILED" => storage?.deleteAllLocalData() ?? "FAILED");
 }
 
 async function createMainWindow(): Promise<BrowserWindow> {
