@@ -284,7 +284,7 @@ T-M0-003 → T-M0-005 → T-M0-007
 - Do not modify: evidence checksum/index trước archive, source V1, production branch/scaffold.
 - Out of scope: triển khai candidate thắng hoặc T-M1.
 - Tests to add/update: post-cleanup process/capture/package/temp scan.
-- Verification command: `<canonical> cleanup:m0 --dry-run`, sau phê duyệt `<canonical> cleanup:m0`; chưa thể xác minh.
+- Verification command: `npm run test:cleanup:m0`, `npm run cleanup:m0:dry-run`, `npm run cleanup:m0`.
 - Expected evidence: cleanup result, retained artifact owner/retention/checksum và final M0 status.
 - Stop condition: cleanup có thể xóa evidence bắt buộc, certificate/package owner không rõ hoặc camera/model process còn chạy.
 

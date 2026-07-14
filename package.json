@@ -13,6 +13,9 @@
     "build:msix:electron:m0": "node tools/m0/build-msix-feasibility.mjs build electron --out .m0/msix --sign",
     "test:performance:m0": "node tools/m0/run-candidate-performance-fixture-tests.mjs",
     "benchmark:performance:m0": "node tools/m0/run-candidate-performance.mjs",
+    "test:cleanup:m0": "node tools/m0/run-m0-cleanup-fixture-tests.mjs",
+    "cleanup:m0:dry-run": "node tools/m0/run-m0-cleanup-check.mjs --dry-run",
+    "cleanup:m0": "node tools/m0/run-m0-cleanup-check.mjs --apply",
     "check:tauri:m0": "cargo check --manifest-path candidates/tauri/src-tauri/Cargo.toml"
   },
   "devDependencies": {

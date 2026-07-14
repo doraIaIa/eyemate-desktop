@@ -19,6 +19,9 @@ node tools/m0/build-msix-feasibility.mjs build tauri --out .m0/msix --sign
 node tools/m0/build-msix-feasibility.mjs build electron --out .m0/msix --sign
 node tools/m0/run-candidate-performance-fixture-tests.mjs
 node tools/m0/run-candidate-performance.mjs
+node tools/m0/run-m0-cleanup-fixture-tests.mjs
+node tools/m0/run-m0-cleanup-check.mjs --dry-run
+node tools/m0/run-m0-cleanup-check.mjs --apply
 ```
 
 Validator chỉ đọc JSONL, in reason code tối thiểu và không echo record/input. Fixture là dữ liệu synthetic, không chứa raw frame/video/landmark, dữ liệu sức khỏe, đường dẫn người dùng hay secret.
@@ -48,3 +51,6 @@ build-msix-feasibility.mjs tạo MSIX feasibility nội bộ cho Electron/Tauri 
 
 
 run-candidate-performance.mjs chạy benchmark camera-off local cho Electron/Tauri bằng process test mode, đo elapsed startup-to-exit, peak working-set process tree, CPU seconds delta và build unsigned MSIX hai lần để so raw package hash với normalized payload hash. Report nằm dưới .m0/perf/reports, qua scanner type resource-trace, không mở camera, không network và không ghi absolute path/user/host. CPU delta bằng 0 trong workload synthetic là kết quả quan sát được, không phải budget production.
+
+
+run-m0-cleanup-check.mjs kiểm tra process candidate xuất phát từ repo, dọn output ignored .m0 khi chạy --apply và không sửa cert store. Dry-run/apply chỉ báo count và reason code đã scrub, không ghi path người dùng, không xóa evidence đã commit và không động V1.
