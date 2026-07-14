@@ -3,7 +3,7 @@ import { dirname, join, normalize, parse, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { CameraConsentRecord, CameraConsentRepository, OnboardingProgress, OnboardingProgressRepository, OnboardingStage } from "../user-data/ports.js";
 
-export const STORAGE_SCHEMA_VERSION = 3;
+export const STORAGE_SCHEMA_VERSION = 4;
 export const RECOVERY_REQUIRED = "MIGRATION_RECOVERY_REQUIRED";
 
 export type StorageOpenResult =
@@ -60,6 +60,10 @@ function createV3Schema(database: DatabaseSync): void {
       decided_at TEXT NOT NULL
     );
   `);
+}
+
+function createV4Schema(database: DatabaseSync): void {
+  database.exec("CREATE TABLE IF NOT EXISTS checkup_report_snapshot (report_id TEXT PRIMARY KEY, status TEXT NOT NULL, source TEXT NOT NULL, camera_status TEXT NOT NULL, action TEXT NOT NULL, provenance_version TEXT NOT NULL, created_at TEXT NOT NULL);");
 }
 
 function getSchemaVersion(database: DatabaseSync): number {
@@ -125,6 +129,11 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
     `).run(record.purpose, record.scope, record.textVersion, record.decision, record.decidedAt);
   }
 
+  saveSurveyOnlyReport(snapshot: { readonly reportId: string; readonly status: "COMPLETED" | "INSUFFICIENT_DATA" | "SAFETY_STOP"; readonly action: string; readonly provenanceVersion: string; readonly createdAt: string }): void {
+    if (!/^[a-z0-9-]{8,64}$/i.test(snapshot.reportId) || Number.isNaN(Date.parse(snapshot.createdAt))) throw new Error("INVALID_REPORT_SNAPSHOT");
+    this.#database.prepare("INSERT INTO checkup_report_snapshot VALUES (?, ?, 'SURVEY_ONLY', 'NOT_MEASURED', ?, ?, ?)").run(snapshot.reportId, snapshot.status, snapshot.action, snapshot.provenanceVersion, snapshot.createdAt);
+  }
+
   close(): void {
     this.#database.close();
   }
@@ -168,6 +177,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
       createV1Schema(database);
       createV2Schema(database);
       createV3Schema(database);
+      createV4Schema(database);
       database.exec(`PRAGMA user_version = ${STORAGE_SCHEMA_VERSION}; COMMIT;`);
       assertIntegrity(database);
       return { state: "READY", storage: new LocalSqliteStorage(database), migrated: false };
@@ -178,7 +188,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
       return { state: "READY", storage: new LocalSqliteStorage(database), migrated: false };
     }
 
-    if (version !== 1 && version !== 2) throw new Error("UNSUPPORTED_SCHEMA_VERSION");
+    if (version < 1 || version > 3) throw new Error("UNSUPPORTED_SCHEMA_VERSION");
 
     copyFileSync(safePath, `${safePath}.backup-v1`, 0);
     backupCreated = true;
@@ -186,6 +196,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
     if (version === 1) createV2Schema(database);
     if (options.forceMigrationFailure === true) throw new Error("FORCED_MIGRATION_FAILURE");
     createV3Schema(database);
+    createV4Schema(database);
     database.exec(`PRAGMA user_version = ${STORAGE_SCHEMA_VERSION}; COMMIT;`);
     assertIntegrity(database);
     database.prepare("INSERT INTO migration_record VALUES (?, ?, ?, ?, ?)").run(

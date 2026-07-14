@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
 import { createSecureWindowOptions } from "./window-options.js";
 import type { RuntimeInfo } from "../shared/runtime-contract.js";
 import type { CheckupSummary, PrivacySummary, SurveyResponse } from "../shared/m1-contract.js";
@@ -42,6 +43,7 @@ function runSurveyOnly(response: SurveyResponse): CheckupSummary {
   if (!allowed.includes(response)) throw new Error("INVALID_SURVEY_RESPONSE");
   const draft = recordSurveyAnswer(createSurveyDraft(), "comfort_now", response);
   const report = createSurveyOnlyReport(draft, "CONTINUE_SELF_CHECK");
+  storage?.saveSurveyOnlyReport({ reportId: randomUUID(), status: report.status, action: report.action, provenanceVersion: report.provenance.reportSchemaVersion, createdAt: new Date().toISOString() });
   return { status: report.status, source: report.source, camera: report.coverage.camera, action: report.action, missingData: report.missingData };
 }
 
