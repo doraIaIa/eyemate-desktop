@@ -3,4 +3,5 @@ candidates/tauri/src-tauri/target/
 candidates/tauri/src-tauri/gen/
 .m0/
 .m1/
+.m4/
 dist/

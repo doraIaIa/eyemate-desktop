@@ -1,0 +1,21 @@
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const artifact = path.join(root, ".m1", "msix", "eyemate-m1.msix");
+const output = path.join(root, ".m4", "release-provenance");
+const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+const lock = JSON.parse(await readFile(path.join(root, "package-lock.json"), "utf8"));
+const bytes = await readFile(artifact);
+const dependencies = Object.entries(lock.packages ?? {}).filter(([key]) => key.startsWith("node_modules/")).map(([key, value]) => ({ name: key.slice("node_modules/".length), version: value.version ?? "UNKNOWN", resolved: value.resolved ?? "UNKNOWN", integrity: value.integrity ?? "UNKNOWN" })).sort((a, b) => a.name.localeCompare(b.name));
+const sbom = { bomFormat: "CycloneDX", specVersion: "1.5", serialNumber: `urn:uuid:eyemate-${commit.slice(0, 12)}`, version: 1, metadata: { component: { type: "application", name: packageJson.name, version: packageJson.version } }, components: dependencies.map((dependency) => ({ type: "library", name: dependency.name, version: dependency.version, hashes: dependency.integrity === "UNKNOWN" ? [] : [{ alg: "SHA-512", content: dependency.integrity.replace(/^sha512-/, "") }] })) };
+const manifest = { schemaVersion: "m4-release-provenance/0.1.0", channel: "internal-unsigned", commit, application: { name: packageJson.name, version: packageJson.version }, artifact: { relativePath: ".m1/msix/eyemate-m1.msix", bytes: bytes.byteLength, sha256: sha256(bytes) }, signing: "EXTERNAL_GATE", verification: ["npm run verify", "npm run build:msix:m1"], limitations: ["REAL_CAMERA_UNKNOWN", "BLINK_DISTANCE_ACCURACY_UNKNOWN", "DYNAMIC_EGRESS_UNKNOWN", "ENCRYPTION_AT_REST_TBD", "CLINICAL_APPROVAL_REQUIRED"] };
+await mkdir(output, { recursive: true });
+await writeFile(path.join(output, "sbom.cdx.json"), `${JSON.stringify(sbom, null, 2)}\n`);
+await writeFile(path.join(output, "release-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+console.log(`M4_RELEASE_PROVENANCE_PASS ${manifest.artifact.sha256}`);
