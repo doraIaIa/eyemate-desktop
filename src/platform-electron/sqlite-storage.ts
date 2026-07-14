@@ -3,7 +3,7 @@ import { dirname, join, normalize, parse, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { CameraConsentRecord, CameraConsentRepository, OnboardingProgress, OnboardingProgressRepository, OnboardingStage } from "../user-data/ports.js";
 
-export const STORAGE_SCHEMA_VERSION = 7;
+export const STORAGE_SCHEMA_VERSION = 8;
 export const RECOVERY_REQUIRED = "MIGRATION_RECOVERY_REQUIRED";
 
 export type StorageOpenResult =
@@ -15,7 +15,7 @@ export interface OpenStorageOptions {
 }
 
 export interface PersistedSession { readonly sessionId: string; readonly modeId: string; readonly state: string; readonly elapsedActiveMs: number; readonly updatedAt: string; }
-export interface PersistedNudge { readonly nudgeId: string; readonly sessionId: string; readonly decision: string; readonly reason: string; readonly policyVersion: string; readonly createdAt: string; }
+export interface PersistedNudge { readonly nudgeId: string; readonly sessionId: string; readonly decision: string; readonly reason: string; readonly policyVersion: string; readonly createdAt: string; readonly action?: string | null; readonly deliveryState?: "EMITTED" | "ABSTAINED"; }
 export type NudgeResponse = "AUTO_CORRECTED" | "ACCEPTED" | "SNOOZED" | "DISMISSED" | "IGNORED" | "UNKNOWN";
 export interface PersistedSummary { readonly summaryId: string; readonly sessionId: string; readonly status: string; readonly elapsedActiveMs: number; readonly createdAt: string; readonly summaryJson?: string; }
 
@@ -88,6 +88,12 @@ function createV6Schema(database: DatabaseSync): void {
 function createV7Schema(database: DatabaseSync): void {
   const columns = database.prepare("PRAGMA table_info(session_summary)").all() as unknown as readonly { name: string }[];
   if (!columns.some((column) => column.name === "summary_json")) database.exec("ALTER TABLE session_summary ADD COLUMN summary_json TEXT;");
+}
+
+function createV8Schema(database: DatabaseSync): void {
+  const columns = database.prepare("PRAGMA table_info(companion_nudge)").all() as unknown as readonly { name: string }[];
+  if (!columns.some((column) => column.name === "action")) database.exec("ALTER TABLE companion_nudge ADD COLUMN action TEXT;");
+  if (!columns.some((column) => column.name === "delivery_state")) database.exec("ALTER TABLE companion_nudge ADD COLUMN delivery_state TEXT;");
 }
 
 function getSchemaVersion(database: DatabaseSync): number {
@@ -175,7 +181,7 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
 
   recordNudge(nudge: PersistedNudge): boolean {
     if (!/^[a-z0-9-]{8,64}$/i.test(nudge.nudgeId) || !/^[a-z0-9-]{8,64}$/i.test(nudge.sessionId) || Number.isNaN(Date.parse(nudge.createdAt))) throw new Error("INVALID_NUDGE_RECORD");
-    const result = this.#database.prepare("INSERT OR IGNORE INTO companion_nudge (nudge_id, session_id, decision, reason, policy_version, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(nudge.nudgeId, nudge.sessionId, nudge.decision, nudge.reason, nudge.policyVersion, nudge.createdAt);
+    const result = this.#database.prepare("INSERT OR IGNORE INTO companion_nudge (nudge_id, session_id, decision, reason, policy_version, created_at, action, delivery_state) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(nudge.nudgeId, nudge.sessionId, nudge.decision, nudge.reason, nudge.policyVersion, nudge.createdAt, nudge.action ?? null, nudge.deliveryState ?? "EMITTED");
     return Number(result.changes) === 1;
   }
 
@@ -254,6 +260,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
       createV5Schema(database);
       createV6Schema(database);
       createV7Schema(database);
+      createV8Schema(database);
       database.exec(`PRAGMA user_version = ${STORAGE_SCHEMA_VERSION}; COMMIT;`);
       assertIntegrity(database);
       return { state: "READY", storage: new LocalSqliteStorage(database), migrated: false };
@@ -264,7 +271,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
       return { state: "READY", storage: new LocalSqliteStorage(database), migrated: false };
     }
 
-    if (version < 1 || version > 6) throw new Error("UNSUPPORTED_SCHEMA_VERSION");
+    if (version < 1 || version > 7) throw new Error("UNSUPPORTED_SCHEMA_VERSION");
 
     copyFileSync(safePath, `${safePath}.backup-v1`, 0);
     backupCreated = true;
@@ -276,6 +283,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
     createV5Schema(database);
     createV6Schema(database);
     createV7Schema(database);
+    createV8Schema(database);
     database.exec(`PRAGMA user_version = ${STORAGE_SCHEMA_VERSION}; COMMIT;`);
     assertIntegrity(database);
     database.prepare("INSERT INTO migration_record VALUES (?, ?, ?, ?, ?)").run(

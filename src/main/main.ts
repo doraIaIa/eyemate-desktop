@@ -71,7 +71,7 @@ function requestBreakNudge(): NudgeDecision & { readonly nudgeId: string } {
   if (decision.action === "EMIT") {
     lastNudgeMonotonicMs = now;
     nudgesInSession += 1;
-    storage?.recordNudge({ nudgeId, sessionId: workSession.id, decision: decision.action, reason: decision.reason, policyVersion: decision.policyVersion, createdAt: new Date().toISOString() });
+    storage?.recordNudge({ nudgeId, sessionId: workSession.id, decision: decision.action, reason: decision.reason, policyVersion: decision.policyVersion, createdAt: new Date().toISOString(), action: decision.suggestedActionKey, deliveryState: "EMITTED" });
   }
   return { ...decision, nudgeId };
 }
