@@ -7,6 +7,7 @@ const pageBodyElement = document.querySelector<HTMLParagraphElement>("#page-body
 const pageStateElement = document.querySelector<HTMLParagraphElement>("#page-state");
 const privacySummaryElement = document.querySelector<HTMLParagraphElement>("#privacy-summary");
 const surveySelect = document.querySelector<HTMLSelectElement>("#survey-response");
+const safetySelect = document.querySelector<HTMLSelectElement>("#safety-response");
 const surveyButton = document.querySelector<HTMLButtonElement>("#run-survey");
 const checkupSummaryElement = document.querySelector<HTMLParagraphElement>("#checkup-summary");
 const onboardingButton = document.querySelector<HTMLButtonElement>("#complete-onboarding");
@@ -88,7 +89,7 @@ deleteLocalDataButton?.addEventListener("click", async () => {
 });
 
 surveyButton?.addEventListener("click", async () => {
-  if (surveySelect === null || checkupSummaryElement === null) return;
-  const summary = await window.eyeMate.runSurveyOnly(surveySelect.value as import("../shared/m1-contract.js").SurveyResponse);
+  if (surveySelect === null || safetySelect === null || checkupSummaryElement === null) return;
+  const summary = await window.eyeMate.runSurveyOnly({ response: surveySelect.value as import("../shared/m1-contract.js").SurveyResponse, safety: safetySelect.value as import("../shared/m1-contract.js").SafetyResponse });
   checkupSummaryElement.textContent = `Nguồn: ${summary.source}; camera: ${summary.camera}; trạng thái: ${summary.status}; hành động: ${summary.action}.`;
 });

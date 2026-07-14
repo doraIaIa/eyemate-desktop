@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { EyeMatePreloadApi } from "../shared/preload-contract.js";
 import { isRuntimeInfo } from "../shared/runtime-contract.js";
-import { isCheckupSummary, isPrivacySummary, type SurveyResponse } from "../shared/m1-contract.js";
+import { isCheckupSummary, isPrivacySummary, type SurveyRequest } from "../shared/m1-contract.js";
 
 const eyeMateApi: EyeMatePreloadApi = {
   async getRuntimeInfo() {
@@ -16,8 +16,8 @@ const eyeMateApi: EyeMatePreloadApi = {
     if (!isPrivacySummary(result)) throw new Error("PRELOAD_PRIVACY_CONTRACT_INVALID");
     return result;
   },
-  async runSurveyOnly(response: SurveyResponse) {
-    const result: unknown = await ipcRenderer.invoke("checkup:run-survey-only", response);
+  async runSurveyOnly(request: SurveyRequest) {
+    const result: unknown = await ipcRenderer.invoke("checkup:run-survey-only", request);
     if (!isCheckupSummary(result)) throw new Error("PRELOAD_CHECKUP_CONTRACT_INVALID");
     return result;
   },

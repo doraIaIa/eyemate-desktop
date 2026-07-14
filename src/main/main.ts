@@ -4,10 +4,11 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { createSecureWindowOptions } from "./window-options.js";
 import type { RuntimeInfo } from "../shared/runtime-contract.js";
-import type { CheckupSummary, PrivacySummary, SurveyResponse } from "../shared/m1-contract.js";
+import type { CheckupSummary, PrivacySummary, SurveyRequest } from "../shared/m1-contract.js";
 import { createSurveyOnlyExportPreview, resolveDeletionResult } from "../user-data/data-controls.js";
 import { openLocalSqliteStorage, resolveDatabasePath, type LocalSqliteStorage } from "../platform-electron/sqlite-storage.js";
 import { createSurveyDraft, createSurveyOnlyReport, recordSurveyAnswer } from "../symptom-checkup/survey-only.js";
+import { evaluateSafetyGate, internalSafetyCatalogue } from "../safety/safety-gate.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const rendererIndexPath = path.join(currentDirectory, "../renderer/index.html");
@@ -38,12 +39,13 @@ function getPrivacySummary(): PrivacySummary {
   };
 }
 
-function runSurveyOnly(response: SurveyResponse): CheckupSummary {
-  const allowed: readonly SurveyResponse[] = ["NONE", "MILD", "NOTICEABLE", "UNSURE", "PREFER_NOT_TO_ANSWER"];
-  if (!allowed.includes(response)) throw new Error("INVALID_SURVEY_RESPONSE");
+function runSurveyOnly(request: SurveyRequest): CheckupSummary {
+  const allowed = ["NONE", "MILD", "NOTICEABLE", "UNSURE", "PREFER_NOT_TO_ANSWER"];
+  if (!allowed.includes(request.response) || !["CONFIRMED", "NEGATIVE", "UNSURE", "PREFER_NOT_TO_ANSWER"].includes(request.safety)) throw new Error("INVALID_SURVEY_REQUEST");
   if (storage?.load()?.stage !== "COMPLETE") throw new Error("ONBOARDING_REQUIRED");
-  const draft = recordSurveyAnswer(createSurveyDraft(), "comfort_now", response);
-  const report = createSurveyOnlyReport(draft, "CONTINUE_SELF_CHECK");
+  const safety = evaluateSafetyGate({ answers: { safety_signal_a: request.safety, safety_signal_b: "NEGATIVE" } }, internalSafetyCatalogue);
+  const draft = recordSurveyAnswer(createSurveyDraft(), "comfort_now", request.response);
+  const report = createSurveyOnlyReport(draft, safety.outcome);
   storage?.saveSurveyOnlyReport({ reportId: randomUUID(), status: report.status, action: report.action, provenanceVersion: report.provenance.reportSchemaVersion, createdAt: new Date().toISOString() });
   return { status: report.status, source: report.source, camera: report.coverage.camera, action: report.action, missingData: report.missingData };
 }
@@ -63,7 +65,7 @@ function withdrawCameraConsent(): void {
 function registerIpcHandlers(): void {
   ipcMain.handle("runtime:get-info", (): RuntimeInfo => getRuntimeInfo());
   ipcMain.handle("privacy:get-summary", (): PrivacySummary => getPrivacySummary());
-  ipcMain.handle("checkup:run-survey-only", (_event, response: SurveyResponse): CheckupSummary => runSurveyOnly(response));
+  ipcMain.handle("checkup:run-survey-only", (_event, request: SurveyRequest): CheckupSummary => runSurveyOnly(request));
   ipcMain.handle("onboarding:complete-without-camera", (): void => completeOnboardingWithoutCamera());
   ipcMain.handle("privacy:withdraw-camera-consent", (): void => withdrawCameraConsent());
   ipcMain.handle("privacy:delete-all-local-data", (): "DELETED" | "PARTIALLY_DELETED" | "FAILED" => storage?.deleteAllLocalData() ?? "FAILED");
@@ -105,7 +107,7 @@ async function runSmoke(window: BrowserWindow): Promise<void> {
   }
 
   const surveyResult = await window.webContents.executeJavaScript(
-    "window.eyeMate.completeOnboardingWithoutCamera().then(() => window.eyeMate.runSurveyOnly('MILD')).then((value) => `${value.status}:${value.source}:${value.camera}`)",
+    "window.eyeMate.completeOnboardingWithoutCamera().then(() => window.eyeMate.runSurveyOnly({ response: 'MILD', safety: 'NEGATIVE' })).then((value) => `${value.status}:${value.source}:${value.camera}`)",
     true
   );
   if (surveyResult !== "COMPLETED:SURVEY_ONLY:NOT_MEASURED") {

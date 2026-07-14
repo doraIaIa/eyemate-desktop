@@ -6,6 +6,8 @@ export interface PrivacySummary {
 }
 
 export type SurveyResponse = "NONE" | "MILD" | "NOTICEABLE" | "UNSURE" | "PREFER_NOT_TO_ANSWER";
+export type SafetyResponse = "CONFIRMED" | "NEGATIVE" | "UNSURE" | "PREFER_NOT_TO_ANSWER";
+export interface SurveyRequest { readonly response: SurveyResponse; readonly safety: SafetyResponse; }
 export interface CheckupSummary { readonly status: "COMPLETED" | "INSUFFICIENT_DATA" | "SAFETY_STOP"; readonly source: "SURVEY_ONLY"; readonly camera: "NOT_MEASURED"; readonly action: string; readonly missingData: readonly string[]; }
 export function isCheckupSummary(value: unknown): value is CheckupSummary {
   if (typeof value !== "object" || value === null) return false;
