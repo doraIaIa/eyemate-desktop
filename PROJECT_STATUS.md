@@ -1,14 +1,14 @@
 # Project Status
 
 Last updated: 2026-07-14
-Current milestone: M4 — Validation, Hardening & Pilot Readiness
-Current batch: M4 exit verification
-Current task: T-M4-006 — Release provenance, internal pilot candidate and exit audit
+Current milestone: UI/UX Integration & Functional Completion
+Current batch: Electron renderer integration exit
+Current task: Local-only application shell, functional flows and visual verification
 Task state: ENGINEERING_COMPLETE_WITH_LIMITATIONS
 
-Latest verified commit: `0346fc9`
-Task base commit: `82c7a3e`
-Working tree: clean after M4 release verification.
+Latest verified commit: `e5423ef`
+Task base commit: `fcaeaca`
+Working tree: clean after UI/UX integration verification.
 
 Completed:
 
@@ -25,6 +25,8 @@ Completed:
 - Electron bridge/UI: Privacy summary Local Only và survey-only flow chạy qua main/preload/renderer; onboarding Local Only bắt buộc trước checkup.
 - Release-like MSIX nội bộ unsigned build được bằng `npm run build:msix:m1`; không phải signing/Store readiness.
 - T-M1-010/011: Report history, withdrawal/delete controls, canonical verification, privacy boundary scan và staged release-like MSIX smoke pass.
+- UI/UX integration: custom Electron titlebar, fixed sidebar, hash router, Eye Vitals Orb, Home metrics, 5-step survey-only checkup, timer Work Companion, report tabs/charts, Privacy Center, Settings, native export dialog và responsive screenshots đã hoàn tất.
+- UI functional acceptance click xuyên suốt navigation, Back/Forward/reload, checkup fallback, session timer/pause/resume/nudge/summary, report history, delete hai bước và settings autosave.
 
 Verification:
 
@@ -48,7 +50,7 @@ Remaining:
 
 Next exact action:
 
-- Await a new approved milestone objective; do not open public/pilot distribution automatically.
+- Await clinical approval/runtime assets before enabling OSDI-6 or real-camera measurement; current survey-only/timer-only UI remains the safe enabled product slice.
 
 Next exact command:
 
@@ -73,6 +75,16 @@ Important decisions:
 - Dynamic WPR egress là UNKNOWN/DEFERRED_M0_LIMITATION; không chứng minh không egress.
 - M1 ENGINEERING_COMPLETE không đồng nghĩa PUBLIC_READY.
 - M2 dùng Electron timer-only; camera runtime thật vẫn proposed/UNKNOWN.
+
+## UI/UX Integration Exit Record (2026-07-14)
+
+- Status: `ENGINEERING_COMPLETE_WITH_LIMITATIONS` at `e5423ef`.
+- Verified: `npm run verify`, `npm run acceptance:ui`, `npm run build:msix:m1` and `git diff --check` PASS.
+- Screenshots: Home, checkup result, active session, reports and privacy at 1024×768 and 1280×800 under `docs/validation/ui-screenshots/`.
+- Wired: local onboarding/survey, work-session lifecycle, nudge response, local reports/history, native-dialog Markdown/JSON export, baseline reset, consent withdrawal and two-step local deletion.
+- Disabled/abstained: camera modes/settings, raw EAR/blink/distance values and 30-day inference when evidence is unavailable.
+- Limitations: real camera/calibration/30-second measurement, clinically approved OSDI-6, PDF generation and dynamic egress verification remain UNKNOWN/TBD; no UI claim upgrades them to PASS.
+- V1 was not modified.
 
 ## M3 Exit Record (2026-07-14)
 
