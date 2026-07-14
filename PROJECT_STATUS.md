@@ -1,14 +1,14 @@
 # Project Status
 
 Last updated: 2026-07-14
-Current milestone: M1 — Personal Checkup MVP
-Current batch: M1 integration batch 3
-Current task: T-M1-010 — Tích hợp report và Privacy Center
-Task state: IN_PROGRESS
+Current milestone: M1 — Personal Checkup MVP ENGINEERING_COMPLETE_WITH_LIMITATIONS
+Current batch: M1 exit verification
+Current task: M1 exit record
+Task state: DONE_WITH_LIMITATIONS
 
-Latest verified commit: `9bc9f6d`
-Task base commit: `9bc9f6d`
-Working tree: sạch sau integration batch 3.
+Latest verified commit: `06ea21f`
+Task base commit: `06ea21f`
+Working tree: M1 exit record chờ commit.
 
 Completed:
 
@@ -24,20 +24,23 @@ Completed:
 - T-M1-010A: Export preview và deletion result typed đã có; chưa tích hợp UI/persistence hoàn chỉnh.
 - Electron bridge/UI: Privacy summary Local Only và survey-only flow chạy qua main/preload/renderer; onboarding Local Only bắt buộc trước checkup.
 - Release-like MSIX nội bộ unsigned build được bằng `npm run build:msix:m1`; không phải signing/Store readiness.
+- T-M1-010/011: Report history, withdrawal/delete controls, canonical verification, privacy boundary scan và staged release-like MSIX smoke pass.
 
 Verification:
 
 - command: `npm run verify:m1`
-  result: PASS — lint, typecheck, 1 unit, 1 integration, architecture check, Electron acceptance smoke và build.
+  result: PASS — lint, typecheck, 18 unit, 7 integration, architecture, privacy boundary scan, Electron acceptance smoke và build.
   evidence: `src/`, `tools/m1/`, `package.json`.
+- command: `npm run build:msix:m1`
+  result: PASS — MakeAppx package và smoke từ staged release-like Electron app.
 
 Remaining:
 
-- T-M1-010 hoàn tất withdrawal/delete/report history UI; T-M1-011 integration acceptance/restart/recovery và release-like flow.
+- Không còn task M1 engineering bắt buộc.
 
 Next exact action:
 
-- Hoàn tất controls Privacy Center và integration acceptance cho report/history/deletion; không mở camera thật.
+- Owner review M1 exit và quyết định M2; không mở M2 tự động.
 
 Next exact command:
 
@@ -50,14 +53,20 @@ Blockers requiring owner:
 Acceptance:
 
 - AC-M1-001: PASS — Electron smoke xác nhận preload bridge Local Only, context isolation và Node integration tắt.
-- AC-M1-002 đến AC-M1-008: NOT_STARTED.
+- AC-M1-002: PASS — Local Only onboarding bắt buộc trước survey-only.
+- AC-M1-003: PASS — camera mock off/denied/unavailable/busy/low-quality abstention; camera runtime thật UNKNOWN.
+- AC-M1-004: PASS — Safety Gate deterministic/versioned chạy trước report; catalogue là placeholder nội bộ.
+- AC-M1-005 đến AC-M1-007: PASS — survey-only, report provenance, local SQLite migration/recovery, export preview, withdrawal/delete controls.
+- AC-M1-008: PASS_WITH_LIMITATIONS — offline local assets, static privacy scan và staged unsigned MSIX smoke pass; dynamic WPR egress UNKNOWN.
 
 Important decisions:
 
 - Electron là shell M1; ADR-004 camera runtime/model vẫn proposed.
 - Dynamic WPR egress là UNKNOWN/DEFERRED_M0_LIMITATION; không chứng minh không egress.
+- M1 ENGINEERING_COMPLETE không đồng nghĩa PUBLIC_READY.
 
 Do not redo:
 
 - Không làm lại M0 hoặc mở lại ADR-003.
 - Không sửa `F:\dry-eye-app`.
+- Không coi placeholder clinical/questionnaire, camera runtime thật, encryption, signing hay public release là PASS.
