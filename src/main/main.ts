@@ -32,10 +32,11 @@ const intelligenceSmokeMode = process.argv.includes("--m3-smoke");
 const uiValidationMode = process.argv.includes("--ui-validate");
 const uiRecoverySeedMode = process.argv.includes("--ui-recovery-seed");
 const uiRecoveryCheckMode = process.argv.includes("--ui-recovery-check");
+const egressObservationMode = process.argv.includes("--egress-observe");
 const uiCaptureArgument = process.argv.find((argument) => argument.startsWith("--ui-screenshot-dir="));
 const uiScreenshotDirectory = uiCaptureArgument?.slice("--ui-screenshot-dir=".length) ?? null;
 
-if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode || uiRecoverySeedMode || uiRecoveryCheckMode) {
+if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode || uiRecoverySeedMode || uiRecoveryCheckMode || egressObservationMode) {
   app.disableHardwareAcceleration();
 }
 
@@ -478,15 +479,31 @@ async function runUiRecoveryCheck(window: BrowserWindow): Promise<void> {
   if (result !== "RECOVERY_REQUIRED:true") throw new Error(`UI_SESSION_RECOVERY_INVALID:${String(result)}`);
 }
 
+async function runEgressObservation(window: BrowserWindow): Promise<void> {
+  const result = await window.webContents.executeJavaScript(`(async () => {
+    await window.eyeMate.getRuntimeInfo();
+    await window.eyeMate.getPrivacySummary();
+    await window.eyeMate.getUserPreferences();
+    for (const route of ['home', 'checkup', 'companion', 'intelligence', 'reports', 'privacy', 'settings']) {
+      location.hash = '#/' + route;
+      await new Promise((resolve) => setTimeout(resolve, 180));
+    }
+    return 'LOCAL_UI_WORKLOAD_COMPLETE';
+  })()`, true);
+  if (result !== "LOCAL_UI_WORKLOAD_COMPLETE") throw new Error("EGRESS_WORKLOAD_INVALID");
+  await new Promise((resolve) => setTimeout(resolve, 6_000));
+}
+
 app.whenReady().then(async () => {
   const openedStorage = openLocalSqliteStorage(resolveDatabasePath(app.getPath("userData")));
   if (openedStorage.state === "READY") { storage = openedStorage.storage; recoverPersistedSession(); }
   registerIpcHandlers();
   const window = await createMainWindow();
 
-  if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode || uiRecoverySeedMode || uiRecoveryCheckMode) {
+  if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode || uiRecoverySeedMode || uiRecoveryCheckMode || egressObservationMode) {
     try {
-      if (uiValidationMode) await runUiValidation(window);
+      if (egressObservationMode) await runEgressObservation(window);
+      else if (uiValidationMode) await runUiValidation(window);
       else if (uiRecoverySeedMode) {
         await runUiRecoverySeed(window);
         app.quit();
