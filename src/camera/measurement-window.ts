@@ -116,6 +116,10 @@ export function aggregateMeasurementWindow(input: {
   const enoughEvidence = input.status === "COMPLETED" && durationMs >= 29_000 && validSampleCount >= 15 && validSampleRatio >= 0.7;
   const reasonCodes: string[] = [];
   if (!enoughEvidence && input.status === "COMPLETED") reasonCodes.push("INSUFFICIENT_VALID_SAMPLES");
+  if (input.status === "CAMERA_FAILED") reasonCodes.push("MEASUREMENT_CAMERA_FAILED");
+  if (input.status === "TIMEOUT") reasonCodes.push("MEASUREMENT_TIMEOUT");
+  if (input.status === "CANCELLED") reasonCodes.push("MEASUREMENT_CANCELLED");
+  if (input.status === "INSUFFICIENT_DATA") reasonCodes.push("MEASUREMENT_INSUFFICIENT_DATA");
   if (input.calibration === null) reasonCodes.push("CALIBRATION_MISSING");
   else if (input.currentDeviceBinding !== input.calibration.deviceBinding) reasonCodes.push("CALIBRATION_DEVICE_CHANGED");
   const blinkCount = enoughEvidence ? countBlinks(accepted) : 0;

@@ -38,6 +38,7 @@ test("cancel không tạo kết quả hoàn chỉnh", () => {
   const result = aggregateMeasurementWindow({ status: "CANCELLED", startedAtMs: 0, endedAtMs: 5_000, frames: [valid(0)], calibration, currentDeviceBinding: binding });
   assert.equal(result.status, "CANCELLED");
   assert.equal(result.blinkSummary.status, "UNKNOWN");
+  assert.deepEqual(result.reasonCodes, ["MEASUREMENT_CANCELLED"]);
 });
 
 test("ground truth calibration bị giới hạn và validate nghiêm ngặt", () => {

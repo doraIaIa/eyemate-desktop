@@ -186,7 +186,8 @@ function cameraStatusMessage(): string {
     CAMERA_NOT_STARTED: "Camera chỉ mở sau thao tác rõ ràng của bạn.", CAMERA_STARTING: "Đang khởi tạo model cục bộ…", CAMERA_ACTIVE: "Camera đang xử lý cục bộ; không lưu hình ảnh.",
     CAMERA_PERMISSION_DENIED: "Quyền camera bị từ chối. Hãy cấp lại trong Windows Settings > Privacy & security > Camera.", CAMERA_UNAVAILABLE: "Không tìm thấy camera phù hợp.",
     CAMERA_API_UNAVAILABLE: "Thiết bị này không cung cấp camera API.", CAMERA_BUSY: "Camera đang được ứng dụng khác sử dụng.", CAMERA_DISCONNECTED: "Camera đã ngắt kết nối.",
-    CAMERA_DEVICE_CHANGED: "Danh sách camera đã thay đổi; cần hiệu chỉnh lại.", CAMERA_RUNTIME_FAILED: "Không thể khởi tạo camera.", CAMERA_INFERENCE_FAILED: "Model camera cục bộ gặp lỗi."
+    CAMERA_DEVICE_CHANGED: "Danh sách camera đã thay đổi; cần hiệu chỉnh lại.", CAMERA_RUNTIME_FAILED: "Không thể khởi tạo camera.", CAMERA_INFERENCE_FAILED: "Model camera cục bộ gặp lỗi.",
+    CAMERA_INTERRUPTED_BY_VISIBILITY: "Camera đã dừng khi cửa sổ bị ẩn. Hãy mở lại và hiệu chỉnh trước khi đo."
   };
   return messages[cameraReason] ?? cameraReason;
 }
@@ -512,7 +513,13 @@ async function renderRoute(): Promise<void> {
 
 window.addEventListener("hashchange", () => void renderRoute());
 window.addEventListener("beforeunload", () => { void stopCameraFlow(); });
-document.addEventListener("visibilitychange", () => { if (document.hidden && cameraRuntime.active) void stopCameraFlow(); });
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden || !cameraRuntime.active) return;
+  void stopCameraFlow().then(() => {
+    cameraCalibration = null; cameraMeasurement = null; cameraReason = "CAMERA_INTERRUPTED_BY_VISIBILITY";
+    if (routeFromHash() === "checkup") { checkupStep = 3; renderCheckup(); }
+  });
+});
 if (!location.hash) location.replace("#/home");
 void window.eyeMate.getUserPreferences().then(applyPreferences).catch(() => { /* Route error UI handles unavailable storage. */ });
 void renderRoute();
