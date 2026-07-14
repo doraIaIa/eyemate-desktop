@@ -2,13 +2,26 @@
 
 Last updated: 2026-07-14
 Current milestone: UI/UX Integration & Functional Completion
-Current batch: Electron renderer integration exit
+Current batch: Product completion exit
 Current task: Local-only application shell, functional flows and visual verification
-Task state: ENGINEERING_COMPLETE_WITH_LIMITATIONS
+Task state: PRODUCT_ENGINEERING_COMPLETE_WITH_LIMITATIONS
 
-Latest verified commit: `673fa68`
+Latest verified commit: `fc42ec1`
 Task base commit: `fcaeaca`
-Working tree: clean after UI/UX integration verification.
+Working tree: clean after product completion verification.
+
+## Product Completion Exit Record (2026-07-14)
+
+- Status: `PRODUCT_ENGINEERING_COMPLETE_WITH_LIMITATIONS`.
+- Commit range: `0f28af3..fc42ec1`.
+- Canonical verification: `npm run verify` PASS — 47 unit, 12 integration, architecture, privacy, security, accessibility, Electron M1/M2/M3 và UI functional acceptance.
+- Package: `npm run build:msix:m1` PASS; unsigned internal MSIX 138,414,452 bytes; SHA-256 `B78E582739015F437CBD8ED913E1485660B7BD0E79CF47F1CF6AF027FEE30E8C`.
+- UI evidence: Home, checkup result, active session, Personal Intelligence, Reports, Privacy và Settings ở 1024×768/1280×800; hai lần sinh liên tiếp có hash giống nhau.
+- Functional closure: SQLite preferences/data inventory, N-1 migration, mutation timeout/retry, native export preview, report/baseline/data deletion, session cancel/recovery, quiet-hours policy và toàn bộ nudge responses đã được nối qua typed preload IPC.
+- Safe enabled slice: survey-only checkup và Timer Only Work Companion, hoàn toàn local.
+- Disabled/UNKNOWN: camera runtime/calibration/30-second measurement, clinically approved OSDI-6, PDF, encryption-at-rest, dynamic WPR egress, signing và public distribution.
+- Không có tuyên bố `PUBLIC_READY`; không có dữ liệu camera raw, cloud, account hoặc telemetry được thêm.
+- V1 không bị sửa; hai file untracked có sẵn trong V1 vẫn được bảo toàn.
 
 Completed:
 
