@@ -86,6 +86,14 @@ async function runSmoke(window: BrowserWindow): Promise<void> {
   if (privacyMode !== true) {
     throw new Error("M1_PRIVACY_BRIDGE_INVALID");
   }
+
+  const surveyResult = await window.webContents.executeJavaScript(
+    "window.eyeMate.runSurveyOnly('MILD').then((value) => `${value.status}:${value.source}:${value.camera}`)",
+    true
+  );
+  if (surveyResult !== "COMPLETED:SURVEY_ONLY:NOT_MEASURED") {
+    throw new Error("M1_SURVEY_ONLY_FLOW_INVALID");
+  }
 }
 
 app.whenReady().then(async () => {
