@@ -6,7 +6,7 @@ Current batch: Electron renderer integration exit
 Current task: Local-only application shell, functional flows and visual verification
 Task state: ENGINEERING_COMPLETE_WITH_LIMITATIONS
 
-Latest verified commit: `e5423ef`
+Latest verified commit: `673fa68`
 Task base commit: `fcaeaca`
 Working tree: clean after UI/UX integration verification.
 
@@ -78,7 +78,7 @@ Important decisions:
 
 ## UI/UX Integration Exit Record (2026-07-14)
 
-- Status: `ENGINEERING_COMPLETE_WITH_LIMITATIONS` at `e5423ef`.
+- Status: `ENGINEERING_COMPLETE_WITH_LIMITATIONS` in `e5423ef..673fa68`.
 - Verified: `npm run verify`, `npm run acceptance:ui`, `npm run build:msix:m1` and `git diff --check` PASS.
 - Screenshots: Home, checkup result, active session, reports and privacy at 1024×768 and 1280×800 under `docs/validation/ui-screenshots/`.
 - Wired: local onboarding/survey, work-session lifecycle, nudge response, local reports/history, native-dialog Markdown/JSON export, baseline reset, consent withdrawal and two-step local deletion.
