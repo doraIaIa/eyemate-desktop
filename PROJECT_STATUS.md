@@ -3,7 +3,7 @@
 Last updated: 2026-07-14
 Current milestone: M1 — Personal Checkup MVP
 Current batch: M1-A foundation
-Current task: T-M1-004 — Local data foundation
+Current task: T-M1-005 — Onboarding và consent
 Task state: IN_PROGRESS
 
 Latest verified commit: `c41a22b`
@@ -16,6 +16,7 @@ Completed:
 - T-M1-001: Electron + TypeScript scaffold, local renderer asset, BrowserWindow context isolation, Node integration tắt và preload bridge hẹp.
 - T-M1-002: Lệnh `lint`, `typecheck`, `unit`, `integration`, `acceptance`, `architecture`, `build` và `verify:m1` đã chạy thực tế.
 - T-M1-003: App shell điều hướng Home, Checkup, Reports, Privacy Center và Settings với state first-use/empty/offline.
+- T-M1-004: SQLite local adapter có WAL, schema version, N-1 backup/migration, integrity check, recovery lock và repository onboarding typed.
 
 Verification:
 
@@ -25,11 +26,11 @@ Verification:
 
 Remaining:
 
-- T-M1-004 local data foundation theo `specs/011-m1-personal-checkup-mvp/tasks.md`.
+- T-M1-005 onboarding/Local Only/consent persistence, withdrawal và camera-off path.
 
 Next exact action:
 
-- Review và commit T-M1-003; triển khai SQLite local adapter.
+- Review và commit T-M1-004; triển khai onboarding/consent.
 
 Next exact command:
 
