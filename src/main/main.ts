@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, session } from "electron";
 import path from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -33,6 +33,7 @@ const uiValidationMode = process.argv.includes("--ui-validate");
 const uiRecoverySeedMode = process.argv.includes("--ui-recovery-seed");
 const uiRecoveryCheckMode = process.argv.includes("--ui-recovery-check");
 const egressObservationMode = process.argv.includes("--egress-observe");
+const cameraRuntimeTestMode = process.argv.includes("--camera-runtime-test");
 const uiCaptureArgument = process.argv.find((argument) => argument.startsWith("--ui-screenshot-dir="));
 const uiScreenshotDirectory = uiCaptureArgument?.slice("--ui-screenshot-dir=".length) ?? null;
 
@@ -157,6 +158,13 @@ function completeOnboardingWithoutCamera(): void {
   storage.saveCameraConsent({ purpose: "CAMERA_MEASUREMENT", scope: "LOCAL_CAMERA", textVersion: "m1-camera-1", decision: "SKIPPED", decidedAt: now });
 }
 
+function grantCameraConsent(): void {
+  if (storage === null) throw new Error("LOCAL_STORAGE_UNAVAILABLE");
+  const now = currentIso();
+  storage.save({ stage: "COMPLETE", updatedAt: now });
+  storage.saveCameraConsent({ purpose: "CAMERA_MEASUREMENT", scope: "LOCAL_CAMERA", textVersion: "m1-camera-1", decision: "GRANTED", decidedAt: now });
+}
+
 function withdrawCameraConsent(): void {
   if (storage === null) throw new Error("LOCAL_STORAGE_UNAVAILABLE");
   storage.saveCameraConsent({ purpose: "CAMERA_MEASUREMENT", scope: "LOCAL_CAMERA", textVersion: "m1-camera-1", decision: "WITHDRAWN", decidedAt: currentIso() });
@@ -198,6 +206,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle("runtime:get-info", (): RuntimeInfo => getRuntimeInfo());
   ipcMain.handle("privacy:get-summary", (): PrivacySummary => getPrivacySummary());
   ipcMain.handle("checkup:run-survey-only", (_event, request: SurveyRequest): CheckupSummary => runSurveyOnly(request));
+  ipcMain.handle("onboarding:grant-camera-consent", (): void => grantCameraConsent());
   ipcMain.handle("onboarding:complete-without-camera", (): void => completeOnboardingWithoutCamera());
   ipcMain.handle("privacy:withdraw-camera-consent", (): void => withdrawCameraConsent());
   ipcMain.handle("privacy:delete-all-local-data", (): "DELETED" | "PARTIALLY_DELETED" | "FAILED" => storage?.deleteAllLocalData() ?? "FAILED");
@@ -260,6 +269,12 @@ async function createMainWindow(): Promise<BrowserWindow> {
   await window.loadFile(rendererIndexPath);
   window.show();
   return window;
+}
+
+function configureLocalCameraPermission(): void {
+  const isAllowed = (webContentsUrl: string): boolean => webContentsUrl.startsWith("file:") && storage?.loadCameraConsent()?.decision === "GRANTED";
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => permission === "media" && webContents !== null && isAllowed(webContents.getURL()));
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => callback(permission === "media" && isAllowed(webContents.getURL())));
 }
 
 async function runSmoke(window: BrowserWindow): Promise<void> {
@@ -494,15 +509,41 @@ async function runEgressObservation(window: BrowserWindow): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 6_000));
 }
 
+async function runCameraRuntimeTest(window: BrowserWindow): Promise<void> {
+  const evaluate = async <T>(source: string): Promise<T> => await window.webContents.executeJavaScript(source, true) as T;
+  const waitFor = async (predicate: string, timeoutMs = 30_000): Promise<boolean> => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (await evaluate<boolean>(predicate)) return true;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return false;
+  };
+  await evaluate("location.hash = '#/checkup'; true");
+  if (!await waitFor("Boolean(document.querySelector('#checkup-camera-consent'))")) throw new Error("CAMERA_TEST_CONSENT_UI_MISSING");
+  await evaluate("document.querySelector('#checkup-camera-consent').click(); true");
+  if (!await waitFor("Boolean(document.querySelector('#checkup-survey-next'))")) throw new Error("CAMERA_TEST_SURVEY_UI_MISSING");
+  await evaluate("document.querySelector('#checkup-survey-next').click(); true");
+  if (!await waitFor("Boolean(document.querySelector('#checkup-open-camera'))")) throw new Error("CAMERA_TEST_CALIBRATION_UI_MISSING");
+  await evaluate("document.querySelector('#checkup-open-camera').click(); true");
+  const settled = await waitFor("document.querySelector('#camera-runtime-state')?.textContent?.includes('đang xử lý cục bộ') || /từ chối|Không tìm thấy|đang được ứng dụng khác|gặp lỗi/.test(document.querySelector('#camera-runtime-state')?.textContent ?? '')");
+  const state = await evaluate<string>("document.querySelector('#camera-runtime-state')?.textContent ?? 'CAMERA_STATE_MISSING'");
+  await evaluate("location.hash = '#/home'; true");
+  if (!settled || !state.includes("đang xử lý cục bộ")) throw new Error(`CAMERA_RUNTIME_INTEGRATION_FAILED:${state}`);
+  console.log("CAMERA_RUNTIME_INTEGRATION_PASS");
+}
+
 app.whenReady().then(async () => {
   const openedStorage = openLocalSqliteStorage(resolveDatabasePath(app.getPath("userData")));
   if (openedStorage.state === "READY") { storage = openedStorage.storage; recoverPersistedSession(); }
+  configureLocalCameraPermission();
   registerIpcHandlers();
   const window = await createMainWindow();
 
-  if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode || uiRecoverySeedMode || uiRecoveryCheckMode || egressObservationMode) {
+  if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode || uiRecoverySeedMode || uiRecoveryCheckMode || egressObservationMode || cameraRuntimeTestMode) {
     try {
-      if (egressObservationMode) await runEgressObservation(window);
+      if (cameraRuntimeTestMode) await runCameraRuntimeTest(window);
+      else if (egressObservationMode) await runEgressObservation(window);
       else if (uiValidationMode) await runUiValidation(window);
       else if (uiRecoverySeedMode) {
         await runUiRecoverySeed(window);

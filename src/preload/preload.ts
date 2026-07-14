@@ -21,6 +21,9 @@ const eyeMateApi: EyeMatePreloadApi = {
     if (!isCheckupSummary(result)) throw new Error("PRELOAD_CHECKUP_CONTRACT_INVALID");
     return result;
   },
+  async grantCameraConsent() {
+    await ipcRenderer.invoke("onboarding:grant-camera-consent");
+  },
   async completeOnboardingWithoutCamera() {
     await ipcRenderer.invoke("onboarding:complete-without-camera");
   },

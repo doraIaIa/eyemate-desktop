@@ -14,6 +14,6 @@ for (const file of sourceFiles) {
 const main = await readFile(path.join(root, "src", "main", "main.ts"), "utf8");
 const html = await readFile(path.join(root, "src", "renderer", "index.html"), "utf8");
 if (!main.includes("setWindowOpenHandler") || !main.includes("will-navigate")) failures.push("NAVIGATION_GUARD_MISSING");
-if (!html.includes("Content-Security-Policy") || !html.includes("connect-src 'none'")) failures.push("LOCAL_ONLY_CSP_MISSING");
+if (!html.includes("Content-Security-Policy") || !html.includes("connect-src 'self'") || /https?:\/\//i.test(html)) failures.push("LOCAL_ONLY_CSP_MISSING");
 if (failures.length) throw new Error(failures.join("\n"));
 console.log("M4_SECURITY_POSTURE_PASS");

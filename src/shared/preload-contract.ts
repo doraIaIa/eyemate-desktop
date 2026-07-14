@@ -28,6 +28,7 @@ export interface EyeMatePreloadApi {
   getRuntimeInfo(): Promise<RuntimeInfo>;
   getPrivacySummary(): Promise<PrivacySummary>;
   runSurveyOnly(request: SurveyRequest): Promise<CheckupSummary>;
+  grantCameraConsent(): Promise<void>;
   completeOnboardingWithoutCamera(): Promise<void>;
   withdrawCameraConsent(): Promise<void>;
   deleteAllLocalData(): Promise<"DELETED" | "PARTIALLY_DELETED" | "FAILED">;
