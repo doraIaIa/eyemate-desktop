@@ -1,7 +1,8 @@
 import type { SafetyOutcome } from "../safety/safety-gate.js";
+import { resolveQuestionnaire, SYNTHETIC_QUESTIONNAIRE_VERSION, type QuestionnaireAnswer } from "./questionnaire-registry.js";
 
-export const questionnaireVersion = "m1-synthetic-0.1.0" as const;
-export type SurveyAnswer = "NONE" | "MILD" | "NOTICEABLE" | "UNSURE" | "PREFER_NOT_TO_ANSWER";
+export const questionnaireVersion = SYNTHETIC_QUESTIONNAIRE_VERSION;
+export type SurveyAnswer = QuestionnaireAnswer;
 export type CheckupState = "INTRO" | "SYMPTOMS" | "REPORT" | "INSUFFICIENT_REPORT" | "CANCELLED" | "PARTIAL" | "SAFETY_STOP";
 
 export interface CheckupDraft {
@@ -34,9 +35,11 @@ export function recoverInterruptedCheckup(draft: CheckupDraft): CheckupDraft {
 }
 
 export function createSurveyOnlyReport(draft: CheckupDraft, safetyOutcome: SafetyOutcome): SurveyOnlyReport {
+  const questionnaire = resolveQuestionnaire({ requestedId: "internal-comfort-check", clinicalOwnerApproved: false });
+  if (questionnaire.state !== "ENABLED_INTERNAL_ONLY") throw new Error("INTERNAL_QUESTIONNAIRE_UNAVAILABLE");
   const provenance = { reportSchemaVersion: "m1-report-0.1.0" as const, questionnaireVersion, safetyOutcome, methodVersion: "survey-only-0.1.0" as const };
   if (safetyOutcome !== "CONTINUE_SELF_CHECK") return { status: "SAFETY_STOP", source: "SURVEY_ONLY", coverage: { survey: "PARTIAL", camera: "NOT_MEASURED" }, pattern: "NOT_AVAILABLE", confidence: "NOT_AVAILABLE", missingData: [], action: "FOLLOW_INTERNAL_SAFETY_GUIDANCE", limitation: "SYNTHETIC_QUESTIONNAIRE_NOT_CLINICALLY_APPROVED", provenance };
-  const required = draft.answers.comfort_now === "NOTICEABLE" ? ["comfort_now", "screen_interruption"] : ["comfort_now"];
+  const required = questionnaire.adapter.requiredQuestionIds(draft.answers);
   const missingData = required.filter((question) => draft.answers[question as keyof typeof draft.answers] === undefined);
   if (missingData.length > 0) return { status: "INSUFFICIENT_DATA", source: "SURVEY_ONLY", coverage: { survey: "PARTIAL", camera: "NOT_MEASURED" }, pattern: "NOT_AVAILABLE", confidence: "NOT_AVAILABLE", missingData, action: "COMPLETE_REQUIRED_ANSWERS", limitation: "SYNTHETIC_QUESTIONNAIRE_NOT_CLINICALLY_APPROVED", provenance };
   return { status: "COMPLETED", source: "SURVEY_ONLY", coverage: { survey: "COMPLETE", camera: "NOT_MEASURED" }, pattern: "SURVEY_RECORDED", confidence: "LIMITED", missingData: [], action: "REVIEW_YOUR_RESPONSES", limitation: "SYNTHETIC_QUESTIONNAIRE_NOT_CLINICALLY_APPROVED", provenance };
