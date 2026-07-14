@@ -1,14 +1,14 @@
 # Project Status
 
 Last updated: 2026-07-14
-Current milestone: M3 — Personal Intelligence, Trends & Reports
-Current batch: M3 exit verification
-Current task: T-M3-006 — Regression, MSIX smoke and M3 exit
-Task state: ENGINEERING_COMPLETE_WITH_LIMITATIONS
+Current milestone: M4 — Validation, Hardening & Pilot Readiness
+Current batch: M4 validation/hardening
+Current task: T-M4-002 — Privacy/security/storage recovery hardening
+Task state: IN_PROGRESS
 
-Latest verified commit: `40472b7`
-Task base commit: `024bff9`
-Working tree: clean after M3 exit verification.
+Latest verified commit: `65e0d8e`
+Task base commit: `82c7a3e`
+Working tree: clean after M4 runtime observation.
 
 Completed:
 
@@ -40,16 +40,18 @@ M3 exit: `ENGINEERING_COMPLETE_WITH_LIMITATIONS`. Typed M1/M2 aggregate inputs f
 
 Remaining:
 
-- Do not open M4 without a new approved objective.
-- Before any pilot/public release, repeat real-camera validation, dynamic egress verification, and resolve encryption/signing/clinical limitations.
+- M4 remains in progress. Sensitive pilot data is DISABLED by ADR-005 until encryption/key lifecycle evidence exists.
+- Real camera lifecycle and blink/distance accuracy remain UNKNOWN; timer-only/survey-only are the safe enabled modes.
+- Dynamic egress remains UNKNOWN due to prior WPR host-policy failure; no retry without changed conditions.
+- Signing, clinical approval and public distribution remain external gates.
 
 Next exact action:
 
-- Await a new approved milestone objective.
+- Continue T-M4-002 with privacy/storage recovery hardening.
 
 Next exact command:
 
-- `git status --short`
+- `npm run verify`
 
 Blockers requiring owner:
 
