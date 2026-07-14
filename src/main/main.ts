@@ -13,6 +13,7 @@ import { applySessionEvent, createSession, type WorkSession } from "../work-sess
 import { decideNudge, type NudgeDecision } from "../work-session/companion-policy.js";
 import { createSessionSummary } from "../work-session/session-summary.js";
 import { InProcessNudgeAdapter } from "../work-session/nudge-adapter.js";
+import { DEFAULT_TIMER_ONLY_CONFIG } from "../work-session/companion-config.js";
 import type { NudgeResponse } from "../platform-electron/sqlite-storage.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -68,7 +69,7 @@ function recoverPersistedSession(): void {
 function requestBreakNudge(): NudgeDecision & { readonly nudgeId: string } {
   if (workSession?.state !== "ACTIVE") throw new Error("SESSION_NOT_ACTIVE");
   const now = sessionNow();
-  const decision = decideNudge({ mode: workSession.modeId, minuteOfDay: 600, cooldownMinutes: 10, frequencyCap: 3, nowMonotonicMs: now, lastNudgeMonotonicMs, nudgesInWindow: nudgesInSession, signal: "SUFFICIENT", nudgeType: "BREAK_REMINDER" });
+  const decision = decideNudge({ mode: workSession.modeId, minuteOfDay: 600, cooldownMinutes: DEFAULT_TIMER_ONLY_CONFIG.cooldownMinutes, frequencyCap: DEFAULT_TIMER_ONLY_CONFIG.maxNudgesPerSession, nowMonotonicMs: now, lastNudgeMonotonicMs, nudgesInWindow: nudgesInSession, signal: "SUFFICIENT", nudgeType: "BREAK_REMINDER" });
   const nudgeId = `nudge-${randomUUID().slice(0, 8)}`;
   if (decision.action === "EMIT") {
     lastNudgeMonotonicMs = now;
