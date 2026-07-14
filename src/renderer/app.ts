@@ -15,6 +15,8 @@ const onboardingStatusElement = document.querySelector<HTMLParagraphElement>("#o
 const withdrawCameraButton = document.querySelector<HTMLButtonElement>("#withdraw-camera");
 const deleteLocalDataButton = document.querySelector<HTMLButtonElement>("#delete-local-data");
 const reportHistoryElement = document.querySelector<HTMLParagraphElement>("#report-history");
+const sessionStatusElement = document.querySelector<HTMLParagraphElement>("#session-status");
+const renderSession = (session: Awaited<ReturnType<typeof window.eyeMate.getWorkSession>>) => { if (sessionStatusElement) sessionStatusElement.textContent = session ? `Phiên ${session.state}; thời gian hoạt động ${session.elapsedActiveMs} ms.` : "Chưa có phiên."; };
 
 async function renderRuntimeStatus(): Promise<void> {
   if (statusElement === null) {
@@ -71,6 +73,12 @@ for (const navigationButton of Array.from(document.querySelectorAll<HTMLButtonEl
 }
 
 renderScreen("home");
+void window.eyeMate.getWorkSession().then(renderSession);
+
+document.querySelector<HTMLButtonElement>("#session-start")?.addEventListener("click", async () => renderSession(await window.eyeMate.startWorkSession()));
+document.querySelector<HTMLButtonElement>("#session-pause")?.addEventListener("click", async () => renderSession(await window.eyeMate.pauseWorkSession()));
+document.querySelector<HTMLButtonElement>("#session-resume")?.addEventListener("click", async () => renderSession(await window.eyeMate.resumeWorkSession()));
+document.querySelector<HTMLButtonElement>("#session-finish")?.addEventListener("click", async () => renderSession(await window.eyeMate.finishWorkSession()));
 
 onboardingButton?.addEventListener("click", async () => {
   await window.eyeMate.completeOnboardingWithoutCamera();

@@ -36,7 +36,12 @@ const eyeMateApi: EyeMatePreloadApi = {
     const result: unknown = await ipcRenderer.invoke("reports:list-survey-only");
     if (!Array.isArray(result) || !result.every((value) => typeof value === "object" && value !== null)) throw new Error("PRELOAD_REPORT_LIST_INVALID");
     return result as readonly { readonly status: string; readonly action: string; readonly createdAt: string }[];
-  }
+  },
+  async startWorkSession() { return await ipcRenderer.invoke("work-session:start"); },
+  async pauseWorkSession() { return await ipcRenderer.invoke("work-session:pause"); },
+  async resumeWorkSession() { return await ipcRenderer.invoke("work-session:resume"); },
+  async finishWorkSession() { return await ipcRenderer.invoke("work-session:finish"); },
+  async getWorkSession() { return await ipcRenderer.invoke("work-session:get"); }
 };
 
 contextBridge.exposeInMainWorld("eyeMate", Object.freeze(eyeMateApi));

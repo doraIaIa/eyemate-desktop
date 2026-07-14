@@ -1,5 +1,6 @@
 import type { RuntimeInfo } from "./runtime-contract.js";
 import type { CheckupSummary, PrivacySummary, SurveyRequest } from "./m1-contract.js";
+import type { WorkSession } from "../work-session/session-state.js";
 
 export interface EyeMatePreloadApi {
   getRuntimeInfo(): Promise<RuntimeInfo>;
@@ -9,4 +10,9 @@ export interface EyeMatePreloadApi {
   withdrawCameraConsent(): Promise<void>;
   deleteAllLocalData(): Promise<"DELETED" | "PARTIALLY_DELETED" | "FAILED">;
   listSurveyOnlyReports(): Promise<readonly { readonly status: string; readonly action: string; readonly createdAt: string }[]>;
+  startWorkSession(): Promise<WorkSession>;
+  pauseWorkSession(): Promise<WorkSession>;
+  resumeWorkSession(): Promise<WorkSession>;
+  finishWorkSession(): Promise<WorkSession>;
+  getWorkSession(): Promise<WorkSession | null>;
 }

@@ -9,6 +9,7 @@ import { createSurveyOnlyExportPreview, resolveDeletionResult } from "../user-da
 import { openLocalSqliteStorage, resolveDatabasePath, type LocalSqliteStorage } from "../platform-electron/sqlite-storage.js";
 import { createSurveyDraft, createSurveyOnlyReport, recordSurveyAnswer } from "../symptom-checkup/survey-only.js";
 import { evaluateSafetyGate, internalSafetyCatalogue } from "../safety/safety-gate.js";
+import { applySessionEvent, createSession, type WorkSession } from "../work-session/session-state.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const rendererIndexPath = path.join(currentDirectory, "../renderer/index.html");
@@ -27,6 +28,23 @@ function getRuntimeInfo(): RuntimeInfo {
 }
 
 let storage: LocalSqliteStorage | null = null;
+let workSession: WorkSession | null = null;
+let sessionMonotonicMs = 0;
+const sessionNow = (): number => { sessionMonotonicMs += 1; return sessionMonotonicMs; };
+
+function updateWorkSession(event: "START" | "STARTED" | "PAUSE" | "RESUME" | "FINISH"): WorkSession {
+  const now = sessionNow();
+  if (workSession === null) workSession = createSession(`session-${randomUUID().slice(0, 8)}`, "TIMER_ONLY");
+  workSession = applySessionEvent(workSession, event, now);
+  storage?.saveSession({ sessionId: workSession.id, modeId: workSession.modeId, state: workSession.state, elapsedActiveMs: workSession.elapsedActiveMs, updatedAt: new Date().toISOString() });
+  if (workSession.state === "COMPLETED") storage?.saveSessionSummary({ summaryId: `summary-${randomUUID().slice(0, 8)}`, sessionId: workSession.id, status: "COMPLETED", elapsedActiveMs: workSession.elapsedActiveMs, createdAt: new Date().toISOString() });
+  return workSession;
+}
+
+function startWorkSession(): WorkSession {
+  updateWorkSession("START");
+  return updateWorkSession("STARTED");
+}
 
 function getPrivacySummary(): PrivacySummary {
   const consent = storage?.loadCameraConsent();
@@ -70,6 +88,11 @@ function registerIpcHandlers(): void {
   ipcMain.handle("privacy:withdraw-camera-consent", (): void => withdrawCameraConsent());
   ipcMain.handle("privacy:delete-all-local-data", (): "DELETED" | "PARTIALLY_DELETED" | "FAILED" => storage?.deleteAllLocalData() ?? "FAILED");
   ipcMain.handle("reports:list-survey-only", () => storage?.listSurveyOnlyReports() ?? []);
+  ipcMain.handle("work-session:start", () => startWorkSession());
+  ipcMain.handle("work-session:pause", () => updateWorkSession("PAUSE"));
+  ipcMain.handle("work-session:resume", () => updateWorkSession("RESUME"));
+  ipcMain.handle("work-session:finish", () => updateWorkSession("FINISH"));
+  ipcMain.handle("work-session:get", () => workSession);
 }
 
 async function createMainWindow(): Promise<BrowserWindow> {
