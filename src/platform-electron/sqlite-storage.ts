@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join, normalize, parse, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { CameraConsentRecord, CameraConsentRepository, OnboardingProgress, OnboardingProgressRepository, OnboardingStage } from "../user-data/ports.js";
@@ -135,9 +135,11 @@ function isOnboardingStage(value: string): value is OnboardingStage {
 
 export class LocalSqliteStorage implements OnboardingProgressRepository, CameraConsentRepository {
   readonly #database: DatabaseSync;
+  readonly #databasePath: string;
 
-  constructor(database: DatabaseSync) {
+  constructor(database: DatabaseSync, databasePath: string) {
     this.#database = database;
+    this.#databasePath = databasePath;
   }
 
   load(): OnboardingProgress | null {
@@ -294,6 +296,8 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
 
   deleteAllLocalData(): "DELETED" {
     this.#database.exec("BEGIN IMMEDIATE; DELETE FROM app_preferences; DELETE FROM m3_record; DELETE FROM session_summary; DELETE FROM companion_nudge; DELETE FROM work_session; DELETE FROM checkup_report_snapshot; DELETE FROM camera_consent; DELETE FROM onboarding_progress; COMMIT;");
+    this.#database.exec("PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);");
+    rmSync(`${this.#databasePath}.backup-v1`, { force: true });
     return "DELETED";
   }
 
@@ -378,7 +382,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
 
   try {
     database = new DatabaseSync(safePath);
-    database.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
+    database.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA secure_delete = ON;");
     const version = getSchemaVersion(database);
 
     if (isNewDatabase || version === 0) {
@@ -395,12 +399,12 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
       createV10Schema(database);
       database.exec(`PRAGMA user_version = ${STORAGE_SCHEMA_VERSION}; COMMIT;`);
       assertIntegrity(database);
-      return { state: "READY", storage: new LocalSqliteStorage(database), migrated: false };
+      return { state: "READY", storage: new LocalSqliteStorage(database, safePath), migrated: false };
     }
 
     if (version === STORAGE_SCHEMA_VERSION) {
       assertIntegrity(database);
-      return { state: "READY", storage: new LocalSqliteStorage(database), migrated: false };
+      return { state: "READY", storage: new LocalSqliteStorage(database, safePath), migrated: false };
     }
 
     if (version < 1 || version > 9) throw new Error("UNSUPPORTED_SCHEMA_VERSION");
@@ -423,7 +427,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
     database.prepare("INSERT INTO migration_record VALUES (?, ?, ?, ?, ?)").run(
       `m1-v${version}-to-v${STORAGE_SCHEMA_VERSION}`, version, STORAGE_SCHEMA_VERSION, "SUCCEEDED", "2026-07-14T00:00:00.000Z"
     );
-    return { state: "READY", storage: new LocalSqliteStorage(database), migrated: true };
+    return { state: "READY", storage: new LocalSqliteStorage(database, safePath), migrated: true };
   } catch (error) {
     try {
       database?.exec("ROLLBACK;");

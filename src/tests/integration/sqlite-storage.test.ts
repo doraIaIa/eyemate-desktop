@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
@@ -129,5 +129,27 @@ test("preferences và data inventory persist qua restart rồi reset cùng delet
     assert.equal(reopened.storage.getDataInventory().every((item) => item.recordCount === 0), true);
     reopened.storage.close();
   }
+  rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });
+});
+
+test("delete all purge plaintext canary và migration backup", () => {
+  const databasePath = createFixturePath("physical-purge");
+  const canary = "SENSITIVE_PILOT_CANARY_7F8C2A";
+  const initial = openLocalSqliteStorage(databasePath);
+  assert.equal(initial.state, "READY");
+  if (initial.state === "READY") {
+    initial.storage.saveSurveyOnlyReport({ reportId: "purge-canary", status: "COMPLETED", action: canary, provenanceVersion: "purge/0.1.0", createdAt: "2026-07-14T00:00:00.000Z" });
+    initial.storage.close();
+  }
+  copyFileSync(databasePath, `${databasePath}.backup-v1`);
+  const reopened = openLocalSqliteStorage(databasePath);
+  assert.equal(reopened.state, "READY");
+  if (reopened.state === "READY") {
+    assert.equal(reopened.storage.deleteAllLocalData(), "DELETED");
+    reopened.storage.close();
+  }
+  assert.equal(existsSync(`${databasePath}.backup-v1`), false);
+  const remaining = readdirSync(dirname(databasePath)).filter((name) => name.startsWith("eyemate.sqlite"));
+  assert.equal(remaining.some((name) => readFileSync(join(dirname(databasePath), name)).includes(Buffer.from(canary))), false);
   rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });
 });
