@@ -2,8 +2,9 @@ import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join, normalize, parse, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { CameraConsentRecord, CameraConsentRepository, OnboardingProgress, OnboardingProgressRepository, OnboardingStage } from "../user-data/ports.js";
+import type { DataInventoryItem, UserPreferences } from "../shared/preload-contract.js";
 
-export const STORAGE_SCHEMA_VERSION = 9;
+export const STORAGE_SCHEMA_VERSION = 10;
 export const RECOVERY_REQUIRED = "MIGRATION_RECOVERY_REQUIRED";
 
 export type StorageOpenResult =
@@ -19,6 +20,16 @@ export interface PersistedNudge { readonly nudgeId: string; readonly sessionId: 
 export type NudgeResponse = "AUTO_CORRECTED" | "ACCEPTED" | "SNOOZED" | "DISMISSED" | "IGNORED" | "UNKNOWN";
 export interface PersistedSummary { readonly summaryId: string; readonly sessionId: string; readonly status: string; readonly elapsedActiveMs: number; readonly createdAt: string; readonly summaryJson?: string; }
 export interface M3StoredRecord { readonly id: string; readonly kind: "SOURCE" | "BASELINE" | "PATTERN" | "DAILY" | "WEEKLY" | "REPORT"; readonly createdAt: string; readonly payloadJson: string; }
+export const DEFAULT_USER_PREFERENCES: UserPreferences = Object.freeze({ defaultMode: "TIMER_ONLY", soundEnabled: false, breakReminderEnabled: true, quietHoursEnabled: false, quietStartMinute: 1320, quietEndMinute: 420, reducedMotion: false });
+
+function validateUserPreferences(value: UserPreferences): UserPreferences {
+  if (value.defaultMode !== "TIMER_ONLY" || typeof value.soundEnabled !== "boolean" || typeof value.breakReminderEnabled !== "boolean"
+    || typeof value.quietHoursEnabled !== "boolean" || typeof value.reducedMotion !== "boolean"
+    || !Number.isInteger(value.quietStartMinute) || value.quietStartMinute < 0 || value.quietStartMinute >= 1440
+    || !Number.isInteger(value.quietEndMinute) || value.quietEndMinute < 0 || value.quietEndMinute >= 1440
+    || value.quietStartMinute === value.quietEndMinute) throw new Error("INVALID_USER_PREFERENCES");
+  return Object.freeze({ ...value });
+}
 
 function ensureDatabasePath(databasePath: string): string {
   const normalized = normalize(resolve(databasePath));
@@ -102,6 +113,10 @@ function createV9Schema(database: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS m3_record (record_id TEXT PRIMARY KEY, kind TEXT NOT NULL, created_at TEXT NOT NULL, payload_json TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS m3_record_kind_created ON m3_record(kind, created_at);
   `);
+}
+
+function createV10Schema(database: DatabaseSync): void {
+  database.exec("CREATE TABLE IF NOT EXISTS app_preferences (singleton INTEGER PRIMARY KEY CHECK (singleton = 1), value_json TEXT NOT NULL, updated_at TEXT NOT NULL);");
 }
 
 function getSchemaVersion(database: DatabaseSync): number {
@@ -226,6 +241,29 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
     return this.#database.prepare("SELECT record_id, kind, created_at, payload_json FROM m3_record WHERE kind = ? ORDER BY created_at ASC").all(kind).map((row) => { const value = row as Record<string, unknown>; return { id: String(value.record_id), kind: value.kind as M3StoredRecord["kind"], createdAt: String(value.created_at), payloadJson: String(value.payload_json) }; });
   }
 
+  loadUserPreferences(): UserPreferences {
+    const row = this.#database.prepare("SELECT value_json FROM app_preferences WHERE singleton = 1").get() as { value_json: string } | undefined;
+    if (row === undefined) return DEFAULT_USER_PREFERENCES;
+    try { return validateUserPreferences(JSON.parse(row.value_json) as UserPreferences); } catch { throw new Error("INVALID_USER_PREFERENCES_RECORD"); }
+  }
+
+  saveUserPreferences(preferences: UserPreferences): UserPreferences {
+    const validated = validateUserPreferences(preferences);
+    this.#database.prepare("INSERT INTO app_preferences VALUES (1, ?, ?) ON CONFLICT(singleton) DO UPDATE SET value_json=excluded.value_json, updated_at=excluded.updated_at").run(JSON.stringify(validated), new Date().toISOString());
+    return validated;
+  }
+
+  getDataInventory(): readonly DataInventoryItem[] {
+    const count = (table: string): number => Number((this.#database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count);
+    return [
+      { category: "CHECKUP", purpose: "Lưu snapshot checkup survey-only", recordCount: count("checkup_report_snapshot"), retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" },
+      { category: "SESSION", purpose: "Khôi phục phiên và tạo Session Summary", recordCount: count("work_session") + count("session_summary"), retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" },
+      { category: "NUDGE", purpose: "Giữ response và chống nudge trùng", recordCount: count("companion_nudge"), retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" },
+      { category: "REPORT", purpose: "Giữ baseline, pattern và report dẫn xuất", recordCount: count("m3_record"), retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" },
+      { category: "PREFERENCE", purpose: "Giữ cài đặt trải nghiệm", recordCount: count("app_preferences"), retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" }
+    ];
+  }
+
   deleteM3Records(kind?: M3StoredRecord["kind"]): "DELETED" {
     if (kind === undefined) this.#database.exec("DELETE FROM m3_record;");
     else this.#database.prepare("DELETE FROM m3_record WHERE kind = ?").run(kind);
@@ -255,7 +293,7 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
   }
 
   deleteAllLocalData(): "DELETED" {
-    this.#database.exec("BEGIN IMMEDIATE; DELETE FROM m3_record; DELETE FROM session_summary; DELETE FROM companion_nudge; DELETE FROM work_session; DELETE FROM checkup_report_snapshot; DELETE FROM camera_consent; DELETE FROM onboarding_progress; COMMIT;");
+    this.#database.exec("BEGIN IMMEDIATE; DELETE FROM app_preferences; DELETE FROM m3_record; DELETE FROM session_summary; DELETE FROM companion_nudge; DELETE FROM work_session; DELETE FROM checkup_report_snapshot; DELETE FROM camera_consent; DELETE FROM onboarding_progress; COMMIT;");
     return "DELETED";
   }
 
@@ -311,6 +349,26 @@ export function createV8StorageFixture(databasePath: string): void {
   }
 }
 
+export function createV9StorageFixture(databasePath: string): void {
+  const safePath = ensureDatabasePath(databasePath);
+  mkdirSync(dirname(safePath), { recursive: true });
+  const database = new DatabaseSync(safePath);
+  try {
+    createV1Schema(database);
+    createV2Schema(database);
+    createV3Schema(database);
+    createV4Schema(database);
+    createV5Schema(database);
+    createV6Schema(database);
+    createV7Schema(database);
+    createV8Schema(database);
+    createV9Schema(database);
+    database.exec("PRAGMA user_version = 9;");
+  } finally {
+    database.close();
+  }
+}
+
 export function openLocalSqliteStorage(databasePath: string, options: OpenStorageOptions = {}): StorageOpenResult {
   const safePath = ensureDatabasePath(databasePath);
   mkdirSync(dirname(safePath), { recursive: true });
@@ -334,6 +392,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
       createV7Schema(database);
       createV8Schema(database);
       createV9Schema(database);
+      createV10Schema(database);
       database.exec(`PRAGMA user_version = ${STORAGE_SCHEMA_VERSION}; COMMIT;`);
       assertIntegrity(database);
       return { state: "READY", storage: new LocalSqliteStorage(database), migrated: false };
@@ -344,7 +403,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
       return { state: "READY", storage: new LocalSqliteStorage(database), migrated: false };
     }
 
-    if (version < 1 || version > 8) throw new Error("UNSUPPORTED_SCHEMA_VERSION");
+    if (version < 1 || version > 9) throw new Error("UNSUPPORTED_SCHEMA_VERSION");
 
     copyFileSync(safePath, `${safePath}.backup-v1`, 0);
     backupCreated = true;
@@ -358,6 +417,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
     createV7Schema(database);
     createV8Schema(database);
     createV9Schema(database);
+    createV10Schema(database);
     database.exec(`PRAGMA user_version = ${STORAGE_SCHEMA_VERSION}; COMMIT;`);
     assertIntegrity(database);
     database.prepare("INSERT INTO migration_record VALUES (?, ?, ?, ?, ?)").run(

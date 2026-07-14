@@ -7,6 +7,22 @@ export type LocalExportFormat = "JSON" | "MARKDOWN";
 export interface LocalExportResult { readonly status: "EXPORTED" | "CANCELLED" | "FAILED"; readonly reason: string; }
 export type M3DataCategory = "BASELINE" | "PATTERN" | "SUMMARY" | "REPORT" | "ALL";
 export type NudgeResponse = "AUTO_CORRECTED" | "ACCEPTED" | "SNOOZED" | "DISMISSED" | "IGNORED" | "UNKNOWN";
+export interface UserPreferences {
+  readonly defaultMode: "TIMER_ONLY";
+  readonly soundEnabled: boolean;
+  readonly breakReminderEnabled: boolean;
+  readonly quietHoursEnabled: boolean;
+  readonly quietStartMinute: number;
+  readonly quietEndMinute: number;
+  readonly reducedMotion: boolean;
+}
+export interface DataInventoryItem {
+  readonly category: "CHECKUP" | "SESSION" | "NUDGE" | "REPORT" | "PREFERENCE";
+  readonly purpose: string;
+  readonly recordCount: number;
+  readonly retention: "UNTIL_USER_DELETES";
+  readonly location: "LOCAL_ONLY";
+}
 
 export interface EyeMatePreloadApi {
   getRuntimeInfo(): Promise<RuntimeInfo>;
@@ -27,10 +43,13 @@ export interface EyeMatePreloadApi {
   respondToNudge(nudgeId: string, response: NudgeResponse): Promise<boolean>;
   generateM3Report(): Promise<PersonalReport>;
   listM3Reports(): Promise<readonly PersonalReport[]>;
-  previewProfessionalSummary(): Promise<string>;
+  previewProfessionalSummary(format?: LocalExportFormat): Promise<string>;
   resetM3Baseline(): Promise<"DELETED">;
   deleteM3Data(): Promise<"DELETED">;
   deleteM3Category(category: M3DataCategory): Promise<"DELETED">;
   exportM3Report(destination: string, format: LocalExportFormat, includeEvidence: boolean): Promise<LocalExportResult>;
   exportM3WithDialog(format: LocalExportFormat, includeEvidence: boolean): Promise<LocalExportResult>;
+  getUserPreferences(): Promise<UserPreferences>;
+  updateUserPreferences(preferences: UserPreferences): Promise<UserPreferences>;
+  getDataInventory(): Promise<readonly DataInventoryItem[]>;
 }

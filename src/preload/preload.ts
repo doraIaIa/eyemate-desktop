@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { EyeMatePreloadApi } from "../shared/preload-contract.js";
+import type { EyeMatePreloadApi, LocalExportFormat } from "../shared/preload-contract.js";
 import { isRuntimeInfo } from "../shared/runtime-contract.js";
 import { isCheckupSummary, isPrivacySummary, type SurveyRequest } from "../shared/m1-contract.js";
 
@@ -48,12 +48,28 @@ const eyeMateApi: EyeMatePreloadApi = {
   ,async respondToNudge(nudgeId, response) { return await ipcRenderer.invoke("work-session:respond-nudge", nudgeId, response); }
   ,async generateM3Report() { return await ipcRenderer.invoke("m3:generate-report"); }
   ,async listM3Reports() { const result: unknown = await ipcRenderer.invoke("m3:list-reports"); if (!Array.isArray(result)) throw new Error("PRELOAD_M3_REPORTS_INVALID"); return result as readonly import("../personal-intelligence/report-service.js").PersonalReport[]; }
-  ,async previewProfessionalSummary() { const result: unknown = await ipcRenderer.invoke("m3:preview-professional-summary"); if (typeof result !== "string") throw new Error("PRELOAD_M3_PREVIEW_INVALID"); return result; }
+  ,async previewProfessionalSummary(format: LocalExportFormat = "MARKDOWN") { if (!["JSON", "MARKDOWN"].includes(format)) throw new Error("PRELOAD_M3_PREVIEW_FORMAT_INVALID"); const result: unknown = await ipcRenderer.invoke("m3:preview-professional-summary", format); if (typeof result !== "string") throw new Error("PRELOAD_M3_PREVIEW_INVALID"); return result; }
   ,async resetM3Baseline() { const result: unknown = await ipcRenderer.invoke("m3:reset-baseline"); if (result !== "DELETED") throw new Error("PRELOAD_M3_RESET_INVALID"); return result; }
   ,async deleteM3Data() { const result: unknown = await ipcRenderer.invoke("m3:delete-data"); if (result !== "DELETED") throw new Error("PRELOAD_M3_DELETE_INVALID"); return result; }
   ,async deleteM3Category(category) { const result: unknown = await ipcRenderer.invoke("m3:delete-category", category); if (result !== "DELETED") throw new Error("PRELOAD_M3_CATEGORY_DELETE_INVALID"); return result; }
   ,async exportM3Report(destination, format, includeEvidence) { const result: unknown = await ipcRenderer.invoke("m3:export", destination, format, includeEvidence); if (typeof result !== "object" || result === null) throw new Error("PRELOAD_M3_EXPORT_INVALID"); return result as import("../shared/preload-contract.js").LocalExportResult; }
   ,async exportM3WithDialog(format, includeEvidence) { const result: unknown = await ipcRenderer.invoke("m3:export-with-dialog", format, includeEvidence); if (typeof result !== "object" || result === null) throw new Error("PRELOAD_M3_EXPORT_DIALOG_INVALID"); return result as import("../shared/preload-contract.js").LocalExportResult; }
+  ,async getUserPreferences() { const result: unknown = await ipcRenderer.invoke("settings:get"); if (!isUserPreferences(result)) throw new Error("PRELOAD_SETTINGS_CONTRACT_INVALID"); return result; }
+  ,async updateUserPreferences(preferences) { const result: unknown = await ipcRenderer.invoke("settings:update", preferences); if (!isUserPreferences(result)) throw new Error("PRELOAD_SETTINGS_CONTRACT_INVALID"); return result; }
+  ,async getDataInventory() { const result: unknown = await ipcRenderer.invoke("privacy:get-data-inventory"); if (!Array.isArray(result) || !result.every(isDataInventoryItem)) throw new Error("PRELOAD_INVENTORY_CONTRACT_INVALID"); return result; }
 };
+
+function isUserPreferences(value: unknown): value is import("../shared/preload-contract.js").UserPreferences {
+  if (typeof value !== "object" || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return item.defaultMode === "TIMER_ONLY" && ["soundEnabled", "breakReminderEnabled", "quietHoursEnabled", "reducedMotion"].every((key) => typeof item[key] === "boolean")
+    && ["quietStartMinute", "quietEndMinute"].every((key) => Number.isInteger(item[key]) && Number(item[key]) >= 0 && Number(item[key]) < 1440);
+}
+
+function isDataInventoryItem(value: unknown): value is import("../shared/preload-contract.js").DataInventoryItem {
+  if (typeof value !== "object" || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return ["CHECKUP", "SESSION", "NUDGE", "REPORT", "PREFERENCE"].includes(String(item.category)) && typeof item.purpose === "string" && Number.isSafeInteger(item.recordCount) && Number(item.recordCount) >= 0 && item.retention === "UNTIL_USER_DELETES" && item.location === "LOCAL_ONLY";
+}
 
 contextBridge.exposeInMainWorld("eyeMate", Object.freeze(eyeMateApi));

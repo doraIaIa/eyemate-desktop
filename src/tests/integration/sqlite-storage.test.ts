@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   RECOVERY_REQUIRED,
   createV1StorageFixture,
+  createV9StorageFixture,
   openLocalSqliteStorage,
   resolveDatabasePath
 } from "../../platform-electron/sqlite-storage.js";
@@ -30,7 +31,7 @@ test("SQLite local tạo dữ liệu onboarding ngoài installation directory", 
   rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });
 });
 
-test("migration N-1 tạo backup và giữ dữ liệu onboarding", () => {
+test("migration cũ tạo backup và giữ dữ liệu onboarding", () => {
   const databasePath = createFixturePath("migration");
   createV1StorageFixture(databasePath);
   const result = openLocalSqliteStorage(databasePath);
@@ -38,6 +39,20 @@ test("migration N-1 tạo backup và giữ dữ liệu onboarding", () => {
   assert.equal(result.migrated, true);
   assert.equal(existsSync(`${databasePath}.backup-v1`), true);
   if (result.state === "READY") result.storage.close();
+  rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });
+});
+
+test("migration N-1 từ schema 9 tạo preferences schema và backup", () => {
+  const databasePath = createFixturePath("migration-v9");
+  createV9StorageFixture(databasePath);
+  const result = openLocalSqliteStorage(databasePath);
+  assert.equal(result.state, "READY");
+  assert.equal(result.migrated, true);
+  assert.equal(existsSync(`${databasePath}.backup-v1`), true);
+  if (result.state === "READY") {
+    assert.equal(result.storage.loadUserPreferences().defaultMode, "TIMER_ONLY");
+    result.storage.close();
+  }
   rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });
 });
 
@@ -93,5 +108,26 @@ test("database path chặn installation resources và không chứa raw camera m
   assert.equal(result.state, "READY");
   if (result.state === "READY") result.storage.close();
   assert.equal(/raw[_-]?(?:frame|video|landmarks?)|pixel[_-]?buffer/i.test(readFileSync(databasePath).toString("utf8")), false);
+  rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });
+});
+
+test("preferences và data inventory persist qua restart rồi reset cùng delete all", () => {
+  const databasePath = createFixturePath("preferences");
+  const initial = openLocalSqliteStorage(databasePath);
+  assert.equal(initial.state, "READY");
+  if (initial.state === "READY") {
+    initial.storage.saveUserPreferences({ defaultMode: "TIMER_ONLY", soundEnabled: true, breakReminderEnabled: false, quietHoursEnabled: true, quietStartMinute: 1320, quietEndMinute: 420, reducedMotion: true });
+    assert.equal(initial.storage.getDataInventory().find((item) => item.category === "PREFERENCE")?.recordCount, 1);
+    initial.storage.close();
+  }
+  const reopened = openLocalSqliteStorage(databasePath);
+  assert.equal(reopened.state, "READY");
+  if (reopened.state === "READY") {
+    assert.equal(reopened.storage.loadUserPreferences().soundEnabled, true);
+    assert.equal(reopened.storage.deleteAllLocalData(), "DELETED");
+    assert.equal(reopened.storage.loadUserPreferences().soundEnabled, false);
+    assert.equal(reopened.storage.getDataInventory().every((item) => item.recordCount === 0), true);
+    reopened.storage.close();
+  }
   rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });
 });

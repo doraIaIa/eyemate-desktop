@@ -7,8 +7,8 @@ import { createSecureWindowOptions } from "./window-options.js";
 import type { RuntimeInfo } from "../shared/runtime-contract.js";
 import type { CheckupSummary, PrivacySummary, SurveyRequest } from "../shared/m1-contract.js";
 import { createSurveyOnlyExportPreview, resolveDeletionResult } from "../user-data/data-controls.js";
-import { openLocalSqliteStorage, resolveDatabasePath, type LocalSqliteStorage } from "../platform-electron/sqlite-storage.js";
-import type { M3DataCategory } from "../shared/preload-contract.js";
+import { DEFAULT_USER_PREFERENCES, openLocalSqliteStorage, resolveDatabasePath, type LocalSqliteStorage } from "../platform-electron/sqlite-storage.js";
+import type { M3DataCategory, UserPreferences } from "../shared/preload-contract.js";
 import { createSurveyDraft, createSurveyOnlyReport, recordSurveyAnswer } from "../symptom-checkup/survey-only.js";
 import { evaluateSafetyGate, internalSafetyCatalogue } from "../safety/safety-gate.js";
 import { applySessionEvent, createSession, recoverSession, tickSession, type WorkSession } from "../work-session/session-state.js";
@@ -65,9 +65,10 @@ function persistActiveSessionBeforeExit(): void {
 function updateWorkSession(event: "START" | "STARTED" | "PAUSE" | "RESUME" | "FINISH" | "CANCEL"): WorkSession {
   const now = sessionNow();
   if (workSession === null) workSession = createSession(`session-${randomUUID().slice(0, 8)}`, "TIMER_ONLY");
+  const previousState = workSession.state;
   workSession = applySessionEvent(workSession, event, now);
   storage?.saveSession({ sessionId: workSession.id, modeId: workSession.modeId, state: workSession.state, elapsedActiveMs: workSession.elapsedActiveMs, updatedAt: new Date().toISOString() });
-  if (workSession.state === "COMPLETED" || workSession.state === "CANCELLED") {
+  if (workSession.state !== previousState && (workSession.state === "COMPLETED" || workSession.state === "CANCELLED")) {
     const createdAt = new Date().toISOString();
     const summary = createSessionSummary(workSession, "m2-companion-policy/0.1.0");
     const summaryId = `summary-${randomUUID().slice(0, 8)}`;
@@ -82,9 +83,18 @@ function updateWorkSession(event: "START" | "STARTED" | "PAUSE" | "RESUME" | "FI
 
 function startWorkSession(modeId: WorkSession["modeId"] = "TIMER_ONLY"): WorkSession {
   if (!["BALANCED", "DEEP_FOCUS", "HIGH_SUPPORT", "TIMER_ONLY", "CUSTOM"].includes(modeId)) throw new Error("INVALID_WORK_MODE");
-  if (workSession === null || ["COMPLETED", "CANCELLED", "FAILED"].includes(workSession.state)) workSession = createSession(`session-${randomUUID().slice(0, 8)}`, modeId);
+  if (workSession === null || ["COMPLETED", "CANCELLED", "FAILED"].includes(workSession.state)) {
+    workSession = createSession(`session-${randomUUID().slice(0, 8)}`, modeId);
+    lastNudgeMonotonicMs = null;
+    nudgesInSession = 0;
+  }
   updateWorkSession("START");
   return updateWorkSession("STARTED");
+}
+
+function finishWorkSession(): WorkSession {
+  const ending = updateWorkSession("FINISH");
+  return ending.state === "ENDING" ? updateWorkSession("FINISH") : ending;
 }
 
 function recoverPersistedSession(): void {
@@ -97,7 +107,9 @@ function recoverPersistedSession(): void {
 function requestBreakNudge(): NudgeDecision & { readonly nudgeId: string } {
   if (workSession?.state !== "ACTIVE") throw new Error("SESSION_NOT_ACTIVE");
   const now = sessionNow();
-  const decision = decideNudge({ mode: workSession.modeId, minuteOfDay: 600, cooldownMinutes: DEFAULT_TIMER_ONLY_CONFIG.cooldownMinutes, frequencyCap: DEFAULT_TIMER_ONLY_CONFIG.maxNudgesPerSession, nowMonotonicMs: now, lastNudgeMonotonicMs, nudgesInWindow: nudgesInSession, signal: "SUFFICIENT", nudgeType: "BREAK_REMINDER", enabledNudgeTypes: DEFAULT_TIMER_ONLY_CONFIG.enabledNudgeTypes });
+  const preferences = storage?.loadUserPreferences() ?? DEFAULT_USER_PREFERENCES;
+  const localNow = new Date();
+  const decision = decideNudge({ mode: workSession.modeId, minuteOfDay: localNow.getHours() * 60 + localNow.getMinutes(), quietHours: preferences.quietHoursEnabled ? { startMinute: preferences.quietStartMinute, endMinute: preferences.quietEndMinute } : undefined, cooldownMinutes: DEFAULT_TIMER_ONLY_CONFIG.cooldownMinutes, frequencyCap: DEFAULT_TIMER_ONLY_CONFIG.maxNudgesPerSession, nowMonotonicMs: now, lastNudgeMonotonicMs, nudgesInWindow: nudgesInSession, signal: "SUFFICIENT", nudgeType: "BREAK_REMINDER", enabledNudgeTypes: preferences.breakReminderEnabled ? ["BREAK_REMINDER"] : [] });
   const nudgeId = `nudge-${workSession.id}-break-${nudgesInSession + 1}`;
   if (decision.action === "EMIT") {
     lastNudgeMonotonicMs = now;
@@ -114,6 +126,7 @@ function getPrivacySummary(): PrivacySummary {
   return {
     localOnly: true,
     cameraState: consent?.decision === "GRANTED" ? "CAMERA_UNAVAILABLE" : "SKIPPED_NO_CONSENT",
+    cameraConsentDecision: consent?.decision ?? "NONE",
     exportRequiresConfirmation: preview.requiresDestinationConfirmation,
     deletionResults: [resolveDeletionResult(0, 0)]
   };
@@ -169,6 +182,15 @@ function listM3Reports(): readonly PersonalReport[] {
   return (storage?.listM3Records("REPORT") ?? []).flatMap((record) => { try { return [JSON.parse(record.payloadJson) as PersonalReport]; } catch { return []; } });
 }
 
+function currentM3Report(): PersonalReport {
+  const existing = listM3Reports().at(-1);
+  if (existing !== undefined) return existing;
+  const inputs = analyticsInputs();
+  const timezone = inputs[0]?.timezone ?? "UTC";
+  const now = new Date().toISOString();
+  return buildPersonalReport(inputs, localDateFor(now, timezone), timezone, now);
+}
+
 function registerIpcHandlers(): void {
   ipcMain.handle("runtime:get-info", (): RuntimeInfo => getRuntimeInfo());
   ipcMain.handle("privacy:get-summary", (): PrivacySummary => getPrivacySummary());
@@ -180,7 +202,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle("work-session:start", (_event, modeId?: WorkSession["modeId"]) => startWorkSession(modeId));
   ipcMain.handle("work-session:pause", () => updateWorkSession("PAUSE"));
   ipcMain.handle("work-session:resume", () => updateWorkSession("RESUME"));
-  ipcMain.handle("work-session:finish", () => updateWorkSession("FINISH"));
+  ipcMain.handle("work-session:finish", () => finishWorkSession());
   ipcMain.handle("work-session:cancel", () => updateWorkSession("CANCEL"));
   ipcMain.handle("work-session:get", () => workSession);
   ipcMain.handle("work-session:list-summaries", () => storage?.listSessionSummaries() ?? []);
@@ -188,7 +210,11 @@ function registerIpcHandlers(): void {
   ipcMain.handle("work-session:respond-nudge", (_event, nudgeId: string, response: NudgeResponse) => storage?.recordNudgeResponse(nudgeId, response, new Date().toISOString()) ?? false);
   ipcMain.handle("m3:generate-report", () => generateM3Report());
   ipcMain.handle("m3:list-reports", () => listM3Reports());
-  ipcMain.handle("m3:preview-professional-summary", () => renderProfessionalSummary(generateM3Report()));
+  ipcMain.handle("m3:preview-professional-summary", (_event, format: LocalExportFormat = "MARKDOWN") => {
+    if (!["JSON", "MARKDOWN"].includes(format)) throw new Error("INVALID_M3_PREVIEW_FORMAT");
+    const report = currentM3Report();
+    return format === "JSON" ? JSON.stringify(report, null, 2) : renderProfessionalSummary(report);
+  });
   ipcMain.handle("m3:reset-baseline", () => { const now = new Date().toISOString(); storage?.saveM3Record({ id: `baseline-reset-${randomUUID().slice(0, 12)}`, kind: "BASELINE", createdAt: now, payloadJson: JSON.stringify({ state: "RESET", version: "m3-baseline/0.1.0" }) }); return "DELETED"; });
   ipcMain.handle("m3:delete-data", () => storage?.deleteM3Records() ?? "DELETED");
   ipcMain.handle("m3:delete-category", (_event, category: M3DataCategory) => {
@@ -197,7 +223,7 @@ function registerIpcHandlers(): void {
   });
   ipcMain.handle("m3:export", (_event, destination: string, format: LocalExportFormat, includeEvidence: boolean) => {
     if (typeof destination !== "string" || !["JSON", "MARKDOWN"].includes(format) || typeof includeEvidence !== "boolean") throw new Error("INVALID_M3_EXPORT_REQUEST");
-    const report = generateM3Report();
+    const report = currentM3Report();
     const exportReport = includeEvidence ? report : { ...report, evidenceSourceIds: [], missingData: [], limitations: ["EVIDENCE_OMITTED_BY_USER"] };
     const content = format === "JSON" ? JSON.stringify(exportReport, null, 2) : renderProfessionalSummary(exportReport);
     return writeLocalExport(destination, content);
@@ -211,11 +237,17 @@ function registerIpcHandlers(): void {
       properties: ["showOverwriteConfirmation", "createDirectory"]
     });
     if (selected.canceled || !selected.filePath) return { status: "CANCELLED", reason: "USER_CANCELLED" };
-    const report = generateM3Report();
+    const report = currentM3Report();
     const exportReport = includeEvidence ? report : { ...report, evidenceSourceIds: [], missingData: [], limitations: ["EVIDENCE_OMITTED_BY_USER"] };
     const content = format === "JSON" ? JSON.stringify(exportReport, null, 2) : renderProfessionalSummary(exportReport);
     return writeLocalExport(selected.filePath, content);
   });
+  ipcMain.handle("settings:get", () => storage?.loadUserPreferences() ?? DEFAULT_USER_PREFERENCES);
+  ipcMain.handle("settings:update", (_event, preferences: UserPreferences) => {
+    if (typeof preferences !== "object" || preferences === null) throw new Error("INVALID_USER_PREFERENCES");
+    return storage?.saveUserPreferences(preferences) ?? DEFAULT_USER_PREFERENCES;
+  });
+  ipcMain.handle("privacy:get-data-inventory", () => storage?.getDataInventory() ?? []);
 }
 
 async function createMainWindow(): Promise<BrowserWindow> {
@@ -317,11 +349,15 @@ async function runUiValidation(window: BrowserWindow): Promise<void> {
   await evaluate("document.querySelector('#checkup-consent').click(); true"); await wait();
   await evaluate("document.querySelector('input[value=MILD]').click(); document.querySelector('#checkup-survey-next').click(); true"); await wait();
   await evaluate("document.querySelector('#checkup-camera-next').click(); true"); await wait();
-  await evaluate("document.querySelector('#checkup-finish').click(); true"); await wait(350);
+  const checkupsBefore = await evaluate<number>("window.eyeMate.listSurveyOnlyReports().then((items) => items.length)");
+  await evaluate("document.querySelector('#checkup-finish').click(); document.querySelector('#checkup-finish').click(); true"); await wait(350);
   requireTrue(await evaluate("Boolean(document.querySelector('#checkup-done')) && document.body.textContent.includes('Survey-only')"), "UI_CHECKUP_FLOW_INVALID");
+  requireTrue(await evaluate(`window.eyeMate.listSurveyOnlyReports().then((items) => items.length === ${checkupsBefore + 1})`), "UI_CHECKUP_DOUBLE_SUBMIT_INVALID");
   await capture("checkup-result");
   await capture("checkup-result", 1024, 768);
   await capture("checkup-result");
+  await evaluate("document.querySelector('#checkup-repeat').click(); document.querySelector('[data-checkup-cancel]').click(); true"); await wait();
+  requireTrue(await evaluate("location.hash === '#/home'"), "UI_CHECKUP_CANCEL_INVALID");
 
   await evaluate("document.querySelector('[data-route=companion]').click(); true"); await wait();
   await evaluate("document.querySelector('#session-start').click(); true"); await wait(300);
@@ -343,28 +379,77 @@ async function runUiValidation(window: BrowserWindow): Promise<void> {
   requireTrue(await evaluate("document.body.textContent.includes('Phiên đã hoàn thành')"), "UI_SESSION_SUMMARY_INVALID");
   await evaluate("document.querySelector('#modal-close').click(); true");
 
+  for (const response of ["SNOOZED", "DISMISSED"]) {
+    await evaluate("location.hash = '#/home'; true"); await wait();
+    await evaluate("location.hash = '#/companion'; true"); await wait();
+    await evaluate("document.querySelector('#session-start').click(); true"); await wait();
+    await evaluate("document.querySelector('#session-nudge').click(); true"); await wait();
+    requireTrue(await evaluate(`Boolean(document.querySelector('[data-nudge=${response}]'))`), `UI_NUDGE_${response}_MISSING`);
+    await evaluate(`document.querySelector('[data-nudge=${response}]').click(); true`); await wait();
+    await evaluate("document.querySelector('#session-cancel').click(); true"); await wait();
+    await evaluate("document.querySelector('#confirm-session-cancel').click(); true"); await wait(250);
+    requireTrue(await evaluate("window.eyeMate.getWorkSession().then((session) => session?.state === 'CANCELLED')"), `UI_SESSION_CANCEL_${response}_INVALID`);
+  }
+
   await evaluate("document.querySelector('[data-route=reports]').click(); true"); await wait();
   await evaluate("document.querySelector('#report-generate').click(); true"); await wait(350);
   requireTrue(await evaluate("location.hash === '#/reports' && Boolean(document.querySelector('[data-report-tab=history]'))"), "UI_REPORTS_INVALID");
   await evaluate("document.querySelector('#toast-region').replaceChildren(); true");
   await capture("reports");
   await capture("reports", 1024, 768);
+  const reportCountBeforePreview = await evaluate<number>("window.eyeMate.listM3Reports().then((items) => items.length)");
+  await evaluate("document.querySelector('#report-preview').click(); true"); await wait();
+  requireTrue(await evaluate(`Boolean(document.querySelector('#report-export-confirm')) && window.eyeMate.listM3Reports().then((items) => items.length === ${reportCountBeforePreview})`), "UI_REPORT_PREVIEW_SIDE_EFFECT");
+  await evaluate("document.querySelector('#modal-close').click(); true");
+  await evaluate("document.querySelector('#report-export-json').click(); true"); await wait();
+  requireTrue(await evaluate("Boolean(document.querySelector('#report-export-confirm')) && document.querySelector('.modal pre').textContent.trim().startsWith('{')"), "UI_REPORT_JSON_PREVIEW_INVALID");
+  await evaluate("document.querySelector('#modal-close').click(); true");
+  await evaluate("document.querySelector('[data-report-tab=week]').click(); true"); await wait();
+  requireTrue(await evaluate("document.querySelector('#report-content').textContent.includes('Weekly digest') && Boolean(document.querySelector('.heatmap'))"), "UI_WEEK_TAB_INVALID");
+  await evaluate("document.querySelector('[data-report-tab=month]').click(); true"); await wait();
+  requireTrue(await evaluate("document.querySelector('#report-content').textContent.includes('Chưa đủ dữ liệu 30 ngày')"), "UI_MONTH_TAB_INVALID");
   await evaluate("document.querySelector('[data-report-tab=history]').click(); true"); await wait();
   requireTrue(await evaluate("document.querySelector('#report-content').textContent.includes('Work session')"), "UI_HISTORY_INVALID");
+  await evaluate("location.hash = '#/intelligence'; true"); await wait();
+  requireTrue(await evaluate("Boolean(document.querySelector('#intelligence-reset')) && document.body.textContent.includes('Visual Load Index')"), "UI_INTELLIGENCE_INVALID");
+  await capture("intelligence");
+  await capture("intelligence", 1024, 768);
+  await evaluate("document.querySelector('#intelligence-reset').click(); true"); await wait();
+  requireTrue(await evaluate("Boolean(document.querySelector('#confirm-reset'))"), "UI_BASELINE_RESET_CONFIRM_MISSING");
+  await evaluate("document.querySelector('#confirm-reset').click(); true"); await wait();
+  requireTrue(await evaluate("document.querySelector('#toast-region').textContent.includes('Baseline đã reset')"), "UI_BASELINE_RESET_INVALID");
+  await evaluate("location.hash = '#/reports'; true"); await wait();
+  await evaluate("document.querySelector('[data-report-tab=overview]').click(); true"); await wait();
+  await evaluate("document.querySelector('#report-delete').click(); true"); await wait();
+  requireTrue(await evaluate("Boolean(document.querySelector('#confirm-report-delete'))"), "UI_REPORT_DELETE_CONFIRM_MISSING");
+  await evaluate("document.querySelector('#confirm-report-delete').click(); true"); await wait();
+  requireTrue(await evaluate("window.eyeMate.listM3Reports().then((items) => items.length === 0)"), "UI_REPORT_DELETE_INVALID");
 
   await evaluate("document.querySelector('[data-route=privacy]').click(); true"); await wait();
+  requireTrue(await evaluate("document.querySelectorAll('.inventory-card').length === 5"), "UI_DATA_INVENTORY_INVALID");
+  await evaluate("document.querySelector('#toast-region').replaceChildren(); true");
   await capture("privacy");
   await capture("privacy", 1024, 768);
+  await evaluate("document.querySelector('#privacy-export').click(); true"); await wait();
+  requireTrue(await evaluate("Boolean(document.querySelector('#report-export-confirm'))"), "UI_EXPORT_PREVIEW_REQUIRED");
+  await evaluate("document.querySelector('#modal-close').click(); true");
   await evaluate("document.querySelector('#privacy-delete').click(); true"); await wait();
   requireTrue(await evaluate("Boolean(document.querySelector('#delete-next'))"), "UI_DELETE_STEP_ONE_INVALID");
   await evaluate("document.querySelector('#delete-next').click(); true"); await wait();
   requireTrue(await evaluate("Boolean(document.querySelector('#delete-confirm'))"), "UI_DELETE_STEP_TWO_INVALID");
   await evaluate("document.querySelector('#delete-confirm').click(); true"); await wait(300);
   requireTrue(await evaluate("document.querySelector('#toast-region').textContent.includes('DELETED')"), "UI_DELETE_RESULT_MISSING");
+  requireTrue(await evaluate("Array.from(document.querySelectorAll('.inventory-card .metric-value')).every((item) => item.textContent === '0')"), "UI_DELETE_INVENTORY_NOT_REFRESHED");
 
   await evaluate("document.querySelector('[data-route=settings]').click(); true"); await wait();
-  await evaluate("document.querySelector('#sound-toggle').click(); true"); await wait(650);
-  requireTrue(await evaluate("localStorage.getItem('eyemate.sound') === 'on'"), "UI_SETTINGS_AUTOSAVE_INVALID");
+  await evaluate("document.querySelector('#toast-region').replaceChildren(); true");
+  await evaluate(`(() => { document.querySelector('#sound-toggle').click(); document.querySelector('#reduced-motion-toggle').click(); document.querySelector('#quiet-toggle').click(); const now = new Date(); const minute = now.getHours() * 60 + now.getMinutes(); const start = document.querySelector('#quiet-start'); const end = document.querySelector('#quiet-end'); const format = (value) => String(Math.floor(value / 60)).padStart(2,'0') + ':' + String(value % 60).padStart(2,'0'); start.value = format((minute + 1439) % 1440); end.value = format((minute + 2) % 1440); end.dispatchEvent(new Event('change')); return true; })()`); await wait(750);
+  requireTrue(await evaluate("window.eyeMate.getUserPreferences().then((value) => value.soundEnabled && value.reducedMotion && value.quietHoursEnabled)"), "UI_SETTINGS_AUTOSAVE_INVALID");
+  await capture("settings");
+  await capture("settings", 1024, 768);
+  await window.webContents.reload(); await wait(450);
+  requireTrue(await evaluate("location.hash === '#/settings' && document.querySelector('#sound-toggle').getAttribute('aria-pressed') === 'true' && document.querySelector('#quiet-toggle').getAttribute('aria-pressed') === 'true'"), "UI_SETTINGS_RESTART_PERSISTENCE_INVALID");
+  requireTrue(await evaluate("window.eyeMate.startWorkSession('TIMER_ONLY').then(() => window.eyeMate.requestBreakNudge()).then((decision) => decision.reason === 'QUIET_HOURS').finally(() => window.eyeMate.cancelWorkSession())"), "UI_QUIET_HOURS_POLICY_INVALID");
 
   await evaluate("location.hash = '#/privacy'; true"); await wait();
   await evaluate("location.hash = '#/reports'; true"); await wait();

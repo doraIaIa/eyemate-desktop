@@ -42,3 +42,19 @@ Baseline: `fcaeaca`
 - Dynamic egress vẫn `UNKNOWN`; Privacy UI không được tuyên bố đã chứng minh “không có kết nối”.
 
 Quy tắc hoàn thiện: mỗi control sau tích hợp phải là wired qua use case thật, disabled có tooltip/lý do, hoặc hidden.
+
+## Re-audit theo Product Completion objective
+
+| Phạm vi | Kết quả sau tích hợp | Bằng chứng |
+|---|---|---|
+| Home | 🟢 Phiên gần nhất, trạng thái consent và missing-data guidance đã nối dữ liệu cục bộ | UI acceptance + ảnh 1024/1280 |
+| Checkup | 🟢 Survey-only đi hết wizard, cancel rõ ràng và chống double-submit | `UI_CHECKUP_*` |
+| Work Companion | 🟢 Start/pause/resume/finish/cancel/recovery và ba phản hồi nudge chạy qua IPC | `UI_SESSION_*`, `UI_NUDGE_*` |
+| Personal Intelligence | 🟢 Có route riêng, baseline/VLI/pattern/missing evidence và reset | `UI_INTELLIGENCE_*`, `UI_BASELINE_RESET_*` |
+| Reports | 🟢 Bốn tab, preview Markdown/JSON, export native dialog và xóa snapshot; preview không tạo record ẩn | `UI_REPORT_*`, `UI_WEEK_TAB_*`, `UI_MONTH_TAB_*` |
+| Privacy | 🟢 Consent, inventory thật, preview/export, reset và xóa hai bước | `UI_DATA_INVENTORY_*`, `UI_DELETE_*` |
+| Settings | 🟢 SQLite/IPC persistence, quiet-hours nối nudge policy, reduced motion và âm báo local | `UI_SETTINGS_*`, `UI_QUIET_HOURS_*` |
+| Async state | 🟢 Route/mutation có timeout, retry, disable-on-submit; native save dialog không bị timeout giả | unit `async-operation` + UI acceptance |
+| Acceptance | 🟢 Navigation, Back/Forward/reload, controls và restart persistence được click qua Electron thật | `npm run acceptance:ui` |
+
+Các capability không có contract hoặc evidence vẫn bị disabled/abstain: camera thật, calibration/đo 30 giây, OSDI-6 clinical, PDF, encryption-at-rest và dynamic WPR egress. Chúng không được suy thành PASS trong UI.

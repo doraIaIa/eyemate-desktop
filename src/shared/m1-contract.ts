@@ -1,6 +1,7 @@
 export interface PrivacySummary {
   readonly localOnly: true;
   readonly cameraState: "SKIPPED_NO_CONSENT" | "CAMERA_UNAVAILABLE";
+  readonly cameraConsentDecision: "NONE" | "GRANTED" | "SKIPPED" | "WITHDRAWN";
   readonly exportRequiresConfirmation: true;
   readonly deletionResults: readonly ("DELETED" | "PARTIALLY_DELETED" | "FAILED")[];
 }
@@ -19,5 +20,6 @@ export function isPrivacySummary(value: unknown): value is PrivacySummary {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
   return candidate.localOnly === true && (candidate.cameraState === "SKIPPED_NO_CONSENT" || candidate.cameraState === "CAMERA_UNAVAILABLE")
+    && ["NONE", "GRANTED", "SKIPPED", "WITHDRAWN"].includes(String(candidate.cameraConsentDecision))
     && candidate.exportRequiresConfirmation === true && Array.isArray(candidate.deletionResults);
 }
