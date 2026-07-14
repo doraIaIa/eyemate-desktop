@@ -2,8 +2,8 @@
 
 Last updated: 2026-07-14
 Current milestone: M0 — Architecture POC
-Current task: T-M0-005 — Tauri camera/local-asset spike
-Task state: DONE (POC tối thiểu; limitation runtime được ghi riêng)
+Current task: T-M0-006 — Electron SQLite migration/recovery spike
+Task state: DONE (fixture synthetic; privacy sink scan còn thuộc T-M0-008)
 
 Git verification:
 
@@ -21,6 +21,7 @@ Completed M0 evidence:
 - Microsoft Visual Studio Build Tools 2022 `17.14.35` đã hoàn tất và chạy được; không cần reboot.
 - Tauri `cargo check` và `cargo build` đã pass cục bộ với icon và shared asset nội bộ.
 - Tauri smoke startup/shutdown trả exit `0` và không còn process `eyemate-m0-tauri`.
+- Electron SQLite fixture synthetic: clean install, N-1 backup/transaction/integrity và forced-failure write lock đã pass.
 
 ## Kiểm kê toolchain — bằng chứng M0 cục bộ
 
