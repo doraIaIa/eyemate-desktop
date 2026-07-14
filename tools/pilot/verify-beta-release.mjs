@@ -16,7 +16,7 @@ const artifact = await readFile(path.join(betaRoot, manifest.artifact?.fileName 
 
 if (manifest.schemaVersion !== "eyemate-beta-release/0.1.0") throw new Error("UNSUPPORTED_RELEASE_SCHEMA");
 if (manifest.channel !== "beta-internal-unsigned" || manifest.packageIdentity !== "EyeMate.Beta.Internal") throw new Error("INVALID_BETA_IDENTITY");
-if (manifest.signing?.status !== "EXTERNAL_GATE") throw new Error("UNVERIFIED_SIGNING_CLAIM");
+if (manifest.signing?.status !== "READY_FOR_EXTERNAL_CERTIFICATE" || typeof manifest.signing?.verificationCommand !== "string") throw new Error("UNVERIFIED_SIGNING_CLAIM");
 if (artifact.byteLength !== manifest.artifact.bytes) throw new Error("ARTIFACT_SIZE_MISMATCH");
 if (sha256(artifact) !== manifest.artifact.sha256) throw new Error("ARTIFACT_HASH_MISMATCH");
 if (!validatePilotContract(matrix).ok) throw new Error("INVALID_RELEASE_FEATURE_MATRIX");

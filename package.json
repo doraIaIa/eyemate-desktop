@@ -31,6 +31,7 @@
     "egress:observe:pilot": "npm run build && node tools/pilot/observe-tcp-egress.mjs",
     "build:msix:beta": "npm run build && node tools/m1/build-msix.mjs --beta",
     "pilot:signing-status": "node tools/pilot/sign-beta-msix.mjs --status",
+    "test:signing-interface": "node tools/pilot/run-signing-interface-tests.mjs",
     "pilot:release": "npm run build:msix:beta && node tools/pilot/generate-beta-release.mjs",
     "pilot:verify-bundle": "node tools/pilot/verify-beta-release.mjs",
     "pilot:external-gates": "node tools/pilot/validate-external-gates.mjs",

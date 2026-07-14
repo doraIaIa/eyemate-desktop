@@ -23,11 +23,11 @@ const sbom = { bomFormat: "CycloneDX", specVersion: "1.5", version: 1, metadata:
 const manifest = {
   schemaVersion: "eyemate-beta-release/0.1.0", channel: "beta-internal-unsigned", packageIdentity: "EyeMate.Beta.Internal", commit,
   application: { version: packageJson.version, msixVersion: "0.1.0.0" }, storage: { currentSchema: 10, readableSchema: { min: 1, max: 10 }, rollback: "PRE_MIGRATION_BACKUP_REQUIRED_FOR_OLDER_BINARY" },
-  artifact: { fileName: "eyemate-beta.msix", bytes: artifactBytes.byteLength, sha256: sha256(artifactBytes) }, signing: { status: "EXTERNAL_GATE", interface: "tools/pilot/sign-beta-msix.mjs" },
-  verification: ["npm run verify", "npm run test:camera-harness", "npm run egress:observe:pilot", "npm run build:msix:beta"], featureMatrixSchema: matrix.schemaVersion,
+  artifact: { fileName: "eyemate-beta.msix", bytes: artifactBytes.byteLength, sha256: sha256(artifactBytes) }, signing: { status: "READY_FOR_EXTERNAL_CERTIFICATE", interface: "tools/pilot/sign-beta-msix.mjs", verificationCommand: "node tools/pilot/sign-beta-msix.mjs --verify .pilot/beta/eyemate-beta.msix" },
+  verification: ["npm run verify", "npm run test:camera-runtime", "npm run test:pdf-export", "npm run pilot:sensitive-storage-gate", "npm run egress:observe:pilot", "npm run build:msix:beta"], featureMatrixSchema: matrix.schemaVersion,
   limitations: matrix.features.filter((feature) => feature.state !== "ENABLED").map((feature) => ({ id: feature.id, state: feature.state, gateClass: feature.gateClass }))
 };
-const notes = `# EyeMate ${packageJson.version} · Internal Beta\n\n- Local-only survey/checkup, Timer Only companion và Personal Intelligence.\n- Không có cloud, account hoặc telemetry.\n- Camera, clinical OSDI-6, sensitive persistence và signing vẫn bị khóa bởi external gate.\n- Markdown/JSON export cần preview; delete không bao gồm file export ngoài app-data.\n- Đây là unsigned engineering beta, không phải public release.\n`;
+const notes = `# EyeMate ${packageJson.version} · Internal Beta\n\n- Local-only survey/checkup, Timer Only companion và Personal Intelligence.\n- Camera runtime local và cửa sổ đo 30 giây đã có; accuracy-dependent use vẫn khóa đến khi có ground truth.\n- Sensitive payload encryption đã implement nhưng chờ Security/Privacy approval.\n- OSDI-6 clinical và signing vẫn bị khóa bởi external gate.\n- Markdown/JSON/PDF export cần preview; delete không bao gồm file export ngoài app-data.\n- Không có cloud, account hoặc telemetry. Đây là unsigned engineering beta, không phải public release.\n`;
 await mkdir(output, { recursive: true });
 await writeFile(path.join(output, "release-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 await writeFile(path.join(output, "sbom.cdx.json"), `${JSON.stringify(sbom, null, 2)}\n`);
