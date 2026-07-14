@@ -35,4 +35,5 @@ await writeFile(path.join(output, "SHA256SUMS.txt"), `${manifest.artifact.sha256
 await writeFile(path.join(output, "RELEASE_NOTES.md"), notes);
 await writeFile(path.join(output, "feature-matrix.json"), `${JSON.stringify(matrix, null, 2)}\n`);
 await copyFile(path.join(root, "docs", "operations", "internal-beta-pilot.md"), path.join(output, "PILOT_RUNBOOK.md"));
+await copyFile(path.join(root, "pilot", "external-gate-checklist.json"), path.join(output, "EXTERNAL_GATES.json"));
 console.log(`PILOT_BETA_RELEASE_PASS ${manifest.artifact.sha256}`);

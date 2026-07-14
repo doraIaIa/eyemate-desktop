@@ -31,6 +31,7 @@
     "pilot:signing-status": "node tools/pilot/sign-beta-msix.mjs --status",
     "pilot:release": "npm run build:msix:beta && node tools/pilot/generate-beta-release.mjs",
     "pilot:verify-bundle": "node tools/pilot/verify-beta-release.mjs",
+    "pilot:external-gates": "node tools/pilot/validate-external-gates.mjs",
     "pilot:sensitive-storage-gate": "npm run build && node tools/pilot/check-sensitive-storage-gate.mjs",
     "verify:pilot": "npm run verify && npm run pilot:contract && npm run test:pilot-contract && npm run pilot:sensitive-storage-gate && npm run test:camera-harness && npm run egress:observe:pilot && npm run pilot:signing-status && npm run pilot:release && npm run pilot:verify-bundle",
     "accessibility": "node tools/m4/check-accessibility.mjs",

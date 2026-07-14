@@ -24,7 +24,7 @@ if (!validatePilotContract(matrix).ok) throw new Error("INVALID_RELEASE_FEATURE_
 const checksum = await readFile(path.join(releaseRoot, "SHA256SUMS.txt"), "utf8");
 if (checksum.trim() !== `${manifest.artifact.sha256}  ${manifest.artifact.fileName}`) throw new Error("CHECKSUM_FILE_MISMATCH");
 
-for (const fileName of ["release-manifest.json", "sbom.cdx.json", "feature-matrix.json", "RELEASE_NOTES.md", "PILOT_RUNBOOK.md", "SHA256SUMS.txt"]) {
+for (const fileName of ["release-manifest.json", "sbom.cdx.json", "feature-matrix.json", "EXTERNAL_GATES.json", "RELEASE_NOTES.md", "PILOT_RUNBOOK.md", "SHA256SUMS.txt"]) {
   const bytes = await readFile(path.join(releaseRoot, fileName));
   const scan = scanArtifactBytes("package-build", bytes);
   if (!scan.ok) throw new Error(`RELEASE_ARTIFACT_REJECTED:${fileName}:${scan.code}`);

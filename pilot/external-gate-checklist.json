@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "eyemate-external-gates/0.1.0",
+  "targetStatus": "PILOT_READY",
+  "gates": [
+    {
+      "id": "encryption-security-privacy",
+      "state": "EXTERNAL_GATE",
+      "evidenceNeeded": ["Approved ADR-005 revision", "Authenticated-encryption and Windows key-lifecycle implementation", "Tamper, wrong-key, missing-key, migration, interruption, backup/recovery and delete/reset evidence"],
+      "approvers": ["Security owner", "Privacy owner", "Product owner"],
+      "recheck": "npm run pilot:sensitive-storage-gate"
+    },
+    {
+      "id": "camera-ground-truth",
+      "state": "EXTERNAL_GATE",
+      "evidenceNeeded": ["Explicit-consent real-device lifecycle record", "Approved calibration protocol", "Ground-truth dataset, threshold and accuracy result without raw-frame persistence"],
+      "approvers": ["Product owner", "Safety/quality owner"],
+      "recheck": "npm run camera:validate:pilot"
+    },
+    {
+      "id": "clinical-content",
+      "state": "EXTERNAL_GATE",
+      "evidenceNeeded": ["Approved OSDI-6 wording/license if applicable", "Approved scoring, severity and recommendation catalogue"],
+      "approvers": ["Clinical owner", "Product owner"],
+      "recheck": "npm run pilot:external-gates"
+    },
+    {
+      "id": "signing-distribution",
+      "state": "EXTERNAL_GATE",
+      "evidenceNeeded": ["Authorized signing certificate and beta distribution identity", "Signed MSIX verification and approved rollback owner"],
+      "approvers": ["Release owner", "Security owner"],
+      "recheck": "npm run pilot:signing-status"
+    },
+    {
+      "id": "dynamic-egress",
+      "state": "EXTERNAL_GATE",
+      "evidenceNeeded": ["Approved dynamic network measurement stack with TCP, UDP and DNS coverage", "Trace inspection without retaining sensitive raw ETL"],
+      "approvers": ["Security owner", "Privacy owner"],
+      "recheck": "npm run egress:observe:pilot"
+    }
+  ]
+}

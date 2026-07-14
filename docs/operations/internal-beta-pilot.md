@@ -55,3 +55,7 @@ Nguồn trạng thái máy đọc được là `pilot/feature-matrix.json`. Vali
 Pilot có người thật chỉ được cân nhắc sau khi: ADR-005 được Security/Privacy chấp thuận bằng executable encryption evidence; clinical content được duyệt; signed beta identity tồn tại; camera lifecycle/accuracy có evidence nếu capability đó bật; incident owner và participant consent được phê duyệt.
 
 Nếu các external gate chưa đóng nhưng mọi phần tự động PASS, trạng thái tối đa là `PILOT_READY_WITH_EXTERNAL_GATES`.
+
+## Checklist external-gate
+
+Danh sách machine-readable để bàn giao: `pilot/external-gate-checklist.json`. Chạy `npm run pilot:external-gates` chỉ xác nhận checklist không che giấu evidence/approver; không thay thế phê duyệt hoặc bằng chứng thực tế.
