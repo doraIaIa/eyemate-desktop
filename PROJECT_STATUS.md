@@ -4,7 +4,7 @@ Last updated: 2026-07-14
 Current milestone: M2 — Work Companion MVP
 Current batch: M2-A/B foundation
 Current task: T-M2-002 — Companion policy engine
-Task state: IN_PROGRESS
+Task state: DONE
 
 Latest verified commit: `d7c8892`
 Task base commit: `d7c8892`
@@ -33,6 +33,8 @@ Verification:
   evidence: `src/`, `tools/m1/`, `package.json`.
 - command: `npm run build:msix:m1`
   result: PASS — MakeAppx package và smoke từ staged release-like Electron app.
+
+M2 exit verification: PASS — `npm run verify:m1` and `npm run build:msix:m1`; T-M2-002 through T-M2-006 complete.
 
 Remaining:
 

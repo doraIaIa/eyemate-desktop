@@ -5,4 +5,4 @@
 - [x] `T-M2-003` SQLite session/nudge/summary persistence và recovery/idempotency.
 - [x] `T-M2-004` Electron timer-only UI, session controls và notification adapter.
 - [x] `T-M2-005` Session Summary, privacy delete/export coverage và recovery UI.
-- [ ] `T-M2-006` Integration, offline/release-like MSIX smoke và M2 exit.
+- [x] `T-M2-006` Integration, offline/release-like MSIX smoke và M2 exit.
