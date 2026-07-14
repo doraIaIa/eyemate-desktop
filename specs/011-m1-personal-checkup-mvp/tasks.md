@@ -9,7 +9,7 @@
 ## M1-B đến M1-K
 
 - [x] `T-M1-004` SQLite adapter, migration, backup/recovery và typed repository ports.
-- [ ] `T-M1-005` Onboarding/Local Only/consent persistence và withdrawal.
+- [x] `T-M1-005` Onboarding/Local Only/consent persistence và withdrawal.
 - [ ] `T-M1-006` Safety Gate deterministic/versioned với placeholder nội bộ.
 - [ ] `T-M1-007` Questionnaire synthetic, survey-only flow, partial/recovery và report snapshot.
 - [ ] `T-M1-008` Camera port mock, off/denied/unavailable/low-quality, privacy sink gate.

@@ -1,9 +1,9 @@
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join, normalize, parse, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { OnboardingProgress, OnboardingProgressRepository, OnboardingStage } from "../user-data/ports.js";
+import type { CameraConsentRecord, CameraConsentRepository, OnboardingProgress, OnboardingProgressRepository, OnboardingStage } from "../user-data/ports.js";
 
-export const STORAGE_SCHEMA_VERSION = 2;
+export const STORAGE_SCHEMA_VERSION = 3;
 export const RECOVERY_REQUIRED = "MIGRATION_RECOVERY_REQUIRED";
 
 export type StorageOpenResult =
@@ -49,6 +49,19 @@ function createV2Schema(database: DatabaseSync): void {
   `);
 }
 
+function createV3Schema(database: DatabaseSync): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS camera_consent (
+      singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+      purpose TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      text_version TEXT NOT NULL,
+      decision TEXT NOT NULL,
+      decided_at TEXT NOT NULL
+    );
+  `);
+}
+
 function getSchemaVersion(database: DatabaseSync): number {
   const result = database.prepare("PRAGMA user_version").get() as { user_version: number };
   return result.user_version;
@@ -63,7 +76,7 @@ function isOnboardingStage(value: string): value is OnboardingStage {
   return ["NOT_STARTED", "INTRO_SEEN", "PRIVACY_SEEN", "CAMERA_DECIDED", "COMPLETE"].includes(value);
 }
 
-export class LocalSqliteStorage implements OnboardingProgressRepository {
+export class LocalSqliteStorage implements OnboardingProgressRepository, CameraConsentRepository {
   readonly #database: DatabaseSync;
 
   constructor(database: DatabaseSync) {
@@ -87,6 +100,29 @@ export class LocalSqliteStorage implements OnboardingProgressRepository {
       INSERT INTO onboarding_progress (singleton, stage, updated_at) VALUES (1, ?, ?)
       ON CONFLICT(singleton) DO UPDATE SET stage = excluded.stage, updated_at = excluded.updated_at
     `).run(progress.stage, progress.updatedAt);
+  }
+
+  loadCameraConsent(): CameraConsentRecord | null {
+    const row = this.#database.prepare("SELECT purpose, scope, text_version, decision, decided_at FROM camera_consent WHERE singleton = 1").get() as
+      | { purpose: string; scope: string; text_version: string; decision: string; decided_at: string }
+      | undefined;
+    if (row === undefined) return null;
+    if (row.purpose !== "CAMERA_MEASUREMENT" || row.scope !== "LOCAL_CAMERA"
+      || !["GRANTED", "SKIPPED", "WITHDRAWN"].includes(row.decision) || Number.isNaN(Date.parse(row.decided_at))) {
+      throw new Error("INVALID_CAMERA_CONSENT_RECORD");
+    }
+    return { purpose: "CAMERA_MEASUREMENT", scope: "LOCAL_CAMERA", textVersion: row.text_version, decision: row.decision as CameraConsentRecord["decision"], decidedAt: row.decided_at };
+  }
+
+  saveCameraConsent(record: CameraConsentRecord): void {
+    if (record.purpose !== "CAMERA_MEASUREMENT" || record.scope !== "LOCAL_CAMERA" || record.textVersion.length === 0
+      || !["GRANTED", "SKIPPED", "WITHDRAWN"].includes(record.decision) || Number.isNaN(Date.parse(record.decidedAt))) {
+      throw new Error("INVALID_CAMERA_CONSENT_RECORD");
+    }
+    this.#database.prepare(`
+      INSERT INTO camera_consent (singleton, purpose, scope, text_version, decision, decided_at) VALUES (1, ?, ?, ?, ?, ?)
+      ON CONFLICT(singleton) DO UPDATE SET text_version = excluded.text_version, decision = excluded.decision, decided_at = excluded.decided_at
+    `).run(record.purpose, record.scope, record.textVersion, record.decision, record.decidedAt);
   }
 
   close(): void {
@@ -131,6 +167,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
       database.exec("BEGIN IMMEDIATE;");
       createV1Schema(database);
       createV2Schema(database);
+      createV3Schema(database);
       database.exec(`PRAGMA user_version = ${STORAGE_SCHEMA_VERSION}; COMMIT;`);
       assertIntegrity(database);
       return { state: "READY", storage: new LocalSqliteStorage(database), migrated: false };
@@ -141,17 +178,18 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
       return { state: "READY", storage: new LocalSqliteStorage(database), migrated: false };
     }
 
-    if (version !== 1) throw new Error("UNSUPPORTED_SCHEMA_VERSION");
+    if (version !== 1 && version !== 2) throw new Error("UNSUPPORTED_SCHEMA_VERSION");
 
     copyFileSync(safePath, `${safePath}.backup-v1`, 0);
     backupCreated = true;
     database.exec("BEGIN IMMEDIATE;");
-    createV2Schema(database);
+    if (version === 1) createV2Schema(database);
     if (options.forceMigrationFailure === true) throw new Error("FORCED_MIGRATION_FAILURE");
+    createV3Schema(database);
     database.exec(`PRAGMA user_version = ${STORAGE_SCHEMA_VERSION}; COMMIT;`);
     assertIntegrity(database);
     database.prepare("INSERT INTO migration_record VALUES (?, ?, ?, ?, ?)").run(
-      "m1-v1-to-v2", 1, STORAGE_SCHEMA_VERSION, "SUCCEEDED", "2026-07-14T00:00:00.000Z"
+      `m1-v${version}-to-v${STORAGE_SCHEMA_VERSION}`, version, STORAGE_SCHEMA_VERSION, "SUCCEEDED", "2026-07-14T00:00:00.000Z"
     );
     return { state: "READY", storage: new LocalSqliteStorage(database), migrated: true };
   } catch (error) {

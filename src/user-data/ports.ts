@@ -9,3 +9,18 @@ export interface OnboardingProgressRepository {
   load(): OnboardingProgress | null;
   save(progress: OnboardingProgress): void;
 }
+
+export type CameraConsentDecision = "GRANTED" | "SKIPPED" | "WITHDRAWN";
+
+export interface CameraConsentRecord {
+  readonly purpose: "CAMERA_MEASUREMENT";
+  readonly scope: "LOCAL_CAMERA";
+  readonly textVersion: string;
+  readonly decision: CameraConsentDecision;
+  readonly decidedAt: string;
+}
+
+export interface CameraConsentRepository {
+  loadCameraConsent(): CameraConsentRecord | null;
+  saveCameraConsent(record: CameraConsentRecord): void;
+}

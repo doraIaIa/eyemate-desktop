@@ -20,7 +20,9 @@ test("SQLite local tạo dữ liệu onboarding ngoài installation directory", 
   assert.equal(result.state, "READY");
   if (result.state === "READY") {
     result.storage.save({ stage: "PRIVACY_SEEN", updatedAt: "2026-07-14T00:00:00.000Z" });
+    result.storage.saveCameraConsent({ purpose: "CAMERA_MEASUREMENT", scope: "LOCAL_CAMERA", textVersion: "m1-camera-1", decision: "SKIPPED", decidedAt: "2026-07-14T00:00:00.000Z" });
     assert.deepEqual(result.storage.load(), { stage: "PRIVACY_SEEN", updatedAt: "2026-07-14T00:00:00.000Z" });
+    assert.equal(result.storage.loadCameraConsent()?.decision, "SKIPPED");
     result.storage.close();
   }
   rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });
@@ -47,6 +49,24 @@ test("migration lỗi giữ backup và khóa truy cập storage", () => {
     backupCreated: true
   });
   assert.equal(existsSync(`${databasePath}.backup-v1`), true);
+  rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });
+});
+
+test("rút camera consent được ghi lại sau restart", () => {
+  const databasePath = createFixturePath("consent");
+  const initial = openLocalSqliteStorage(databasePath);
+  assert.equal(initial.state, "READY");
+  if (initial.state === "READY") {
+    initial.storage.saveCameraConsent({ purpose: "CAMERA_MEASUREMENT", scope: "LOCAL_CAMERA", textVersion: "m1-camera-1", decision: "GRANTED", decidedAt: "2026-07-14T00:00:00.000Z" });
+    initial.storage.saveCameraConsent({ purpose: "CAMERA_MEASUREMENT", scope: "LOCAL_CAMERA", textVersion: "m1-camera-1", decision: "WITHDRAWN", decidedAt: "2026-07-14T00:01:00.000Z" });
+    initial.storage.close();
+  }
+  const reopened = openLocalSqliteStorage(databasePath);
+  assert.equal(reopened.state, "READY");
+  if (reopened.state === "READY") {
+    assert.equal(reopened.storage.loadCameraConsent()?.decision, "WITHDRAWN");
+    reopened.storage.close();
+  }
   rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });
 });
 
