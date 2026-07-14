@@ -14,7 +14,7 @@
 - Được tải dependency/toolchain chính thức trực tiếp cho Electron/Tauri từ npm, Rustup/Rust official distribution hoặc nguồn package chính thức; Rust stable và PATH cấp user do rustup là được phép.
 - Được tạo Electron/Tauri POC tối thiểu, chạy camera-off/camera-denied/benchmark local và chọn shell sau khi evidence hợp lệ đủ rõ. Có thể cập nhật ADR-003 thành `ACCEPTED` khi acceptance đạt, evidence hợp lệ, không còn contradiction lớn, rationale/limitation đã ghi.
 - Quy tắc chọn shell: safety/privacy/reproducibility → acceptance → build/package/maintenance → startup/RAM/CPU/bundle. Không chọn theo sở thích framework.
-- Chỉ báo cáo sau 5–10 commit, khi M0 hoàn thành, hoặc gặp điều kiện dừng dưới đây.
+- Báo cáo/checkpoint chỉ khi M0 hoàn thành, có blocker/decision nêu dưới đây, sau tối đa 5 commit liên tiếp hoặc khi quota/phiên sắp hết.
 - Vẫn phải dừng hỏi khi cần Administrator; Visual Studio Build Tools/Windows SDK/driver/certificate/toolchain system-wide ngoài Rust user-level; firewall/proxy/security policy; camera/thiết bị thật; signing/Store/publish/upload; chi phí; dữ liệu người thật; sửa V1; thay đổi safety/privacy/medical boundary; thao tác phá hủy ngoài repo; hoặc evidence benchmark mâu thuẫn khiến không thể chọn an toàn.
 
 ## Resume protocol bắt buộc
@@ -24,8 +24,9 @@
 3. Đọc task hiện hành trong `specs/000-m0-architecture-poc/tasks.md` cùng spec/acceptance liên quan.
 4. Khi cần ngữ cảnh M0, đọc `MASTER_SPEC.md`, `GOVERNANCE.md` và `tools/m0/README.md`.
 5. Nếu có diff: review toàn bộ, xác định task sở hữu, bảo toàn diff và tiếp tục task đó. Không reset, stash, checkout để xoá diff.
-6. Chỉ làm một task nhỏ tại một thời điểm: implement → test → review diff → `git diff --check` → commit → cập nhật `PROJECT_STATUS.md`.
-7. Nếu không có blocker, tự chọn task M0 kế tiếp có dependency sẵn sàng. Không tạo readiness/adversarial-review document mới trừ khi trực tiếp gỡ blocker.
+6. Task boundary chỉ phục vụ commit/test nhỏ: implement → test → review diff → `git diff --check` → commit. Sau task PASS, tự đọc task kế tiếp theo dependency và tiếp tục ngay; không chờ xác nhận commit, không dừng chỉ vì hoàn thành task nhỏ.
+7. Cập nhật `PROJECT_STATUS.md` theo batch, blocker hoặc milestone; không tạo checkpoint document hay status-only commit sau mỗi task. Không tạo readiness/adversarial-review document mới trừ khi trực tiếp gỡ blocker.
+8. Thực thi liên tục tối đa 5 task M0 hoặc 45 phút mỗi batch. Khi hết batch mà không có blocker, tự bắt đầu batch kế tiếp trong cùng mục tiêu/phiên.
 
 ## Ranh giới bất biến
 
