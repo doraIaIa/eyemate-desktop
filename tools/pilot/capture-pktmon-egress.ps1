@@ -2,7 +2,7 @@
 param(
   [ValidateRange(1, 60)]
   [int]$DurationSeconds = 60,
-  [string]$OutputDirectory = (Join-Path $PSScriptRoot "..\..\.pilot\egress"),
+  [string]$OutputDirectory = "",
   [switch]$KeepRawCapture
 )
 
@@ -12,6 +12,7 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 $pktmon = Get-Command pktmon.exe -ErrorAction SilentlyContinue
 if ($null -eq $pktmon) { throw "PKTMON_NOT_FOUND" }
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
+if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $OutputDirectory = Join-Path $root ".pilot\egress" }
 $output = [System.IO.Path]::GetFullPath($OutputDirectory)
 if (-not $output.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) { throw "EGRESS_OUTPUT_OUTSIDE_REPOSITORY" }
 New-Item -ItemType Directory -Path $output -Force | Out-Null

@@ -19,7 +19,7 @@ Working tree expectation: clean after this status checkpoint; generated beta art
 - Export: Markdown, JSON và PDF A4 nhiều trang chạy local qua preview + native Save dialog, atomic write, Unicode tiếng Việt, cancel/no-overwrite tests; không có cloud/CDN.
 - Questionnaire: definition và scoring adapter versioned, stable IDs, missing-answer handling và feature gate đã có. Adapter OSDI 12 mục/thang 0–4 vẫn `DISABLED` vì thiếu approved content/license/translation/scoring và Clinical/Product evidence.
 - Release: beta identity, MSIX, SBOM, checksum, release manifest, provenance, rollback policy, SignTool discovery, input boundary và post-sign verification đã sẵn sàng. `SIGNING=READY_FOR_EXTERNAL_CERTIFICATE`; không có certificate giả hoặc publish.
-- Egress: process tree TCP và UDP-endpoint observation ghi 0 observation; DNS/remote-UDP/packet content không có coverage. Kết luận duy nhất là `UNKNOWN_NO_TCP_OBSERVED`; WPR vẫn blocked `0xc5585011`, không có claim no-egress.
+- Egress: process tree TCP và UDP-endpoint observation ghi 0 observation; DNS/remote-UDP/packet content không có coverage. Pktmon host-wide đã được thử có quyền Administrator cùng local workload, tạo ETL/TXT nhưng recorder/convert trả exit `1`; raw artifact bị xóa không inspection/commit. Kết luận duy nhất là `UNKNOWN_NO_TCP_OBSERVED`; WPR vẫn blocked `0xc5585011`, không có claim no-egress.
 - Canonical verification: `npm run verify:pilot` PASS với 65 unit, 17 integration, architecture/privacy/security/accessibility, Electron M1–M3, UI acceptance, protected-storage gate, camera lifecycle smoke, PDF test, signing interface, MSIX build và release-bundle verification.
 - V1 `F:\dry-eye-app` không bị sửa; hai file documentation untracked có sẵn được bảo toàn.
 
