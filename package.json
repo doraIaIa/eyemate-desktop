@@ -11,6 +11,8 @@
     "test:msix:m0": "node tools/m0/run-msix-feasibility-fixture-tests.mjs",
     "build:msix:tauri:m0": "node tools/m0/build-msix-feasibility.mjs build tauri --out .m0/msix --sign",
     "build:msix:electron:m0": "node tools/m0/build-msix-feasibility.mjs build electron --out .m0/msix --sign",
+    "test:performance:m0": "node tools/m0/run-candidate-performance-fixture-tests.mjs",
+    "benchmark:performance:m0": "node tools/m0/run-candidate-performance.mjs",
     "check:tauri:m0": "cargo check --manifest-path candidates/tauri/src-tauri/Cargo.toml"
   },
   "devDependencies": {

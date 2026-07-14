@@ -258,9 +258,9 @@ T-M0-003 → T-M0-005 → T-M0-007
 - Do not modify: workload/trọng số sau khi thấy kết quả, production performance budget.
 - Out of scope: tối ưu candidate trước baseline hoặc loại outlier không theo protocol.
 - Tests to add/update: evidence schema, checksum/nondeterminism và sample completeness.
-- Verification command: `<canonical> benchmark:m0`, `<canonical> verify:artifacts`; chưa thể xác minh.
+- Verification command: `npm run test:performance:m0`, `npm run benchmark:performance:m0`, plus existing scanner/regression commands.
 - Expected evidence: raw technical samples, summary, toolchain/device metadata và nondeterminism report.
-- Stop condition: workload khác nhau, metadata thiếu hoặc measurement method thay đổi giữa candidate.
+- Stop condition: workload khác nhau, metadata thiếu, measurement method thay đổi giữa candidate, normalized payload nondeterminism không giải thích được hoặc process measurement không tạo sample hợp lệ.
 
 ## T-M0-011 — Decision matrix và ADR review
 

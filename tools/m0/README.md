@@ -17,6 +17,8 @@ node tools/m0/run-tool-inventory-fixture-tests.mjs
 node tools/m0/run-msix-feasibility-fixture-tests.mjs
 node tools/m0/build-msix-feasibility.mjs build tauri --out .m0/msix --sign
 node tools/m0/build-msix-feasibility.mjs build electron --out .m0/msix --sign
+node tools/m0/run-candidate-performance-fixture-tests.mjs
+node tools/m0/run-candidate-performance.mjs
 ```
 
 Validator chỉ đọc JSONL, in reason code tối thiểu và không echo record/input. Fixture là dữ liệu synthetic, không chứa raw frame/video/landmark, dữ liệu sức khỏe, đường dẫn người dùng hay secret.
@@ -43,3 +45,6 @@ Nó không thay scanner sink runtime, scrubber, checksum-manifest generator, net
 
 
 build-msix-feasibility.mjs tạo MSIX feasibility nội bộ cho Electron/Tauri bằng Windows SDK makeappx và test certificate CurrentUser đã được owner cho phép. Output mặc định nằm dưới .m0/msix và bị ignore; summary JSON đã scrub qua scanner type package-build, chỉ ghi relative package path, byte size, SHA-256, manifest identity/capability và trạng thái tool. Script dùng node:child_process với allowlist makeappx/signtool, shell=false, không network, không Store publish, không production signing attestation và không ghi private key/cert thumbprint. Trạng thái signtool verify có thể là UNTRUSTED_TEST_CERT_OR_POLICY nếu test cert chưa được trust ở CurrentUser; không tự thay đổi trust store/security policy.
+
+
+run-candidate-performance.mjs chạy benchmark camera-off local cho Electron/Tauri bằng process test mode, đo elapsed startup-to-exit, peak working-set process tree, CPU seconds delta và build unsigned MSIX hai lần để so raw package hash với normalized payload hash. Report nằm dưới .m0/perf/reports, qua scanner type resource-trace, không mở camera, không network và không ghi absolute path/user/host. CPU delta bằng 0 trong workload synthetic là kết quả quan sát được, không phải budget production.
