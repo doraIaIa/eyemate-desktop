@@ -11,13 +11,13 @@ related: [VAL-M0-001, NFR-M0-001, NFR-M0-002, REL-M0-003, AC-M0-011, AC-M0-012, 
 
 ## Định dạng đề xuất
 
-Mỗi lần chạy ghi một UTF-8 JSON Lines record theo `schemaVersion: m0-benchmark-run/0.1.0`. Đây là contract đề xuất, chưa có validator hay command canonical. Summary chỉ được sinh từ run records `VALID`; không sửa trực tiếp số liệu summary.
+Mỗi lần chạy ghi một UTF-8 JSON Lines record theo `schemaVersion: m0-benchmark-run/0.2.0`. Đây là contract đề xuất, chưa có validator hay command canonical. Summary chỉ được sinh từ run records `VALID`; không sửa trực tiếp số liệu summary. Version `0.2.0-proposed` thay `0.1.0-proposed` vì QA bổ sung run-plan/attempt, trạng thái ba chiều, metric completeness và acceptance evaluation; chưa có evidence `0.1.0` nào được phép nâng cấp ngầm.
 
 ## Run record tối thiểu
 
 ```json
 {
-  "schemaVersion": "m0-benchmark-run/0.1.0",
+  "schemaVersion": "m0-benchmark-run/0.2.0",
   "runId": "20260714T000000Z__candidate__DP-DEV__WL-001-v1__r01",
   "timestampUtc": "2026-07-14T00:00:00Z",
   "operator": { "role": "tech", "pseudonymousId": "operator-01" },
@@ -33,6 +33,9 @@ Mỗi lần chạy ghi một UTF-8 JSON Lines record theo `schemaVersion: m0-ben
   "workloadId": "WL-001",
   "workloadVersion": "1.0.0",
   "repetition": 1,
+  "plannedSlotId": "WL-001__DP-DEV__r01",
+  "attemptId": "a01",
+  "runPlanRef": "plans/TBD.json",
   "environment": { "networkMode": "BLOCKED", "powerMode": "TBD", "package": "TBD" },
   "command": "TBD_CANONICAL_COMMAND",
   "startedAtUtc": "TBD",
@@ -42,8 +45,11 @@ Mỗi lần chạy ghi một UTF-8 JSON Lines record theo `schemaVersion: m0-ben
   "unexpectedNetworkCalls": [],
   "artifactRefs": [],
   "privacyInspection": { "result": "NOT_RUN", "findingCount": null },
-  "validity": "ABORTED",
+  "executionStatus": "ABORTED",
+  "validity": "INVALID",
+  "outcome": "NOT_EVALUATED",
   "invalidReason": "READINESS_ONLY_NO_RUN",
+  "acceptanceEvaluations": [],
   "reviewer": null,
   "notes": "Schema example; không phải benchmark evidence."
 }
@@ -51,14 +57,39 @@ Mỗi lần chạy ghi một UTF-8 JSON Lines record theo `schemaVersion: m0-ben
 
 Các field `TBD` trong ví dụ không được dùng trong record `VALID`. `operator` dùng role/pseudonymous ID, không lưu tên người dùng hệ điều hành.
 
+## Trạng thái run tách theo ba chiều
+
+- `executionStatus`: `COMPLETED` hoặc `ABORTED`. `ABORTED` nghĩa là sequence dừng trước terminal marker; không tự nói run hợp lệ hay candidate fail.
+- `validity`: `VALID` hoặc `INVALID`. `INVALID` nghĩa là protocol/provenance/comparability không đạt; run không được dùng trong performance aggregate.
+- `outcome`: `PASSED`, `FAILED` hoặc `NOT_EVALUATED`. `FAILED` chỉ dùng khi run hoàn tất đủ evidence để đánh giá một correctness/acceptance rule và rule đó không đạt. Run `INVALID` hoặc `ABORTED` mặc định `NOT_EVALUATED`, trừ khi stop rule tạo một finding độc lập đủ bằng chứng như raw-data leakage; finding đó được ghi ở acceptance evaluation riêng, không biến performance sample thành valid.
+
+Ba field không được gộp thành một enum. Mọi record còn phải có `plannedSlotId`, `attemptId`, `runPlanRef`; rerun tạo attempt mới, không sửa record cũ.
+
 ## Metric observation
 
-Mỗi phần tử `metricObservations` phải có `metricId`, `value`, `unit`, `sampleCount`, `aggregation`, `samplingMethodVersion`, `tool`, `toolVersion`, `startedAtUtc`, `endedAtUtc`, `status`, `missingReason` và `artifactRef`. `status` là `OBSERVED`, `NOT_MEASURED` hoặc `ERROR`; không dùng `0` thay missing/error.
+Mỗi phần tử `metricObservations` phải có `metricId`, `value`, `unit`, `sampleCount`, `expectedSampleCount`, `droppedSampleCount`, `coverageRatio`, `aggregation`, `aggregationVersion`, `samplingInterval`, `samplingMethodVersion`, `tool`, `toolVersion`, `startedAtUtc`, `endedAtUtc`, `status`, `missingReason` và `artifactRef`. `status` là `OBSERVED`, `NOT_MEASURED` hoặc `ERROR`; không dùng `0` thay missing/error. `OBSERVED` yêu cầu value/unit và sample count hợp lệ; hai trạng thái còn lại yêu cầu `value: null`, `sampleCount: 0` và typed reason.
+
+Mỗi workload attempt phải có observation cho toàn bộ `expectedMetricSet` trong run plan. Record metric thiếu hoàn toàn làm run `INVALID`; summary không được bỏ qua im lặng.
+
+## Acceptance evaluation và audit trail
+
+Mỗi phần tử `acceptanceEvaluations` gồm `acceptanceId`, `requirementIds`, `evaluatorVersion`, `result` (`PASS`, `FAIL`, `NOT_EVALUATED`, `NOT_COMPARABLE`), `reasonCode`, `runIds`, `artifactRefs` và `reviewerRole`. `PASS`/`FAIL` phải dẫn tới evidence checksum được; prose hoặc summary không có source runs chỉ được `NOT_EVALUATED`.
+
+Run plan và summary phải lưu:
+
+- danh sách đầy đủ `plannedSlotId`, tất cả attempts và trạng thái ba chiều;
+- query/aggregation/outlier rule version đã khóa trước result;
+- counts `PASSED`/`FAILED`/`INVALID`/`ABORTED`/`NOT_EVALUATED` theo candidate/workload;
+- inclusive result và sensitivity analysis nếu rule outlier cho phép exclusion;
+- requirement → acceptance → workload/task → run/artifact links.
+
+Summary thiếu planned slot, thay thế failed attempt bằng rerun, hoặc chỉ chọn run có metric là `INVALID_SUMMARY` và kích hoạt `VAL-M0-STOP-011`.
 
 ## Layout và tên file đề xuất
 
 ```text
 evidence/m0/<protocol-version>/
+  plans/<run-plan-version>.json
   manifests/<commit>__<candidate>__build.json
   devices/<device-snapshot-id>.json
   runs/<candidate>/<deviceProfileId>/<workloadId>/<runId>.jsonl
@@ -101,5 +132,5 @@ Nếu công cụ sinh artifact cấm, dừng ngay, cô lập quyền truy cập,
 | Tài liệu | Version | Owner | Reviewer role | Decision | Review date | Blocking comments | Next review trigger |
 |---|---|---|---|---|---|---|---|
 | `m0-evidence-schema.md` | `0.1.0-proposed` | Tech + QA | Tech | `CHANGES_REQUIRED` | 2026-07-14 | Chưa có validator, command registry, artifact scrubber hoặc checksum/index verification chạy được | Khi T-M0-003 được phép và command được xác minh trên clean checkout |
-| `m0-evidence-schema.md` | `0.1.0-proposed` | Tech + QA | QA | `NOT_REVIEWED` | — | Chưa chạy schema/link validation | Review riêng sau Tech |
-| `m0-evidence-schema.md` | `0.1.0-proposed` | Tech + QA | Privacy + Security | `NOT_REVIEWED` | — | Cần duyệt artifact allowlist/retention | Trước thu evidence thật |
+| `m0-evidence-schema.md` | `0.2.0-proposed` | Tech + QA | QA | `CHANGES_REQUIRED` | 2026-07-14 | Chưa có validator, canonical command hoặc artifact chứng minh planned-slot completeness, checksum/link và summary recomputation | Khi schema/traceability validator chạy được trên fixture positive/negative |
+| `m0-evidence-schema.md` | `0.2.0-proposed` | Tech + QA | Privacy + Security | `NOT_REVIEWED` | — | Cần duyệt artifact allowlist/retention | Trước thu evidence thật |

@@ -11,7 +11,9 @@ related: [PRIV-M0-001, SEC-M0-001, DATA-M0-002, NFR-M0-002, REL-M0-001, VAL-M0-0
 
 ## Nguyên tắc
 
-Stop rule áp dụng trước performance comparison. Không loại candidate bằng threshold hiệu năng khi chưa có baseline, trừ hard limit của máy thử đã được Tech + QA ghi trước run. Mọi run dừng có trạng thái `INVALID` hoặc `ABORTED`, reason code và provenance; không xóa evidence an toàn về việc dừng.
+Stop rule áp dụng trước performance comparison. Không loại candidate bằng threshold hiệu năng khi chưa có baseline, trừ hard limit của máy thử đã được Tech + QA ghi trước run. Trạng thái được ghi theo ba chiều trong evidence schema: `executionStatus=ABORTED` khi sequence dừng sớm, `validity=INVALID` khi protocol/evidence không hợp lệ, và `outcome=FAILED` chỉ khi một acceptance/correctness rule có đủ evidence và không đạt. Không dùng ba từ này thay thế lẫn nhau; không xóa evidence an toàn về việc dừng.
+
+Mỗi stop event PHẢI ghi `ruleId`, `detector/methodVersion`, trigger đã quan sát, timestamp, candidate, planned slot/attempt, artifact reference/checksum, action/cleanup result, owner và pair effect. Nếu trigger không quan sát được bằng method đã khóa hoặc artifact bắt buộc thiếu, run là `INVALID`; reviewer không được kích hoạt stop rule hồi tố chỉ từ nhận xét định tính.
 
 ## Catalogue
 
@@ -39,11 +41,13 @@ Stop rule áp dụng trước performance comparison. Không loại candidate b�
 - `BLOCKER`: cấm tiếp tục candidate/ADR cho đến khi resume condition đạt.
 - `HIGH`: cấm dùng run hoặc matrix liên quan; có thể tiếp tục công việc tài liệu/diagnostic an toàn.
 - Stop rule không phải performance threshold. Baseline metric còn `TBD` không kích hoạt loại candidate.
+- Cụm “Run `INVALID`” trong catalogue chỉ đặt `validity=INVALID`; cụm “Run `ABORTED`” đặt `executionStatus=ABORTED`. “Candidate fail/blocked” là gate effect, không tự tạo `outcome=FAILED` cho metric performance. `FAILED` cần acceptance evaluation có evaluator version và evidence refs.
+- Mọi slot bị stop vẫn nằm trong run-plan completeness và summary counts; retry tạo attempt mới, không thay slot/attempt cũ.
 
 ## Approval
 
 | Tài liệu | Version | Owner | Reviewer role | Decision | Review date | Blocking comments | Next review trigger |
 |---|---|---|---|---|---|---|---|
 | `m0-stop-rules.md` | `0.1.0-proposed` | Tech + QA | Tech | `CHANGES_REQUIRED` | 2026-07-14 | Cleanup, process-tree attribution, tool overhead tolerance và package/recovery method chưa được dry-run | Sau technical dry-run không thu benchmark result và owner xác nhận resume semantics |
-| `m0-stop-rules.md` | `0.1.0-proposed` | Tech + QA | QA | `NOT_REVIEWED` | — | Cần duyệt invalid-run/resume semantics | Sau Tech review |
-| `m0-stop-rules.md` | `0.1.0-proposed` | Tech + QA | Privacy + Security | `NOT_REVIEWED` | — | Cần duyệt incident isolation/retention | Trước run có camera |
+| `m0-stop-rules.md` | `0.2.0-proposed` | Tech + QA | QA | `CHANGES_REQUIRED` | 2026-07-14 | Semantics trạng thái đã tách nhưng detector/tool, threshold/tolerance, cleanup và resume condition chưa dry-run/khóa | Sau positive/negative stop-event fixture và overhead-only dry-run |
+| `m0-stop-rules.md` | `0.2.0-proposed` | Tech + QA | Privacy + Security | `NOT_REVIEWED` | — | Cần duyệt incident isolation/retention | Trước run có camera |

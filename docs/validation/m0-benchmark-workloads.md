@@ -23,6 +23,17 @@ Mọi workload kế thừa các field sau; override phải được khóa trư�
 - `invalidRun`: thiếu provenance; sai device/power/network/asset/config; không đủ warm-up/duration/repetition; tool lỗi/overhead đáng kể; stop rule kích hoạt.
 - `cleanup`: stop camera/model/process, đóng DB/tool, xóa package/data tạm theo manifest; không xóa evidence đã checksum.
 
+## Run plan khóa trước kết quả
+
+Trước khi chạy workload chính thức, Tech + QA PHẢI tạo một run plan có version/checksum và khóa các field: candidate, workload/version, device snapshot, camera/resolution/driver, asset/algorithm manifest, package/build, power/network mode, tool/version, warm-up, stabilization, timeout, duration, sampling interval, planned repetitions, thứ tự chạy, cooldown, expected metric set, variance/outlier rule và overhead tolerance. Khi một field run-critical còn `TBD`, workload không được tạo run `VALID`.
+
+- Mỗi repetition có `plannedSlotId` bất biến. Run retry tạo `attemptId` mới liên kết slot cũ; không ghi đè hoặc thay thế attempt thất bại/invalid/aborted.
+- Summary PHẢI kê đủ planned slots và số attempt theo `PASSED`, `FAILED`, `INVALID`, `ABORTED`, `NOT_EVALUATED`; không chỉ kê các run hoàn tất hoặc có số đẹp.
+- Không được dừng sớm một candidate rồi tiếp tục candidate kia để cải thiện trung bình. Mọi early-stop phải ghi pair effect và phần workload chưa chạy của cả hai candidate.
+- Outlier không bị xóa. Chỉ được tạo phân tích loại outlier khi rule/version đã khóa trước khi mở result; báo cáo đồng thời kết quả gồm tất cả run hợp lệ và sensitivity analysis loại theo rule, kèm run IDs.
+- Average/median/p95 chỉ tổng hợp observation `OBSERVED` từ run có `validity=VALID`; mẫu `FAILED` vẫn thuộc mẫu hợp lệ nếu workload chạy đúng protocol và phải được phản ánh trong pass rate. `INVALID`/`ABORTED` không đi vào metric aggregate nhưng luôn nằm trong denominator completeness riêng.
+- Không dùng rerun để biến `FAILED` thành `PASSED`; rerun là attempt mới và acceptance summary hiển thị cả hai.
+
 ## Workload catalogue
 
 | ID | Purpose / preconditions / fixture | Exact sequence | Warm-up / duration / repetitions | Metrics | Pass/fail hoặc comparison rule | Artifacts / cleanup / invalid override |
@@ -83,6 +94,14 @@ Mọi workload kế thừa các field sau; override phải được khóa trư�
 
 Không metric nào hiện có performance baseline hoặc pass threshold. Correctness/privacy invariants như zero raw leakage, zero unexpected network trong offline workload và typed failure đã đến từ acceptance, không phải threshold hiệu năng.
 
+## Metric completeness và missing semantics
+
+- Mỗi workload version PHẢI khai báo `expectedMetricSet`. Mỗi metric trong tập này phải có đúng một observation record cho mỗi attempt: `OBSERVED`, `NOT_MEASURED` hoặc `ERROR`; thiếu record làm run `INVALID` với `MISSING_METRIC_OBSERVATION`.
+- `OBSERVED` yêu cầu `value`, `unit`, `sampleCount > 0`, `aggregation`, sampling window/method và artifact reference. `NOT_MEASURED`/`ERROR` yêu cầu `value=null`, `sampleCount=0` và typed `missingReason`; không được dùng `0`, chuỗi rỗng hoặc bỏ field.
+- Metric dạng enum/boolean dùng `sampleCount=1` và aggregation `SINGLE_OBSERVATION`. Metric theo cửa sổ phải ghi expected/actual sample count, sampling interval, dropped sample count và coverage ratio; thiếu mẫu vượt rule đã khóa làm run `INVALID`, không tự nội suy.
+- Aggregation/percentile/histogram algorithm, boundaries và unit conversion phải có version và giống nhau giữa candidate. Không đổi mean thành median, đổi process tree, đổi sampling interval hoặc đổi denominator sau khi xem kết quả.
+- Khi summary tính pass rate, denominator là toàn bộ planned slots; các nhóm `FAILED`, `INVALID`, `ABORTED`, `NOT_EVALUATED` phải tách riêng. Không gọi trung bình của các run sống sót là kết quả workload.
+
 ## Fair comparison và decision matrix
 
 - Evidence so sánh trực tiếp: cùng metric ID/method/tool, profile snapshot, workload/asset/config và package target.
@@ -95,5 +114,5 @@ Không metric nào hiện có performance baseline hoặc pass threshold. Correc
 | Tài liệu | Version | Owner | Reviewer role | Decision | Review date | Blocking comments | Next review trigger |
 |---|---|---|---|---|---|---|---|
 | `m0-benchmark-workloads.md` | `0.1.0-proposed` | Tech + QA | Tech | `CHANGES_REQUIRED` | 2026-07-14 | Measurement stack, warm-up, duration, repetitions, variance và overhead tolerance chưa khóa/xác minh | Sau tool provisioning + overhead dry-run được phê duyệt riêng; không dùng benchmark result |
-| `m0-benchmark-workloads.md` | `0.1.0-proposed` | Tech + QA | QA | `NOT_REVIEWED` | — | Chưa khóa invalid-run/variance/sample count | Review riêng sau Tech |
-| `m0-benchmark-workloads.md` | `0.1.0-proposed` | Tech + QA | Privacy + Security | `NOT_REVIEWED` | — | Cần duyệt capture/trace artifact allowlist | Trước chạy camera/network workload |
+| `m0-benchmark-workloads.md` | `0.2.0-proposed` | Tech + QA | QA | `CHANGES_REQUIRED` | 2026-07-14 | Warm-up/stabilization/timeout/duration/repetitions/sample interval, variance/outlier rule, tool equivalence và overhead tolerance chưa khóa | Sau protocol/tool dry-run tách khỏi benchmark và run plan có version/checksum |
+| `m0-benchmark-workloads.md` | `0.2.0-proposed` | Tech + QA | Privacy + Security | `NOT_REVIEWED` | — | Cần duyệt capture/trace artifact allowlist | Trước chạy camera/network workload |

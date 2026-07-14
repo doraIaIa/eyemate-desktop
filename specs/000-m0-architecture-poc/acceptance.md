@@ -63,3 +63,5 @@ Không acceptance nào được đánh dấu đạt bằng prose hoặc demo th�
 - Missing/error phải dùng typed status/reason; không điền `0`. Performance threshold và allowed variance vẫn `TBD` đến khi baseline/protocol được Tech + QA duyệt.
 - `AC-M0-001`, `AC-M0-007`, `AC-M0-014`, `AC-M0-018`, `AC-M0-019` chịu immediate-stop khi có unexpected network hoặc raw-data finding; không được lấy performance result để bù gate privacy/offline.
 - Sai khác candidate về workload, asset, camera/resolution, device/power/network, package target hoặc measurement method làm run không so sánh được; không đổi nghĩa acceptance bằng normalization hậu nghiệm.
+- Mỗi acceptance được đánh giá bằng record versioned `PASS`, `FAIL`, `NOT_EVALUATED` hoặc `NOT_COMPARABLE` có requirement IDs, run IDs và artifact refs. `FAILED` chỉ là outcome của rule có đủ evidence; `INVALID` là lỗi validity và `ABORTED` là sequence dừng sớm.
+- Summary phải bao phủ toàn bộ planned repetition slots, kể cả failed/invalid/aborted và mọi retry. Không được tính pass rate hoặc average chỉ từ run sống sót; outlier chỉ được phân tích theo rule khóa trước result và phải báo cả inclusive result.

@@ -40,7 +40,7 @@ T-M0-003 → T-M0-005 → T-M0-007
 - Dependencies: T-M0-001 đã hoàn thành; bốn tài liệu readiness tồn tại; owner `D-008`; review Tech và QA phải là hai lượt riêng dù cùng một người đội nhiều vai.
 - Files được phép sửa: bốn file `docs/validation/m0-*.md`, `docs/reviews/M0_BENCHMARK_READINESS_REVIEW.md`, và phần readiness/traceability của `plan.md`, `tasks.md`, `acceptance.md` nếu không đổi nghĩa requirement.
 - Do not modify: source V1, application candidate, ADR status/choice, production budget, encryption, clinical/measurement threshold, `AGENTS.template.md`/`AGENTS.md`, Git remote/history.
-- Workload/evidence/stop rules: `DP-DEV`–`DP-EDGE`, `WL-001`–`WL-020`, toàn bộ `MET-*`, `VAL-M0-STOP-001`–`016`, JSONL schema `m0-benchmark-run/0.1.0`.
+- Workload/evidence/stop rules: `DP-DEV`–`DP-EDGE`, `WL-001`–`WL-020`, toàn bộ `MET-*`, `VAL-M0-STOP-001`–`016`, JSONL schema hiện hành `m0-benchmark-run/0.2.0-proposed`; chưa khóa cho run thật.
 - Out of scope: scaffold/install/build/test/benchmark/package/migration; chọn shell/runtime/encryption; thu raw camera hoặc health data thật.
 - Tests to add/update: không viết validator trong task readiness; review schema/link/duplicate-ID bằng read-only command khi có tool phù hợp.
 - Verification command dự kiến: `<canonical> validate:m0-protocol`, `<canonical> validate:m0-evidence`; chưa tồn tại manifest nên chưa thể xác minh. Trong change set tài liệu chỉ dùng `git diff --check`, `git diff --stat`, `rg`/link review.
@@ -54,8 +54,8 @@ T-M0-003 → T-M0-005 → T-M0-007
 - [x] T-M0-001 audit read-only có path/commit/evidence.
 - [x] Device/workload/metric/evidence/stop-rule proposal tồn tại.
 - [x] Fair-comparison và raw-artifact prohibition được ghi.
-- [ ] Tech review `APPROVED` ở lượt riêng.
-- [ ] QA review `APPROVED` ở lượt riêng.
+- [ ] Tech review `APPROVED` ở lượt riêng — hiện `CHANGES_REQUIRED` tại `M0_TECH_REVIEW.md`.
+- [ ] QA review `APPROVED` ở lượt riêng — hiện `CHANGES_REQUIRED` tại `M0_QA_REVIEW.md`.
 - [ ] Privacy + Security approval cho artifact/stop rules.
 - [ ] Các `TBD` cần cho dry-run có owner và deadline; observed device được gán trước workload tương ứng.
 - [ ] Canonical validation command được tạo/xác minh trong task scaffold sau khi được phép; hiện chỉ là placeholder.
@@ -197,6 +197,6 @@ T-M0-003 → T-M0-005 → T-M0-007
 
 ## Điều kiện bắt đầu T-M0-002
 
-- Hiện tại: `CONDITIONALLY READY`, không được bắt đầu implementation.
+- Hiện tại: `NOT READY` sau Tech và QA review độc lập; không được bắt đầu T-M0-002 hoặc implementation.
 - Chỉ chuyển `READY` khi approval table cho Tech và QA là `APPROVED`, Privacy/Security không còn blocking comment, protocol version bị khóa trước result, và mọi field cần cho lần chạy kế tiếp không còn `TBD` vô chủ.
 - Cùng một người có thể đội Product/Tech/QA nhưng phải review Tech và QA ở hai lượt độc lập; không giả chữ ký/chuyên gia. Clinical/privacy decision chưa có thẩm quyền vẫn `REQUIRED`/`NOT_REVIEWED`.

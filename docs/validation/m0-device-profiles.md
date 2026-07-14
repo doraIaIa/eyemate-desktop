@@ -111,4 +111,4 @@ Các command này chỉ là đề xuất capability, chưa chạy và có thể 
 | Tài liệu | Version | Owner | Reviewer role | Decision | Review date | Blocking comments | Next review trigger |
 |---|---|---|---|---|---|---|---|
 | `m0-device-profiles.md` | `0.1.0-proposed` | Tech | Tech | `CHANGES_REQUIRED` | 2026-07-14 | `DP-DEV` mới partial observed; bốn target và mapping máy thật chưa được khóa | Khi target/mapping plan có evidence và field run-critical hoàn tất |
-| `m0-device-profiles.md` | `0.1.0-proposed` | Tech | QA | `NOT_REVIEWED` | — | Chưa xác nhận coverage camera/driver/geometry | Sau Tech review, ở lượt review riêng |
+| `m0-device-profiles.md` | `0.1.0-proposed` | Tech | QA | `CHANGES_REQUIRED` | 2026-07-14 | Target/mapping máy thật chưa khóa; `DP-DEV` thiếu camera resolution/FPS, controlled network và package identity; không có external camera cho `WL-008` | Khi mapping/profile run-critical có evidence và version/checksum khóa trước result |
