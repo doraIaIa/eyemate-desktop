@@ -18,7 +18,7 @@
     "architecture": "node tools/m1/check-architecture.mjs",
     "privacy": "node tools/m1/check-privacy-boundaries.mjs",
     "verify:m1": "npm run lint && npm run typecheck && npm run unit && npm run integration && npm run architecture && npm run privacy && npm run acceptance && npm run build",
-    "verify": "npm run verify:m1 && npm run acceptance:m2 && npm run acceptance:m3",
+    "verify": "npm run verify:m1 && npm run accessibility && npm run acceptance:m2 && npm run acceptance:m3",
     "release:verify": "npm run verify && npm run build:msix:m1",
     "release:provenance": "npm run build:msix:m1 && node tools/m4/generate-release-provenance.mjs",
     "accessibility": "node tools/m4/check-accessibility.mjs",

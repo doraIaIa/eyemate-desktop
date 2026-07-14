@@ -31,3 +31,12 @@ test("weekly digest is deterministic and requires three observed days", () => {
   assert.equal(first.missingDays, 4);
   assert.deepEqual(aggregateWeekly(days, "2026-07-14", "Asia/Bangkok"), first);
 });
+test("baseline keeps low-quality and different contexts out of a ready reference", () => {
+  const config = { version: "base/1", minimumSamples: 3, staleAfterDays: 7 };
+  const inputs = [valid, { ...valid, sourceId: "work-low-1", quality: "LOW" as const }, { ...valid, sourceId: "work-other-1", contextKey: "different-device" }];
+  const snapshot = buildBaseline(inputs, "timer-only", config, "2026-07-15T00:00:00.000Z");
+  assert.equal(snapshot.state, "LEARNING");
+  assert.equal(snapshot.sampleCount, 1);
+  assert.equal(snapshot.sourceIds.includes("work-low-1"), false);
+  assert.equal(snapshot.sourceIds.includes("work-other-1"), false);
+});
