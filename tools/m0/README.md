@@ -35,3 +35,5 @@ Nó không thay scanner sink runtime, scrubber, checksum-manifest generator, net
 `inspect-static-egress.mjs` recursively inspects repo-local production `tools/m0/*.mjs` (fixture runners are excluded) for network modules, APIs and URL literals. A clean result is static evidence about this source set only; it does not prove the behavior of WPR, Windows or any other system tool.
 
 `check-tool-output-admission.mjs` quarantines raw capture/dump outputs (`.etl`, `.blg`, `.dmp`, `.mdmp`) before opening them. Only `.json`, `.jsonl` and `.txt` can be considered, and each must pass the existing scanner. Quarantine is not a safety finding or egress conclusion; it prevents raw output from being ingested.
+
+`validate-m0-run-plan.mjs` validates a proposed versioned run plan before evidence collection. It rejects missing/TBD run-critical fields, invalid planned repetitions/slots and missing expected metrics; it does not choose timing, thresholds or a candidate.

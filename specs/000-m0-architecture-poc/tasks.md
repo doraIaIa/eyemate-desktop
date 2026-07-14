@@ -70,6 +70,13 @@ last_reviewed: 2026-07-14
 - Verification command: `node tools/m0/run-tool-output-admission-fixture-tests.mjs`.
 - Out of scope: ETL parsing, WPR retry, artifact upload, raw trace retention or claim that a quarantined output is safe.
 
+## T-M0-003J — Run-plan readiness validator
+
+- Goal: reject a proposed run plan when run-critical fields are missing/TBD, planned slots are invalid or required metric set is absent; no benchmark is started.
+- Dependencies: T-M0-003 and T-M0-003F.
+- Verification command: `node tools/m0/run-run-plan-fixture-tests.mjs`.
+- Out of scope: setting protocol thresholds/values, candidate selection, camera, package or benchmark execution.
+
 ## T-M0-003B — SHA-256 manifest evidence artifact
 
 - Goal: sinh và verify manifest SHA-256 deterministic cho artifact `artifacts/...` đã qua scanner, dùng relative path/type/size/hash/scanner version/schema version.
