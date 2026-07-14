@@ -129,7 +129,9 @@ function withdrawCameraConsent(): void {
 }
 
 function analyticsInputs(): readonly AnalyticsInput[] {
-  return (storage?.listM3Records("SOURCE") ?? []).flatMap((record) => { try { return [validateAnalyticsInput(JSON.parse(record.payloadJson) as AnalyticsInput)]; } catch { return []; } });
+  const resets = (storage?.listM3Records("BASELINE") ?? []).filter((record) => { try { return (JSON.parse(record.payloadJson) as { state?: string }).state === "RESET"; } catch { return false; } });
+  const resetAt = resets.length ? Math.max(...resets.map((record) => Date.parse(record.createdAt))) : Number.NEGATIVE_INFINITY;
+  return (storage?.listM3Records("SOURCE") ?? []).flatMap((record) => { try { const input = validateAnalyticsInput(JSON.parse(record.payloadJson) as AnalyticsInput); return Date.parse(input.occurredAtUtc) >= resetAt ? [input] : []; } catch { return []; } });
 }
 
 function generateM3Report(): PersonalReport {
@@ -168,7 +170,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle("m3:generate-report", () => generateM3Report());
   ipcMain.handle("m3:list-reports", () => listM3Reports());
   ipcMain.handle("m3:preview-professional-summary", () => renderProfessionalSummary(generateM3Report()));
-  ipcMain.handle("m3:reset-baseline", () => storage?.deleteM3Records("BASELINE") ?? "DELETED");
+  ipcMain.handle("m3:reset-baseline", () => { const now = new Date().toISOString(); storage?.saveM3Record({ id: `baseline-reset-${randomUUID().slice(0, 12)}`, kind: "BASELINE", createdAt: now, payloadJson: JSON.stringify({ state: "RESET", version: "m3-baseline/0.1.0" }) }); return "DELETED"; });
   ipcMain.handle("m3:delete-data", () => storage?.deleteM3Records() ?? "DELETED");
   ipcMain.handle("m3:export", (_event, destination: string, format: LocalExportFormat) => { const report = generateM3Report(); const content = format === "JSON" ? JSON.stringify(report, null, 2) : renderProfessionalSummary(report); return writeLocalExport(destination, content); });
 }
