@@ -1,0 +1,14 @@
+{
+  "name": "eyemate-desktop",
+  "private": true,
+  "version": "0.0.0-m0",
+  "type": "module",
+  "scripts": {
+    "test:state:m0": "node candidates/shared/run-state-fixture-tests.mjs",
+    "test:electron:m0": "electron candidates/electron/main.mjs --test",
+    "check:tauri:m0": "cargo check --manifest-path candidates/tauri/src-tauri/Cargo.toml"
+  },
+  "devDependencies": {
+    "electron": "^37.10.3"
+  }
+}

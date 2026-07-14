@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="vi">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>EyeMate M0 Candidate</title></head>
+<body>
+  <main>
+    <h1>EyeMate M0 — Camera-off POC</h1>
+    <p id="state" aria-live="polite">CAMERA_OFF</p>
+    <button id="request" type="button">Yêu cầu camera</button>
+    <button id="unavailable" type="button">Mô phỏng camera không khả dụng</button>
+    <button id="stop" type="button">Dừng</button>
+  </main>
+  <script type="module">
+    import { CAMERA_STATES, transitionCameraState } from './m0-state.mjs';
+    let current = CAMERA_STATES.OFF;
+    const state = document.querySelector('#state');
+    function apply(action) { current = transitionCameraState(current, action); state.textContent = current; }
+    document.querySelector('#request').addEventListener('click', () => apply('REQUEST_CAMERA'));
+    document.querySelector('#unavailable').addEventListener('click', () => apply('SIMULATE_UNAVAILABLE'));
+    document.querySelector('#stop').addEventListener('click', () => apply('STOP'));
+  </script>
+</body>
+</html>
