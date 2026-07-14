@@ -12,6 +12,8 @@ node tools/m0/generate-evidence-manifest.mjs verify <evidence-root> manifests/m0
 node tools/m0/run-manifest-fixture-tests.mjs
 node tools/m0/initialize-run-directory.mjs init <evidence-root> '<metadata-json>' --dry-run
 node tools/m0/run-initializer-fixture-tests.mjs
+node tools/m0/collect-measurement-tool-inventory.mjs collect <evidence-root> artifacts/measurement-tool-inventory.json
+node tools/m0/run-tool-inventory-fixture-tests.mjs
 ```
 
 Validator chỉ đọc JSONL, in reason code tối thiểu và không echo record/input. Fixture là dữ liệu synthetic, không chứa raw frame/video/landmark, dữ liệu sức khỏe, đường dẫn người dùng hay secret.
@@ -25,3 +27,5 @@ Nó không thay scanner sink runtime, scrubber, checksum-manifest generator, net
 `scan-evidence-artifact.mjs` chỉ scan artifact text tối đa 1 MiB theo artifact type allowlist. Nó từ chối type không biết, binary, forbidden field/value cơ bản và không echo input. Scanner này là lớp pre-ingest tối thiểu, không thay thế quét sink runtime hoặc scrubber.
 
 `generate-evidence-manifest.mjs` dùng SHA-256 của Node, chỉ nhận list và manifest relative bên trong evidence root; entry bắt buộc nằm dưới `artifacts/`. Trước khi hash, mỗi entry phải qua scanner. Generate ghi manifest bằng temporary file cùng thư mục rồi rename; manifest deterministic không có timestamp, absolute path, username, hostname hoặc machine identifier. Verify thường kiểm hash/size/scanner/schema/path; `--strict` còn từ chối file dưới `artifacts/` không có trong manifest. Exit `0` là hợp lệ, `1` là reject/invalid contract, `2` là usage hoặc input/root không đọc được. SHA-256 chỉ chứng minh integrity sau khi manifest được tạo; nó không phải chữ ký số hay immutable attestation.
+
+`collect-measurement-tool-inventory.mjs` chỉ chạy allowlist probe local, cố định cho Node, WPR, Xperf, Logman và Wevtutil; dùng `spawnSync(..., { shell: false })`, timeout ngắn và không ghi stdout/stderr thô, đường dẫn executable, hostname hay username. Đây là ngoại lệ `node:child_process` hẹp duy nhất ngoài fixture runner: không nhận executable/argument từ người dùng và không mở network/camera. Artifact `resource-trace` được scanner kiểm trước khi ghi atomically dưới `artifacts/`; component symlink/junction bị từ chối. Inventory chỉ chứng minh khả dụng và phiên bản được chuẩn hoá nếu probe an toàn trả về được; egress và auto-update luôn `NOT_EVALUATED_OFFLINE_ONLY`, không phải kết quả network. Exit `0` là tạo thành công, `1` là từ chối contract/path, `2` là usage, root/output hoặc safe probe không đọc được.

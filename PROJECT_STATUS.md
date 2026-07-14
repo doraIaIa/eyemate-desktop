@@ -2,44 +2,30 @@
 
 Last updated: 2026-07-14
 Current milestone: M0 — Architecture POC
-Current task: T-M0-003D — Synthetic evidence pipeline integration
+Current task: T-M0-003E — Local measurement-tool inventory
 Task state: DONE
 
-Latest verified commit: 51cad23
-Task base commit: 51cad23
-Working tree: clean after T-M0-003C commit
-Files currently modified: NONE
+Git verification:
+
+- Current task commit and working-tree state must be read from `git log --oneline -1` and `git status --short`; this file intentionally does not duplicate a commit hash.
+- V1 remains read-only at `F:\dry-eye-app`; required baseline commit is `77ad32f1b519418d882d2d476f13206644536df9`.
 
 Completed in current task:
-- Atomic initializer, component policy, cleanup, dry-run, concurrent worker and junction fixture.
 
-Verification already run:
-- `node tools/m0/run-initializer-fixture-tests.mjs`: 15 PASS
-- validator/scanner/manifest regressions: PASS; manifest file-symlink: SKIP (EPERM)
-- `git diff --check`: PASS
+- Local-only allowlist collector for Node, WPR, Xperf, Logman and Wevtutil.
+- Scrubbed, scanner-checked and atomically written `resource-trace` inventory artifact.
+- Inventory records availability and safely parsed version only; raw command output, executable paths, username and hostname are excluded.
 
-Still remaining:
-- Select the next M0 measurement-readiness task.
+Verification completed:
 
-Next exact action:
-- Implement local measurement-tool inventory.
+- `node tools/m0/run-tool-inventory-fixture-tests.mjs`: 7 PASS, including unsafe path and junction rejection with no outside write.
+- Egress and auto-update remain `NOT_EVALUATED_OFFLINE_ONLY`; this task does not open network or camera.
+- The full M0 regression suite and `git diff --check` are required immediately before commit.
 
-Next exact command:
-- `node tools/m0/run-synthetic-pipeline.mjs`
+Remaining M0 readiness work:
 
-Blockers requiring user: NONE
+- Select and implement the next dependency-safe measurement readiness task after this commit; no camera, shell selection or benchmark run is started by this task.
 
-Acceptance:
-- REL-M0-003: PASS — initializer fixtures; file-symlink integration SKIP (EPERM), must rerun before benchmark chính thức
-- VAL-M0-001: PASS — regression fixtures
-- AC-M0-013: PASS (synthetic tooling scope) — pipeline runner
+Known limit:
 
-Evidence paths:
-- `tools/m0/run-synthetic-pipeline.mjs`
-
-Important decisions:
-- Initialization context is not a measurement run record.
-- Synthetic pipeline creates no retained evidence; all fixtures are cleaned from temporary roots.
-
-Do not redo:
-- Do not modify V1; rerun file-symlink integration before benchmark chính thức.
+- File-symlink integration in the manifest suite remains `SKIP (EPERM)` and must be rerun before an official benchmark.
