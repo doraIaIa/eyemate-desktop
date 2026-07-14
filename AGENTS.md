@@ -1,10 +1,10 @@
-# Hướng dẫn tác nhân — EyeMate V2 M1
+# Hướng dẫn tác nhân — EyeMate V2 M2
 
 ## Phạm vi và nguồn sự thật
 
 - Repository V2: `F:\eyemate-desktop`.
 - V1: `F:\dry-eye-app` chỉ đọc; không sửa, không commit, không sao chép mù quáng kiến trúc hay hành vi.
-- Milestone hiện hành: **M1 — Personal Checkup MVP**. Electron là desktop shell đã được chấp nhận tại `ADR-003`; không mở lại Electron/Tauri nếu không có evidence mới nghiêm trọng.
+- Milestone hiện hành: **M2 — Work Companion MVP**. Electron là desktop shell đã được chấp nhận tại `ADR-003`; không mở lại Electron/Tauri nếu không có evidence mới nghiêm trọng.
 - Dùng theo thứ tự: Git thực tế → `PROJECT_STATUS.md` → spec/acceptance/task hiện hành → code/test → `GOVERNANCE.md` → `MASTER_SPEC.md` → ADR accepted.
 - Đọc `docs/` và `specs/` theo feature đang làm; không dùng chat hay V1 làm nguồn sự thật cho behavior V2.
 
@@ -17,7 +17,7 @@
 5. Cập nhật `PROJECT_STATUS.md` theo batch, blocker hoặc milestone; gộp vào task commit khi phù hợp.
 6. Checkpoint/report chỉ khi: tối đa 5–10 commit, blocker thật, xung đột safety/privacy/data, cần quyền owner, hoặc M1 hoàn tất.
 
-## Quyền tự chủ M1
+## Quyền tự chủ M2
 
 - Được tạo/sửa code, UI, test, fixture, harness, docs và dependency repo-local cần thiết trong V2; chạy npm install/build/test/package local; tạo SQLite fixture; chạy Electron local; commit nhỏ.
 - Dependency mới phải có requirement, module owner, license, hành vi network, ảnh hưởng build và đường thay thế/gỡ bỏ được ghi trong task hoặc package metadata.
@@ -28,7 +28,7 @@
 - Sửa V1; cần Administrator hoặc system setting/toolchain ngoài phạm vi đã cho phép; signing/Store/public upload; cloud/account/telemetry; dữ liệu hoặc pilot người thật; clinical approval; thay đổi lớn consent/retention/data ownership; hoặc spec/acceptance/privacy/safety mâu thuẫn.
 - Cũng dừng nếu cần camera thật mà chưa có quyền rõ ràng, hoặc evidence mâu thuẫn khiến không thể chọn hành vi an toàn.
 
-## Kiến trúc M1
+## Kiến trúc M2
 
 - Modular monolith + ports/adapters: `app-shell`, `onboarding-consent`, `safety`, `symptom-checkup`, `measurement-quality`, `camera`, `distance`, `reports`, `user-data`, `platform-electron`.
 - Domain không import Electron, DOM, MediaPipe, ONNX hoặc SQLite. Renderer không gọi SQLite/camera SDK trực tiếp. Preload chỉ cung cấp API hẹp, typed và allowlist.
@@ -51,14 +51,13 @@
 - ADR-004 vẫn proposed: chưa chọn runtime/model camera; không dùng CDN fallback.
 - File-symlink integration M0: `SKIP (EPERM)`, phải chạy lại trước benchmark chính thức.
 
-## Lệnh M1 chuẩn
+## Lệnh M2 chuẩn
 
 Chỉ thêm lệnh vào đây sau khi tồn tại và đã chạy thành công trong `package.json`. Không bịa lệnh app/camera/package.
 
-## Definition of Done M1
+## Definition of Done M2
 
-- Electron app scaffold/build/test ổn định, lệnh lint/typecheck/unit/integration/acceptance/architecture/build chạy được.
-- Local storage migration/recovery, onboarding/Local Only/consent, survey-only checkup, Safety Gate versioned, report, export/delete/withdrawal và offline core đạt acceptance.
-- Camera-off/denied/unavailable và raw-data leak scan pass; camera measurement chỉ mở theo evidence ADR-004.
-- Release-like build chạy acceptance; V1 không đổi; không còn HIGH privacy/safety regression.
-- Có thể là `ENGINEERING_COMPLETE` nhưng chưa `PUBLIC_READY` nếu clinical content, questionnaire/license, camera thật, encryption hoặc signing còn UNKNOWN/TBD.
+- Timer-only Work Companion end-to-end có session lifecycle/recovery, nudge policy/cooldown/quiet mode, Session Summary và delete coverage.
+- Camera missing/unknown degrade trung thực; raw camera data không persistence/log/evidence.
+- Canonical verify, Electron acceptance và staged internal MSIX smoke pass; V1 không đổi.
+- Có thể là `ENGINEERING_COMPLETE_WITH_LIMITATIONS`, chưa `PUBLIC_READY` nếu camera thật, clinical, encryption, signing hoặc dynamic egress còn UNKNOWN/TBD.

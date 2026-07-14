@@ -1,14 +1,14 @@
 # Project Status
 
 Last updated: 2026-07-14
-Current milestone: M1 — Personal Checkup MVP ENGINEERING_COMPLETE_WITH_LIMITATIONS
-Current batch: M1 exit verification
-Current task: M1 exit record
-Task state: DONE_WITH_LIMITATIONS
+Current milestone: M2 — Work Companion MVP
+Current batch: M2-A/B foundation
+Current task: T-M2-002 — Companion policy engine
+Task state: IN_PROGRESS
 
-Latest verified commit: `06ea21f`
-Task base commit: `06ea21f`
-Working tree: M1 exit record chờ commit.
+Latest verified commit: `d7c8892`
+Task base commit: `d7c8892`
+Working tree: M2 task graph và session-state foundation chờ commit.
 
 Completed:
 
@@ -36,15 +36,15 @@ Verification:
 
 Remaining:
 
-- Không còn task M1 engineering bắt buộc.
+- T-M2-002 đến T-M2-006 theo `specs/012-m2-work-companion/tasks.md`.
 
 Next exact action:
 
-- Owner review M1 exit và quyết định M2; không mở M2 tự động.
+- Commit M2 foundation rồi triển khai companion policy, persistence và timer-only vertical slice.
 
 Next exact command:
 
-- `git diff --check`
+- `npm run unit`
 
 Blockers requiring owner:
 
@@ -64,6 +64,7 @@ Important decisions:
 - Electron là shell M1; ADR-004 camera runtime/model vẫn proposed.
 - Dynamic WPR egress là UNKNOWN/DEFERRED_M0_LIMITATION; không chứng minh không egress.
 - M1 ENGINEERING_COMPLETE không đồng nghĩa PUBLIC_READY.
+- M2 dùng Electron timer-only; camera runtime thật vẫn proposed/UNKNOWN.
 
 Do not redo:
 
