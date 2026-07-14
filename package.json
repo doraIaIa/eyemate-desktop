@@ -24,6 +24,8 @@
     "release:provenance": "npm run build:msix:m1 && node tools/m4/generate-release-provenance.mjs",
     "pilot:contract": "node tools/pilot/validate-pilot-contract.mjs pilot/feature-matrix.json",
     "test:pilot-contract": "node tools/pilot/run-pilot-contract-fixture-tests.mjs",
+    "camera:validate:pilot": "npm run build && electron tools/pilot/run-camera-validation.mjs",
+    "test:camera-harness": "npm run build && electron tools/pilot/run-camera-validation.mjs --smoke",
     "accessibility": "node tools/m4/check-accessibility.mjs",
     "security": "node tools/m4/check-security-posture.mjs",
     "performance:m4": "npm run build:msix:m1 && node tools/m4/measure-runtime.mjs",

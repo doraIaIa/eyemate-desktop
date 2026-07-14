@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; media-src 'self' blob:">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EyeMate · Guided Camera Validation</title>
+  <link rel="stylesheet" href="camera-harness.css">
+</head>
+<body>
+  <main>
+    <p class="eyebrow">PILOT READINESS · LOCAL HARNESS</p>
+    <h1>Kiểm tra camera có hướng dẫn</h1>
+    <p>Harness này chỉ kiểm tra lifecycle, quality tối thiểu và fallback. Không đo blink/distance accuracy, không lưu frame/video/landmark và không gửi dữ liệu.</p>
+    <section class="card">
+      <label><input id="consent" type="checkbox"> Tôi chủ động cho phép mở camera để kiểm tra local trong phiên này.</label>
+      <div class="actions"><button id="start" type="button">Bắt đầu kiểm tra</button><button id="stop" type="button" disabled>Dừng và giải phóng camera</button></div>
+    </section>
+    <section class="grid">
+      <div class="card"><video id="preview" autoplay muted playsinline aria-label="Preview camera local"></video></div>
+      <div class="card"><h2>Trạng thái</h2><p id="status" aria-live="polite">Chưa bắt đầu.</p><button id="calibrate" type="button" disabled>Xác nhận khung hình phù hợp</button><pre id="summary"></pre></div>
+    </section>
+    <p class="warning">Không dùng kết quả này để khẳng định accuracy hoặc phê duyệt clinical content.</p>
+  </main>
+  <script type="module" src="camera-harness-renderer.mjs"></script>
+</body>
+</html>
