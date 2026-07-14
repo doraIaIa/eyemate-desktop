@@ -6,7 +6,7 @@ Current batch: M2-A/B foundation
 Current task: T-M2-002 — Companion policy engine
 Task state: DONE — M2 EXIT VERIFIED
 
-Latest verified commit: `7e44df5`
+Latest verified commit: `0006286`
 Task base commit: `d7c8892`
 Working tree: M2 task graph và session-state foundation chờ commit.
 
@@ -76,7 +76,7 @@ Do not redo:
 - `npm run acceptance:m2` PASS: Electron start/pause/resume, break nudge, response, finish, persisted summary.
 - `npm run verify:m1` PASS: 30 unit tests, 8 integration tests, architecture/privacy/Electron acceptance.
 - `npm run build:msix:m1` PASS: unsigned internal package smoke only.
-- Worktree clean after `7e44df5`; V1 `F:\dry-eye-app` unchanged.
+- Worktree clean after `0006286`; V1 source was not modified (V1 repo has unrelated pre-existing untracked documentation files).
 - Limitations: real camera UNKNOWN, dynamic WPR egress UNKNOWN (`0xc5585011`), encryption TBD, no public signing/release claim.
 
 - Không làm lại M0 hoặc mở lại ADR-003.
