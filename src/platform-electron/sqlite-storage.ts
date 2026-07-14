@@ -3,7 +3,7 @@ import { dirname, join, normalize, parse, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { CameraConsentRecord, CameraConsentRepository, OnboardingProgress, OnboardingProgressRepository, OnboardingStage } from "../user-data/ports.js";
 
-export const STORAGE_SCHEMA_VERSION = 8;
+export const STORAGE_SCHEMA_VERSION = 9;
 export const RECOVERY_REQUIRED = "MIGRATION_RECOVERY_REQUIRED";
 
 export type StorageOpenResult =
@@ -18,6 +18,7 @@ export interface PersistedSession { readonly sessionId: string; readonly modeId:
 export interface PersistedNudge { readonly nudgeId: string; readonly sessionId: string; readonly decision: string; readonly reason: string; readonly policyVersion: string; readonly createdAt: string; readonly action?: string | null; readonly deliveryState?: "EMITTED" | "ABSTAINED"; }
 export type NudgeResponse = "AUTO_CORRECTED" | "ACCEPTED" | "SNOOZED" | "DISMISSED" | "IGNORED" | "UNKNOWN";
 export interface PersistedSummary { readonly summaryId: string; readonly sessionId: string; readonly status: string; readonly elapsedActiveMs: number; readonly createdAt: string; readonly summaryJson?: string; }
+export interface M3StoredRecord { readonly id: string; readonly kind: "SOURCE" | "BASELINE" | "DAILY" | "WEEKLY" | "REPORT"; readonly createdAt: string; readonly payloadJson: string; }
 
 function ensureDatabasePath(databasePath: string): string {
   const normalized = normalize(resolve(databasePath));
@@ -94,6 +95,13 @@ function createV8Schema(database: DatabaseSync): void {
   const columns = database.prepare("PRAGMA table_info(companion_nudge)").all() as unknown as readonly { name: string }[];
   if (!columns.some((column) => column.name === "action")) database.exec("ALTER TABLE companion_nudge ADD COLUMN action TEXT;");
   if (!columns.some((column) => column.name === "delivery_state")) database.exec("ALTER TABLE companion_nudge ADD COLUMN delivery_state TEXT;");
+}
+
+function createV9Schema(database: DatabaseSync): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS m3_record (record_id TEXT PRIMARY KEY, kind TEXT NOT NULL, created_at TEXT NOT NULL, payload_json TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS m3_record_kind_created ON m3_record(kind, created_at);
+  `);
 }
 
 function getSchemaVersion(database: DatabaseSync): number {
@@ -207,8 +215,25 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
     return this.#database.prepare("SELECT summary_id, session_id, status, elapsed_active_ms, created_at, summary_json FROM session_summary ORDER BY created_at DESC").all().map((row) => { const value = row as Record<string, unknown>; return { summaryId: String(value.summary_id), sessionId: String(value.session_id), status: String(value.status), elapsedActiveMs: Number(value.elapsed_active_ms), createdAt: String(value.created_at), summaryJson: value.summary_json === null ? undefined : String(value.summary_json) }; });
   }
 
+  saveM3Record(record: M3StoredRecord): boolean {
+    if (!/^[a-z0-9-]{4,100}$/i.test(record.id) || !["SOURCE", "BASELINE", "DAILY", "WEEKLY", "REPORT"].includes(record.kind) || Number.isNaN(Date.parse(record.createdAt)) || record.payloadJson.length === 0 || record.payloadJson.length > 100_000) throw new Error("INVALID_M3_RECORD");
+    try { JSON.parse(record.payloadJson); } catch { throw new Error("INVALID_M3_RECORD"); }
+    const result = this.#database.prepare("INSERT OR IGNORE INTO m3_record VALUES (?, ?, ?, ?)").run(record.id, record.kind, record.createdAt, record.payloadJson);
+    return Number(result.changes) === 1;
+  }
+
+  listM3Records(kind: M3StoredRecord["kind"]): readonly M3StoredRecord[] {
+    return this.#database.prepare("SELECT record_id, kind, created_at, payload_json FROM m3_record WHERE kind = ? ORDER BY created_at ASC").all(kind).map((row) => { const value = row as Record<string, unknown>; return { id: String(value.record_id), kind: value.kind as M3StoredRecord["kind"], createdAt: String(value.created_at), payloadJson: String(value.payload_json) }; });
+  }
+
+  deleteM3Records(kind?: M3StoredRecord["kind"]): "DELETED" {
+    if (kind === undefined) this.#database.exec("DELETE FROM m3_record;");
+    else this.#database.prepare("DELETE FROM m3_record WHERE kind = ?").run(kind);
+    return "DELETED";
+  }
+
   deleteAllLocalData(): "DELETED" {
-    this.#database.exec("BEGIN IMMEDIATE; DELETE FROM session_summary; DELETE FROM companion_nudge; DELETE FROM work_session; DELETE FROM checkup_report_snapshot; DELETE FROM camera_consent; DELETE FROM onboarding_progress; COMMIT;");
+    this.#database.exec("BEGIN IMMEDIATE; DELETE FROM m3_record; DELETE FROM session_summary; DELETE FROM companion_nudge; DELETE FROM work_session; DELETE FROM checkup_report_snapshot; DELETE FROM camera_consent; DELETE FROM onboarding_progress; COMMIT;");
     return "DELETED";
   }
 
@@ -267,6 +292,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
       createV6Schema(database);
       createV7Schema(database);
       createV8Schema(database);
+      createV9Schema(database);
       database.exec(`PRAGMA user_version = ${STORAGE_SCHEMA_VERSION}; COMMIT;`);
       assertIntegrity(database);
       return { state: "READY", storage: new LocalSqliteStorage(database), migrated: false };
@@ -277,7 +303,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
       return { state: "READY", storage: new LocalSqliteStorage(database), migrated: false };
     }
 
-    if (version < 1 || version > 7) throw new Error("UNSUPPORTED_SCHEMA_VERSION");
+    if (version < 1 || version > 8) throw new Error("UNSUPPORTED_SCHEMA_VERSION");
 
     copyFileSync(safePath, `${safePath}.backup-v1`, 0);
     backupCreated = true;
@@ -290,6 +316,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
     createV6Schema(database);
     createV7Schema(database);
     createV8Schema(database);
+    createV9Schema(database);
     database.exec(`PRAGMA user_version = ${STORAGE_SCHEMA_VERSION}; COMMIT;`);
     assertIntegrity(database);
     database.prepare("INSERT INTO migration_record VALUES (?, ?, ?, ?, ?)").run(

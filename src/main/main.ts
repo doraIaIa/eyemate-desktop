@@ -14,6 +14,7 @@ import { decideNudge, type NudgeDecision } from "../work-session/companion-polic
 import { createSessionSummary } from "../work-session/session-summary.js";
 import { InProcessNudgeAdapter } from "../work-session/nudge-adapter.js";
 import { DEFAULT_TIMER_ONLY_CONFIG } from "../work-session/companion-config.js";
+import { fromSurveyOnly, fromWorkSession } from "../personal-intelligence/source-adapter.js";
 import type { NudgeResponse } from "../platform-electron/sqlite-storage.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -49,7 +50,10 @@ function updateWorkSession(event: "START" | "STARTED" | "PAUSE" | "RESUME" | "FI
   if (workSession.state === "COMPLETED" || workSession.state === "CANCELLED") {
     const createdAt = new Date().toISOString();
     const summary = createSessionSummary(workSession, "m2-companion-policy/0.1.0");
-    storage?.saveSessionSummary({ summaryId: `summary-${randomUUID().slice(0, 8)}`, sessionId: workSession.id, status: summary.timerOutcome, elapsedActiveMs: summary.durationActiveMs, createdAt, summaryJson: JSON.stringify(summary) });
+    const summaryId = `summary-${randomUUID().slice(0, 8)}`;
+    storage?.saveSessionSummary({ summaryId, sessionId: workSession.id, status: summary.timerOutcome, elapsedActiveMs: summary.durationActiveMs, createdAt, summaryJson: JSON.stringify(summary) });
+    const source = fromWorkSession({ summaryId, sessionId: workSession.id, elapsedActiveMs: summary.durationActiveMs, createdAt, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", schemaVersion: summary.schemaVersion });
+    storage?.saveM3Record({ id: `source-${summaryId}`, kind: "SOURCE", createdAt, payloadJson: JSON.stringify(source) });
   }
   return workSession;
 }
@@ -100,7 +104,11 @@ function runSurveyOnly(request: SurveyRequest): CheckupSummary {
   const safety = evaluateSafetyGate({ answers: { safety_signal_a: request.safety, safety_signal_b: "NEGATIVE" } }, internalSafetyCatalogue);
   const draft = recordSurveyAnswer(createSurveyDraft(), "comfort_now", request.response);
   const report = createSurveyOnlyReport(draft, safety.outcome);
-  storage?.saveSurveyOnlyReport({ reportId: randomUUID(), status: report.status, action: report.action, provenanceVersion: report.provenance.reportSchemaVersion, createdAt: new Date().toISOString() });
+  const createdAt = new Date().toISOString();
+  const reportId = randomUUID();
+  storage?.saveSurveyOnlyReport({ reportId, status: report.status, action: report.action, provenanceVersion: report.provenance.reportSchemaVersion, createdAt });
+  const source = fromSurveyOnly({ reportId, createdAt, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", schemaVersion: report.provenance.reportSchemaVersion, symptomBurden: null });
+  storage?.saveM3Record({ id: `source-${reportId}`, kind: "SOURCE", createdAt, payloadJson: JSON.stringify(source) });
   return { status: report.status, source: report.source, camera: report.coverage.camera, action: report.action, missingData: report.missingData };
 }
 

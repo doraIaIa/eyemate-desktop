@@ -24,8 +24,11 @@ test("session persistence is idempotent and recovery-safe", () => {
     assert.equal(opened.storage.saveSessionSummary(summary), true);
     assert.equal(opened.storage.saveSessionSummary(summary), false);
     assert.equal(opened.storage.listSessionSummaries()[0]?.summaryJson, undefined);
+    assert.equal(opened.storage.saveM3Record({ id: "source-0001", kind: "SOURCE", createdAt: session.updatedAt, payloadJson: JSON.stringify({ source: "synthetic" }) }), true);
+    assert.equal(opened.storage.listM3Records("SOURCE").length, 1);
     assert.equal(opened.storage.deleteAllLocalData(), "DELETED");
     assert.equal(opened.storage.loadSession(session.sessionId), null);
+    assert.equal(opened.storage.listM3Records("SOURCE").length, 0);
     opened.storage.close();
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
