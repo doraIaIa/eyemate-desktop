@@ -56,3 +56,10 @@ last_reviewed: 2026-07-14
 | `AC-M0-021` | Operations/review | Cleanup manifest, retained-artifact index và post-cleanup process scan | Chưa thể xác minh |
 
 Không acceptance nào được đánh dấu đạt bằng prose hoặc demo thủ công đơn lẻ.
+
+## Benchmark evidence clarification
+
+- `AC-M0-011`–`AC-M0-013` và `AC-M0-016` chỉ có thể được đánh giá từ run record `VALID` theo `docs/validation/m0-evidence-schema.md` và workload/version trong `m0-benchmark-workloads.md`.
+- Missing/error phải dùng typed status/reason; không điền `0`. Performance threshold và allowed variance vẫn `TBD` đến khi baseline/protocol được Tech + QA duyệt.
+- `AC-M0-001`, `AC-M0-007`, `AC-M0-014`, `AC-M0-018`, `AC-M0-019` chịu immediate-stop khi có unexpected network hoặc raw-data finding; không được lấy performance result để bù gate privacy/offline.
+- Sai khác candidate về workload, asset, camera/resolution, device/power/network, package target hoặc measurement method làm run không so sánh được; không đổi nghĩa acceptance bằng normalization hậu nghiệm.

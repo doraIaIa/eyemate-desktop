@@ -31,19 +31,34 @@ T-M0-003 → T-M0-005 → T-M0-007
 - Verification command: `git status --short`, `git rev-parse --show-toplevel`, `rg --files`; mọi command manifest chỉ được liệt kê, không chạy. Command canonical hiện chưa thể xác minh.
 - Expected evidence: root/path/commit, repository map, file-level V1 findings hoặc `V1_NOT_PROVIDED`, command inventory và risk register có dẫn chứng.
 - Stop condition: dừng khi root/ownership không rõ, gặp secret/PHI/raw camera artifact, hoặc cần quyền ngoài read-only; không chuyển sang scaffold.
+- Completion record: `COMPLETED` ở commit `c51b4cd`; evidence tại `docs/audits/`; V1 commit `77ad32f1b519418d882d2d476f13206644536df9`; không sửa source V1.
 
 ## T-M0-002 — Khóa benchmark protocol và evidence schema
 
-- Goal: Tech + QA duyệt device profiles Windows 11, workload, warm-up, sampling, metric, đơn vị, trọng số và evidence schema trước candidate implementation.
+- Goal: tạo đúng một outcome — readiness package được các role bắt buộc duyệt và khóa version để hai candidate có thể được triển khai/đo công bằng.
 - Requirements/acceptance: `NFR-M0-001`–`NFR-M0-003`, `AC-M0-012`, `AC-M0-013`, `AC-M0-016`, `AC-M0-020`.
-- Dependencies: T-M0-001; owner `D-008`.
-- Files likely involved: protocol/evidence schema path được chốt trong task.
-- Do not modify: application candidate, production budget, clinical/measurement threshold.
-- Out of scope: chạy benchmark hoặc chọn shell.
-- Tests to add/update: schema/link validation cho protocol.
-- Verification command: `<canonical> validate:m0-protocol`; chưa thể xác minh.
-- Expected evidence: protocol versioned, device matrix, owner/review record và stop rule cho dữ liệu không so sánh được.
-- Stop condition: không có Windows 11 device profile, metric owner hoặc workload tương đương; không bắt đầu candidate.
+- Dependencies: T-M0-001 đã hoàn thành; bốn tài liệu readiness tồn tại; owner `D-008`; review Tech và QA phải là hai lượt riêng dù cùng một người đội nhiều vai.
+- Files được phép sửa: bốn file `docs/validation/m0-*.md`, `docs/reviews/M0_BENCHMARK_READINESS_REVIEW.md`, và phần readiness/traceability của `plan.md`, `tasks.md`, `acceptance.md` nếu không đổi nghĩa requirement.
+- Do not modify: source V1, application candidate, ADR status/choice, production budget, encryption, clinical/measurement threshold, `AGENTS.template.md`/`AGENTS.md`, Git remote/history.
+- Workload/evidence/stop rules: `DP-DEV`–`DP-EDGE`, `WL-001`–`WL-020`, toàn bộ `MET-*`, `VAL-M0-STOP-001`–`016`, JSONL schema `m0-benchmark-run/0.1.0`.
+- Out of scope: scaffold/install/build/test/benchmark/package/migration; chọn shell/runtime/encryption; thu raw camera hoặc health data thật.
+- Tests to add/update: không viết validator trong task readiness; review schema/link/duplicate-ID bằng read-only command khi có tool phù hợp.
+- Verification command dự kiến: `<canonical> validate:m0-protocol`, `<canonical> validate:m0-evidence`; chưa tồn tại manifest nên chưa thể xác minh. Trong change set tài liệu chỉ dùng `git diff --check`, `git diff --stat`, `rg`/link review.
+- Expected evidence: protocol versioned; target/observed mapping plan; metric schema; approval table; stop/invalid-run rules; adversarial review không còn BLOCKER/HIGH.
+- Stop condition: thiếu profile Windows 11/metric owner/workload tương đương/provenance/approval; assumption thành fact; hoặc cần command/application chưa được phép. Khi dừng, giữ T-M0-002 `CONDITIONALLY READY`/`NOT READY`, không bắt đầu T-M0-003.
+- Rollback/cleanup: chỉ revert change set tài liệu qua commit mới nếu owner yêu cầu; không xóa audit/evidence; không có package/process/database được tạo trong task.
+- Quyết định bị cấm: `D-003`, `D-006`, `D-009`, `D-013`, runtime/model/license, performance threshold và clinical content.
+
+### Gate checklist trước T-M0-002
+
+- [x] T-M0-001 audit read-only có path/commit/evidence.
+- [x] Device/workload/metric/evidence/stop-rule proposal tồn tại.
+- [x] Fair-comparison và raw-artifact prohibition được ghi.
+- [ ] Tech review `APPROVED` ở lượt riêng.
+- [ ] QA review `APPROVED` ở lượt riêng.
+- [ ] Privacy + Security approval cho artifact/stop rules.
+- [ ] Các `TBD` cần cho dry-run có owner và deadline; observed device được gán trước workload tương ứng.
+- [ ] Canonical validation command được tạo/xác minh trong task scaffold sau khi được phép; hiện chỉ là placeholder.
 
 ## T-M0-003 — Scaffold tối thiểu command registry và shared test fixtures
 
@@ -179,3 +194,9 @@ T-M0-003 → T-M0-005 → T-M0-007
 
 - Có thể bắt đầu ở chế độ read-only sau khi plan được duyệt và người dùng xác nhận một trong hai: cung cấp đường dẫn source V1 thật, hoặc xác nhận hiện không có source V1 để T-M0-001 ghi `V1_NOT_PROVIDED`.
 - Không được dùng việc thiếu V1 để dựng cấu trúc V2 theo giả định.
+
+## Điều kiện bắt đầu T-M0-002
+
+- Hiện tại: `CONDITIONALLY READY`, không được bắt đầu implementation.
+- Chỉ chuyển `READY` khi approval table cho Tech và QA là `APPROVED`, Privacy/Security không còn blocking comment, protocol version bị khóa trước result, và mọi field cần cho lần chạy kế tiếp không còn `TBD` vô chủ.
+- Cùng một người có thể đội Product/Tech/QA nhưng phải review Tech và QA ở hai lượt độc lập; không giả chữ ký/chuyên gia. Clinical/privacy decision chưa có thẩm quyền vẫn `REQUIRED`/`NOT_REVIEWED`.

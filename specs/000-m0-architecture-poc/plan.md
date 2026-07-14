@@ -13,13 +13,13 @@ last_reviewed: 2026-07-14
 ### Repository map đã xác minh
 
 - Repo đích: `F:\eyemate-desktop`.
-- Git: repo trống, nhánh `main`, remote `origin` trỏ `https://github.com/doraIaIa/eyemate-desktop.git`.
+- Git: nhánh `main`, remote `origin` trỏ `https://github.com/doraIaIa/eyemate-desktop.git`; baseline tài liệu ở `e599169`, audit V1 ở `c51b4cd`.
 - Tại thời điểm lập plan chưa có application source, package manifest, lockfile, CI workflow, test, build/package script hoặc canonical command.
 - Bộ tài liệu thiết kế nguồn: `C:\Users\ADMIN\Downloads\EyeMate_V2_Documentation_Pack\EyeMate_V2_Documentation`.
 - Source EyeMate V1 đã xác minh tại `F:\dry-eye-app`, Git root cùng đường dẫn, remote `QNSang/dry-eye-app`, branch `main`, commit `77ad32f1b519418d882d2d476f13206644536df9`.
 - V1 worktree trước audit có hai file untracked tồn tại sẵn: `CHAPTER_4_EVIDENCE_REPORT.md` và `PROJECT_DOCUMENTATION.md`; không dùng làm runtime evidence và không sửa.
 - Audit read-only T-M0-001 nằm tại `docs/audits/V1_REPOSITORY_MAP.md`, `V1_EVIDENCE_REGISTER.md` và `V1_M0_GAP_ANALYSIS.md`.
-- Không đổi `AGENTS.template.md` thành `AGENTS.md`; repository map và command thật chưa được xác minh.
+- Không đổi `AGENTS.template.md` thành `AGENTS.md`; repository map V1 đã có nhưng command build/test thật của V2 chưa được xác minh.
 
 ### Command đã chạy và giới hạn
 
@@ -34,7 +34,7 @@ last_reviewed: 2026-07-14
 - `tasks.md` theo governance thường tạo sau khi plan được duyệt; người dùng yêu cầu tạo trong gói plan hiện tại. Các task là đề xuất, không được bắt đầu trước phê duyệt.
 - V1 docs tuyên bố offline/zero-store, nhưng runtime code mặc định dùng MediaPipe/ONNX WASM CDN và emit raw landmarks. Tài liệu lịch sử V1 không ghi đè runtime evidence hoặc invariant V2.
 - V1 camera/storage/consent/measurement xung đột M0: auto-approve media, quality không gate cứng, missing→zero, uncalibrated numeric distance, raw landmarks/blink history qua event, IndexedDB không backup/recovery và packaging/test/CI thiếu.
-- Dòng blocker “Source V1/path thật” ở cuối plan đã lỗi thời sau audit, nhưng T-M0-001 không được phép sửa phần ngoài Existing system evidence/mismatch; nguồn đúng là ba tài liệu `docs/audits/` và cần được dọn trong change set governance kế tiếp.
+- Dòng blocker “Source V1/path thật” trước đây đã lỗi thời sau audit; change set readiness này được phép dọn vì source/commit và ba tài liệu `docs/audits/` đã xác minh.
 
 ### Phân loại mức độ chắc chắn
 
@@ -45,7 +45,18 @@ last_reviewed: 2026-07-14
 | Fact chưa quan sát được | Runtime camera/network/leakage, clean build/test/package, Windows 11/MSIX/Store, performance, model accuracy và existing user database. Các mục này giữ UNKNOWN. |
 | Assumption cần kiểm chứng | Windows 11 runner/camera có thể cấp; MSIX candidate có thể dùng test identity/certificate; một runtime local có license phù hợp. Assumption không cho phép chọn công nghệ. |
 | Proposed design | Hai spike cùng workload, shared evidence contract/fixture, RAM-only window, SQLite fixture và CI matrix. Tên module/path vẫn đề xuất. |
-| Open decision | `D-003`, `D-006`, `D-008`, `D-009`, `D-013`, runtime/model/license và việc V1 có tồn tại để migrate hay không. |
+| Open decision | `D-003`, `D-006`, `D-008`, `D-009`, `D-013`, runtime/model/license và việc reuse/migrate V1 hay chỉ dùng làm baseline lịch sử. |
+
+## M0 Benchmark Readiness Package
+
+| Điều kiện | Nguồn | Trạng thái | Gate còn lại |
+|---|---|---|---|
+| Device profiles | `docs/validation/m0-device-profiles.md` | `PROPOSED`; năm target profile có schema, owner và gate; cấu hình/máy thật còn `TBD` | Tech + QA duyệt target; gán observed machine trước run liên quan |
+| Benchmark workloads và metrics | `docs/validation/m0-benchmark-workloads.md` | `PROPOSED`; `WL-001`–`WL-020` và metric catalogue đã định nghĩa | Khóa tool, warm-up, duration, repetition, allowed variance trước benchmark |
+| Evidence schema | `docs/validation/m0-evidence-schema.md` | `PROPOSED`; JSONL/layout/provenance/checksum/retention/forbidden artifacts đã định nghĩa | Tech + QA + Privacy/Security duyệt; validator command vẫn chưa tồn tại |
+| Stop rules | `docs/validation/m0-stop-rules.md` | `PROPOSED`; safety/privacy/validity/technical/resource/decision stops đã định nghĩa | Tech + QA + Privacy/Security duyệt ở lượt riêng |
+
+T-M0-001 đã đạt acceptance ở chế độ audit read-only. Readiness package chưa phải T-M0-002 và không tạo application code. T-M0-002 chỉ được bắt đầu khi bốn tài liệu trên được review theo bảng approval, không còn `CHANGES_REQUIRED`, và tất cả field cần cho dry-run đã có owner/deadline.
 
 ## Proposed design
 
@@ -106,6 +117,13 @@ OS camera → shell camera adapter → quality gate → RAM-only window
 | Maintenance | Toolchain count, security update path, owner skill/risk và candidate-specific code | “Team quen framework” |
 
 Trọng số và device profiles phải được Tech + QA duyệt trước benchmark; chưa có trọng số mặc định.
+
+### Fair-comparison lock
+
+- Hai candidate dùng cùng UI workload tối thiểu, MediaPipe/ONNX/WASM asset, camera/resolution, Windows observed machine, power/network mode, storage fixture, package target, duration/repetition và metric collector.
+- Evidence trực tiếp phải cùng metric/method/unit; evidence V1 và feature không tương đương chỉ mang tính mô tả.
+- Không cộng metric khác đơn vị. Decision weights, nếu dùng, phải được duyệt và checksum trước khi xem result.
+- Bất kỳ sai khác workload/asset/config hoặc method kích hoạt `VAL-M0-STOP-006`/`008`; run không được normalize hậu nghiệm.
 
 ## Files
 
@@ -185,6 +203,14 @@ Các command dưới đây là **placeholder theo capability**, chưa phải com
 
 Task scaffold phải thay placeholder bằng command thật từ manifest/CI, chạy trên clean Windows runner và cập nhật plan trước khi tạo `AGENTS.md`.
 
+Các command bổ sung dưới đây cũng là **đề xuất chưa xác minh**, không được báo đã chạy:
+
+```text
+<canonical> validate:m0-protocol
+<canonical> validate:m0-evidence
+<canonical> inventory:m0-device
+```
+
 ## Rollout
 
 - M0 chỉ phát hành Internal/dev-only, không phân phối người dùng.
@@ -194,9 +220,9 @@ Task scaffold phải thay placeholder bằng command thật từ manifest/CI, ch
 
 ## Open blockers
 
-- Source V1/path thật để audit entrypoint, shell, camera, assets, storage, script, test, dependency và risk.
-- Device profiles và performance budget (`D-008`).
-- Trọng số shell decision matrix (`D-003`).
+- Device target/observed mappings, measurement tool, warm-up, duration, repetition và allowed variance (`D-008`).
+- Tech/QA/Privacy/Security approval cho readiness package; hiện đều `NOT_REVIEWED`.
+- Trọng số shell decision matrix (`D-003`) nếu dùng; phải duyệt trước khi xem result.
 - Encryption option/gate (`D-006`).
 - Windows CI runner, MSIX identity/test certificate và chính sách giữ artifact.
 - Runtime/model candidate và license chưa được chọn; ADR-004 chỉ định cách thu bằng chứng.
@@ -205,24 +231,24 @@ Task scaffold phải thay placeholder bằng command thật từ manifest/CI, ch
 
 | Requirement | Acceptance | Task | Expected evidence |
 |---|---|---|---|
-| `FR-M0-001` | `AC-M0-002`–`AC-M0-006`, `AC-M0-012`, `AC-M0-013`, `AC-M0-017` | `T-M0-004`, `T-M0-005`, `T-M0-009` | Cùng scenario/workload, raw metric bundle, decision matrix |
+| `FR-M0-001` | `AC-M0-002`–`AC-M0-006`, `AC-M0-012`, `AC-M0-013`, `AC-M0-017` | `T-M0-004`, `T-M0-005`, `T-M0-010`, `T-M0-011` | Cùng scenario/workload, raw metric bundle, decision matrix |
 | `FR-M0-002` | `AC-M0-002`–`AC-M0-004`, `AC-M0-015`, `AC-M0-017` | `T-M0-004`, `T-M0-005` | Lifecycle/error fixture và post-cleanup resource scan |
 | `FR-M0-003` | `AC-M0-005`, `AC-M0-006`, `AC-M0-014`, `AC-M0-017` | `T-M0-004`, `T-M0-005` | Typed quality/device/asset results, no numeric output |
-| `FR-M0-004` | `AC-M0-001`, `AC-M0-014` | `T-M0-004`, `T-M0-005`, `T-M0-007` | Packaged asset manifest/checksum và blocked-network trace |
-| `DATA-M0-001` | `AC-M0-007`, `AC-M0-008`, `AC-M0-018` | `T-M0-006`, `T-M0-007` | Schema dump và DB/backup forbidden-payload scan |
-| `DATA-M0-002` | `AC-M0-009`, `AC-M0-010` | `T-M0-006` | N-1/forced-failure fixture, backup và integrity output |
+| `FR-M0-004` | `AC-M0-001`, `AC-M0-014` | `T-M0-004`, `T-M0-005`, `T-M0-008` | Packaged asset manifest/checksum và blocked-network trace |
+| `DATA-M0-001` | `AC-M0-007`, `AC-M0-008`, `AC-M0-018` | `T-M0-006`, `T-M0-007`, `T-M0-008` | Schema dump và DB/backup forbidden-payload scan |
+| `DATA-M0-002` | `AC-M0-009`, `AC-M0-010` | `T-M0-006`, `T-M0-007` | N-1/forced-failure fixture, backup và integrity output |
 | `PRIV-M0-001` | `AC-M0-007`, `AC-M0-018`, `AC-M0-019` | `T-M0-007` | Tách DB/backup scan khỏi log/crash/telemetry/temp scan |
 | `SEC-M0-001` | `AC-M0-001`, `AC-M0-014`, `AC-M0-019` | `T-M0-007` | Network capture và sanitized diagnostics scan |
 | `NFR-M0-001` | `AC-M0-012`, `AC-M0-016` | `T-M0-002`, `T-M0-010` | Protocol, startup/RAM/CPU/latency raw samples |
 | `NFR-M0-002` | `AC-M0-012`, `AC-M0-013` | `T-M0-002`, `T-M0-010`, `T-M0-011` | Locked workload/sampling và normalized matrix |
 | `NFR-M0-003` | `AC-M0-012`, `AC-M0-020` | `T-M0-002`, `T-M0-009` | Windows 11 device/runtime evidence |
-| `REL-M0-001` | `AC-M0-011`, `AC-M0-020` | `T-M0-008`, `T-M0-009` | Two clean CI builds, MSIX/checksum/manifest |
-| `REL-M0-002` | `AC-M0-001`, `AC-M0-008`, `AC-M0-016` | `T-M0-006`, `T-M0-008` | Clean-install data path, startup và local asset evidence |
-| `REL-M0-003` | `AC-M0-011`, `AC-M0-012` | `T-M0-008`, `T-M0-010` | Build/toolchain/lockfile/schema record |
+| `REL-M0-001` | `AC-M0-011`, `AC-M0-020` | `T-M0-009`, `T-M0-010` | Two clean CI builds, MSIX/checksum/manifest |
+| `REL-M0-002` | `AC-M0-001`, `AC-M0-008`, `AC-M0-016` | `T-M0-006`, `T-M0-007`, `T-M0-009` | Clean-install data path, startup và local asset evidence |
+| `REL-M0-003` | `AC-M0-011`, `AC-M0-012` | `T-M0-003`, `T-M0-010` | Build/toolchain/lockfile/schema record |
 | `REL-M0-004` | `AC-M0-020` | `T-M0-009` | Store/MSIX feasibility checklist; no publish |
 | `REL-M0-005` | `AC-M0-021` | `T-M0-012` | Cleanup manifest, retained-artifact index, process scan |
 | `VAL-M0-001` | `AC-M0-011`–`AC-M0-013` | `T-M0-002`, `T-M0-010`, `T-M0-011` | Protocol + raw data + decision matrix |
-| `VAL-M0-002` | `AC-M0-005`, `AC-M0-013` | `T-M0-011` | ADR ghi rõ integration-only và cấm numeric claim |
+| `VAL-M0-002` | `AC-M0-005`, `AC-M0-013` | `T-M0-004`, `T-M0-005`, `T-M0-011` | ADR ghi rõ integration-only và cấm numeric claim |
 
 Không requirement M1–M5 nào được implement trong M0; `FR-CAM-*`/`FR-DST-*` chỉ là dependency semantics để thiết kế test POC, không mở rộng scope.
 
