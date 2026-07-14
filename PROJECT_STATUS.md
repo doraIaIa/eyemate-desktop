@@ -2,13 +2,13 @@
 
 Last updated: 2026-07-14
 Current milestone: M0 — Architecture POC
-Current task: T-M0-003F — Measurement-harness overhead control dry-run
+Current task: T-M0-003G — Fail-closed measurement-tool egress gate
 Task state: DONE
 
 Git verification:
 
-- Latest verified commit: `0c3363c`.
-- Task base commit: `0c3363c`.
+- Latest verified commit: `d178f60`.
+- Task base commit: `d178f60`.
 - Working tree: expected clean after this task commit.
 - Files currently modified: NONE after commit.
 - V1 remains read-only at `F:\dry-eye-app`; required baseline commit is `77ad32f1b519418d882d2d476f13206644536df9`.
@@ -27,15 +27,15 @@ Verification already run for T-M0-003E:
 
 Still remaining in M0:
 
-- Egress/auto-update inspection and tool-output inspection remain required before camera/network benchmark.
+- Egress/auto-update trace evidence remains required before camera/network benchmark; the fail-closed gate is implemented but is not that evidence.
 
 Next exact action:
 
-- Select the next local-only measurement-readiness task; do not invoke any candidate, camera or network.
+- Obtain authorization for a temporary WPR Network capture plan, then inspect/scrub its output outside the evidence root before any ingest.
 
 Next exact command:
 
-- `node tools/m0/run-tool-inventory-fixture-tests.mjs`.
+- `wpr -help start`.
 
 Known limit:
 

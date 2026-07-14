@@ -42,6 +42,14 @@ last_reviewed: 2026-07-14
 - Out of scope: Electron/Tauri, camera, process của candidate, network/egress probe, performance comparison, pass/fail budget hoặc outlier removal.
 - Stop condition: worker không khởi tạo/cleanup được, attempt thiếu, output không qua scanner, hoặc evidence bị trình bày như benchmark result.
 
+## T-M0-003G — Fail-closed measurement-tool egress gate
+
+- Goal: chặn benchmark khi inventory tool chưa có evidence egress/auto-update; không suy diễn `PASS` từ `NOT_EVALUATED`.
+- Dependencies: T-M0-003E.
+- Verification command: `node tools/m0/run-tool-egress-gate-fixture-tests.mjs`.
+- Expected evidence: `NOT_EVALUATED_OFFLINE_ONLY` bị từ chối bằng `BLOCKED_UNVERIFIED_EGRESS`; chỉ evidence đã được xác minh riêng mới qua gate.
+- Out of scope: bắt đầu WPR/network capture, thay firewall/system setting, khẳng định tool không egress hoặc thay thế trace thật.
+
 ## T-M0-003B — SHA-256 manifest evidence artifact
 
 - Goal: sinh và verify manifest SHA-256 deterministic cho artifact `artifacts/...` đã qua scanner, dùng relative path/type/size/hash/scanner version/schema version.
