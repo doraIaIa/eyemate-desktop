@@ -5,6 +5,7 @@ const statusElement = document.querySelector<HTMLParagraphElement>("#runtime-sta
 const pageTitleElement = document.querySelector<HTMLHeadingElement>("#page-title");
 const pageBodyElement = document.querySelector<HTMLParagraphElement>("#page-body");
 const pageStateElement = document.querySelector<HTMLParagraphElement>("#page-state");
+const privacySummaryElement = document.querySelector<HTMLParagraphElement>("#privacy-summary");
 
 async function renderRuntimeStatus(): Promise<void> {
   if (statusElement === null) {
@@ -21,11 +22,22 @@ async function renderRuntimeStatus(): Promise<void> {
 
 void renderRuntimeStatus();
 
+async function renderPrivacySummary(): Promise<void> {
+  if (privacySummaryElement === null) return;
+  try {
+    const summary = await window.eyeMate.getPrivacySummary();
+    privacySummaryElement.textContent = `Camera: ${summary.cameraState.replaceAll("_", " ")}. Export cần xác nhận đích: có.`;
+  } catch {
+    privacySummaryElement.textContent = "Không thể đọc tóm tắt quyền riêng tư cục bộ.";
+  }
+}
+
 function renderScreen(screenId: ScreenId): void {
   const screen = getScreen(screenId);
   if (pageTitleElement !== null) pageTitleElement.textContent = screen.title;
   if (pageBodyElement !== null) pageBodyElement.textContent = screen.body;
   if (pageStateElement !== null) pageStateElement.textContent = `Trạng thái: ${screen.state.replaceAll("_", " ")}`;
+  if (screen.id === "privacy") void renderPrivacySummary();
 
   for (const navigationButton of Array.from(document.querySelectorAll<HTMLButtonElement>("[data-screen]"))) {
     const selected = navigationButton.dataset.screen === screen.id;

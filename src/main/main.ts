@@ -3,6 +3,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createSecureWindowOptions } from "./window-options.js";
 import type { RuntimeInfo } from "../shared/runtime-contract.js";
+import type { PrivacySummary } from "../shared/m1-contract.js";
+import { createSurveyOnlyExportPreview, resolveDeletionResult } from "../user-data/data-controls.js";
+import { openLocalSqliteStorage, resolveDatabasePath, type LocalSqliteStorage } from "../platform-electron/sqlite-storage.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const rendererIndexPath = path.join(currentDirectory, "../renderer/index.html");
@@ -16,8 +19,22 @@ function getRuntimeInfo(): RuntimeInfo {
   };
 }
 
+let storage: LocalSqliteStorage | null = null;
+
+function getPrivacySummary(): PrivacySummary {
+  const consent = storage?.loadCameraConsent();
+  const preview = createSurveyOnlyExportPreview();
+  return {
+    localOnly: true,
+    cameraState: consent?.decision === "GRANTED" ? "CAMERA_UNAVAILABLE" : "SKIPPED_NO_CONSENT",
+    exportRequiresConfirmation: preview.requiresDestinationConfirmation,
+    deletionResults: [resolveDeletionResult(0, 0)]
+  };
+}
+
 function registerIpcHandlers(): void {
   ipcMain.handle("runtime:get-info", (): RuntimeInfo => getRuntimeInfo());
+  ipcMain.handle("privacy:get-summary", (): PrivacySummary => getPrivacySummary());
 }
 
 async function createMainWindow(): Promise<BrowserWindow> {
@@ -45,9 +62,19 @@ async function runSmoke(window: BrowserWindow): Promise<void> {
   if (runtimeMode !== "LOCAL_ONLY") {
     throw new Error("M1_RUNTIME_MODE_INVALID");
   }
+
+  const privacyMode = await window.webContents.executeJavaScript(
+    "window.eyeMate.getPrivacySummary().then((value) => value.localOnly)",
+    true
+  );
+  if (privacyMode !== true) {
+    throw new Error("M1_PRIVACY_BRIDGE_INVALID");
+  }
 }
 
 app.whenReady().then(async () => {
+  const openedStorage = openLocalSqliteStorage(resolveDatabasePath(app.getPath("userData")));
+  if (openedStorage.state === "READY") storage = openedStorage.storage;
   registerIpcHandlers();
   const window = await createMainWindow();
 
@@ -76,3 +103,5 @@ app.on("window-all-closed", () => {
     app.quit();
   }
 });
+
+app.on("before-quit", () => storage?.close());
