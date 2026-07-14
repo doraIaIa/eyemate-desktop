@@ -3,7 +3,7 @@ import { dirname, join, normalize, parse, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { CameraConsentRecord, CameraConsentRepository, OnboardingProgress, OnboardingProgressRepository, OnboardingStage } from "../user-data/ports.js";
 
-export const STORAGE_SCHEMA_VERSION = 4;
+export const STORAGE_SCHEMA_VERSION = 5;
 export const RECOVERY_REQUIRED = "MIGRATION_RECOVERY_REQUIRED";
 
 export type StorageOpenResult =
@@ -13,6 +13,10 @@ export type StorageOpenResult =
 export interface OpenStorageOptions {
   readonly forceMigrationFailure?: boolean;
 }
+
+export interface PersistedSession { readonly sessionId: string; readonly modeId: string; readonly state: string; readonly elapsedActiveMs: number; readonly updatedAt: string; }
+export interface PersistedNudge { readonly nudgeId: string; readonly sessionId: string; readonly decision: string; readonly reason: string; readonly policyVersion: string; readonly createdAt: string; }
+export interface PersistedSummary { readonly summaryId: string; readonly sessionId: string; readonly status: string; readonly elapsedActiveMs: number; readonly createdAt: string; }
 
 function ensureDatabasePath(databasePath: string): string {
   const normalized = normalize(resolve(databasePath));
@@ -64,6 +68,14 @@ function createV3Schema(database: DatabaseSync): void {
 
 function createV4Schema(database: DatabaseSync): void {
   database.exec("CREATE TABLE IF NOT EXISTS checkup_report_snapshot (report_id TEXT PRIMARY KEY, status TEXT NOT NULL, source TEXT NOT NULL, camera_status TEXT NOT NULL, action TEXT NOT NULL, provenance_version TEXT NOT NULL, created_at TEXT NOT NULL);");
+}
+
+function createV5Schema(database: DatabaseSync): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS work_session (session_id TEXT PRIMARY KEY, mode_id TEXT NOT NULL, state TEXT NOT NULL, elapsed_active_ms INTEGER NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS companion_nudge (nudge_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, decision TEXT NOT NULL, reason TEXT NOT NULL, policy_version TEXT NOT NULL, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS session_summary (summary_id TEXT PRIMARY KEY, session_id TEXT NOT NULL UNIQUE, status TEXT NOT NULL, elapsed_active_ms INTEGER NOT NULL, created_at TEXT NOT NULL);
+  `);
 }
 
 function getSchemaVersion(database: DatabaseSync): number {
@@ -134,8 +146,29 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
     this.#database.prepare("INSERT INTO checkup_report_snapshot VALUES (?, ?, 'SURVEY_ONLY', 'NOT_MEASURED', ?, ?, ?)").run(snapshot.reportId, snapshot.status, snapshot.action, snapshot.provenanceVersion, snapshot.createdAt);
   }
 
+  saveSession(session: PersistedSession): void {
+    if (!/^[a-z0-9-]{8,64}$/i.test(session.sessionId) || !Number.isSafeInteger(session.elapsedActiveMs) || session.elapsedActiveMs < 0 || Number.isNaN(Date.parse(session.updatedAt))) throw new Error("INVALID_SESSION_RECORD");
+    this.#database.prepare("INSERT INTO work_session VALUES (?, ?, ?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET mode_id=excluded.mode_id, state=excluded.state, elapsed_active_ms=excluded.elapsed_active_ms, updated_at=excluded.updated_at").run(session.sessionId, session.modeId, session.state, session.elapsedActiveMs, session.updatedAt);
+  }
+
+  loadSession(sessionId: string): PersistedSession | null {
+    const row = this.#database.prepare("SELECT session_id, mode_id, state, elapsed_active_ms, updated_at FROM work_session WHERE session_id = ?").get(sessionId) as Record<string, unknown> | undefined;
+    return row ? { sessionId: String(row.session_id), modeId: String(row.mode_id), state: String(row.state), elapsedActiveMs: Number(row.elapsed_active_ms), updatedAt: String(row.updated_at) } : null;
+  }
+
+  recordNudge(nudge: PersistedNudge): boolean {
+    if (!/^[a-z0-9-]{8,64}$/i.test(nudge.nudgeId) || !/^[a-z0-9-]{8,64}$/i.test(nudge.sessionId) || Number.isNaN(Date.parse(nudge.createdAt))) throw new Error("INVALID_NUDGE_RECORD");
+    const result = this.#database.prepare("INSERT OR IGNORE INTO companion_nudge VALUES (?, ?, ?, ?, ?, ?)").run(nudge.nudgeId, nudge.sessionId, nudge.decision, nudge.reason, nudge.policyVersion, nudge.createdAt);
+    return Number(result.changes) === 1;
+  }
+
+  saveSessionSummary(summary: PersistedSummary): boolean {
+    if (!/^[a-z0-9-]{8,64}$/i.test(summary.summaryId) || !/^[a-z0-9-]{8,64}$/i.test(summary.sessionId) || !Number.isSafeInteger(summary.elapsedActiveMs) || summary.elapsedActiveMs < 0 || Number.isNaN(Date.parse(summary.createdAt))) throw new Error("INVALID_SESSION_SUMMARY");
+    try { this.#database.prepare("INSERT INTO session_summary VALUES (?, ?, ?, ?, ?)").run(summary.summaryId, summary.sessionId, summary.status, summary.elapsedActiveMs, summary.createdAt); return true; } catch (error) { if (error instanceof Error && error.message.includes("UNIQUE")) return false; throw error; }
+  }
+
   deleteAllLocalData(): "DELETED" {
-    this.#database.exec("BEGIN IMMEDIATE; DELETE FROM checkup_report_snapshot; DELETE FROM camera_consent; DELETE FROM onboarding_progress; COMMIT;");
+    this.#database.exec("BEGIN IMMEDIATE; DELETE FROM session_summary; DELETE FROM companion_nudge; DELETE FROM work_session; DELETE FROM checkup_report_snapshot; DELETE FROM camera_consent; DELETE FROM onboarding_progress; COMMIT;");
     return "DELETED";
   }
 
@@ -190,6 +223,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
       createV2Schema(database);
       createV3Schema(database);
       createV4Schema(database);
+      createV5Schema(database);
       database.exec(`PRAGMA user_version = ${STORAGE_SCHEMA_VERSION}; COMMIT;`);
       assertIntegrity(database);
       return { state: "READY", storage: new LocalSqliteStorage(database), migrated: false };
@@ -200,7 +234,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
       return { state: "READY", storage: new LocalSqliteStorage(database), migrated: false };
     }
 
-    if (version < 1 || version > 3) throw new Error("UNSUPPORTED_SCHEMA_VERSION");
+    if (version < 1 || version > 4) throw new Error("UNSUPPORTED_SCHEMA_VERSION");
 
     copyFileSync(safePath, `${safePath}.backup-v1`, 0);
     backupCreated = true;
@@ -209,6 +243,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
     if (options.forceMigrationFailure === true) throw new Error("FORCED_MIGRATION_FAILURE");
     createV3Schema(database);
     createV4Schema(database);
+    createV5Schema(database);
     database.exec(`PRAGMA user_version = ${STORAGE_SCHEMA_VERSION}; COMMIT;`);
     assertIntegrity(database);
     database.prepare("INSERT INTO migration_record VALUES (?, ?, ?, ?, ?)").run(
