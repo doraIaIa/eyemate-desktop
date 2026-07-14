@@ -28,3 +28,11 @@ The current SQLite adapter persists local onboarding, checkup and report data in
 - `SENSITIVE_PILOT = DISABLED`.
 - Internal unsigned MSIX is for synthetic engineering only.
 - Clinical, signing, real-camera accuracy and dynamic-egress gates remain independent external limitations.
+
+## Pilot-readiness evaluation (2026-07-14)
+
+- Executable plaintext scan confirms the current SQLite file contains the synthetic canary; encryption is therefore `NOT_IMPLEMENTED`, not `PASS`.
+- The feature matrix validator keeps `sensitive-persistence` fail-closed as `DISABLED`.
+- Existing schema migration, interrupted migration, backup/recovery, idempotent reset and physical-delete tests pass. Physical deletion enables SQLite secure-delete, checkpoints/truncates WAL, vacuums free pages and removes the migration backup.
+- Tamper, wrong-key, missing-key and plaintext-to-encrypted migration cases are not applicable evidence while no approved encryption implementation exists; they remain an external Security/Privacy gate rather than being reported as passing.
+- No real-person or sensitive health data is permitted in the internal beta package under this decision.
