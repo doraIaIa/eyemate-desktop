@@ -1,14 +1,29 @@
 # Project Status
 
 Last updated: 2026-07-14
-Current milestone: PILOT_READINESS
-Current batch: External-gate handoff and release-candidate preparation
-Current task: External-gate handoff
-Task state: PILOT_READY_WITH_EXTERNAL_GATES
+Current milestone: FINAL_FEATURE_COMPLETION
+Current batch: Terminal engineering checkpoint
+Current task: Owner/external gate handoff
+Task state: FEATURE_COMPLETE_WITH_EXTERNAL_GATES
 
-Latest implementation commit: `8fd7da6`
-Task base commit: `d289d54`
+Latest implementation commit: `d757fa5`
+Task base commit: `1d61610`
 Working tree expectation: clean after this status checkpoint; generated beta artifacts are ignored under `.pilot/`.
+
+## Final Feature Completion Exit Record (2026-07-14)
+
+- Status: `FEATURE_COMPLETE_WITH_EXTERNAL_GATES`. Tất cả phần còn thiếu có thể đóng bằng code đã được triển khai; không dùng `PUBLIC_READY` hoặc tự thay approval bên ngoài.
+- Camera: model/WASM local, consent IPC, permission handler chỉ cho renderer local đã consent, device selection, start/stop/cleanup, quality gate, calibration binding, cửa sổ 30 giây, blink aggregate và distance zone fail-closed đã nối vào checkup. Real-device start/stop PASS; lượt full-measurement thực tế trả `QUALITY_NOT_ACCEPTABLE`, vì vậy accuracy/ground truth vẫn `UNKNOWN`.
+- Privacy camera: raw frame, video, landmark và per-frame series chỉ ở RAM; aggregate không biến missing thành zero. Route change, window hidden, device change, disconnect và shutdown đều dừng track hoặc yêu cầu hiệu chỉnh lại.
+- Sensitive storage: AES-256-GCM bảo vệ payload; record identity dùng AAD; master key ngẫu nhiên được Electron `safeStorage`/Windows user context bảo vệ. Tamper, wrong/missing key, restart, plaintext migration, interruption/retry, encrypted backup, physical plaintext scan và delete/reset PASS. Security/Privacy approval vẫn `PENDING`; real-person sensitive pilot tiếp tục `DISABLED`.
+- Export: Markdown, JSON và PDF A4 nhiều trang chạy local qua preview + native Save dialog, atomic write, Unicode tiếng Việt, cancel/no-overwrite tests; không có cloud/CDN.
+- Questionnaire: definition và scoring adapter versioned, stable IDs, missing-answer handling và feature gate đã có. OSDI-6 thật vẫn `DISABLED` vì thiếu approved content/license/translation/scoring và Clinical/Product evidence.
+- Release: beta identity, MSIX, SBOM, checksum, release manifest, provenance, rollback policy, SignTool discovery, input boundary và post-sign verification đã sẵn sàng. `SIGNING=READY_FOR_EXTERNAL_CERTIFICATE`; không có certificate giả hoặc publish.
+- Egress: process tree TCP và UDP-endpoint observation ghi 0 observation; DNS/remote-UDP/packet content không có coverage. Kết luận duy nhất là `UNKNOWN_NO_TCP_OBSERVED`; WPR vẫn blocked `0xc5585011`, không có claim no-egress.
+- Canonical verification: `npm run verify:pilot` PASS với 65 unit, 17 integration, architecture/privacy/security/accessibility, Electron M1–M3, UI acceptance, protected-storage gate, camera lifecycle smoke, PDF test, signing interface, MSIX build và release-bundle verification.
+- V1 `F:\dry-eye-app` không bị sửa; hai file documentation untracked có sẵn được bảo toàn.
+
+External gates còn lại: Security/Privacy approval; full operator camera/ground-truth protocol; Clinical/Product approval; authorized signing certificate/distribution identity; và Security-run dynamic network coverage cho DNS/UDP/packet khi môi trường cho phép.
 
 ## Pilot Readiness Exit Record (2026-07-14)
 

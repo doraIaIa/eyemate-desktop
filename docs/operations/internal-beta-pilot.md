@@ -17,11 +17,11 @@ Nguồn trạng thái máy đọc được là `pilot/feature-matrix.json`. Vali
 
 | Limitation | Phân loại | Trạng thái beta |
 |---|---|---|
-| SQLite plaintext/encryption-at-rest | Cần implementation + Security/Privacy approval | `SENSITIVE_PILOT=DISABLED`; ADR-005 giữ nguyên |
-| Camera lifecycle/calibration | Có harness; cần camera thật và thao tác consent | `DISABLED` cho package mặc định |
+| Sensitive payload encryption | Implementation PASS; cần Security/Privacy approval | `SENSITIVE_PILOT=DISABLED`; ADR-005 chờ approval |
+| Camera lifecycle/calibration | Start/stop thật PASS; full measurement cần operator/ground truth | `DISABLED` cho accuracy-dependent use |
 | Blink/distance accuracy | Cần ground truth, protocol và threshold | `UNKNOWN`; không hiển thị số |
 | OSDI-6/recommendation | Cần Clinical/Product approval | Nội dung synthetic hiện tại, không clinical scoring |
-| PDF | Có thể làm bằng code nhưng không cần cho beta | Markdown/JSON là export được hỗ trợ |
+| PDF | Local implementation và multipage acceptance PASS | Markdown/JSON/PDF được hỗ trợ |
 | Dynamic egress | WPR cần host permission; local observation chỉ coverage một phần | `DEGRADED/UNKNOWN`, không claim no-egress |
 | Signing/Store | Cần certificate và Store identity | Unsigned internal MSIX |
 
@@ -31,7 +31,7 @@ Nguồn trạng thái máy đọc được là `pilot/feature-matrix.json`. Vali
 - Raw frame, video, landmark, pixel buffer và raw per-frame series chỉ ở RAM và không được ghi DB/log/evidence/export.
 - Package mặc định chỉ bật survey-only và Timer Only. Camera controls accuracy-dependent bị disabled.
 - Dữ liệu app hiện được giữ local đến khi người dùng xóa. `Xóa toàn bộ` xóa các entity do app quản lý nhưng không tuyên bố xóa file export bên ngoài app-data.
-- Encryption-at-rest chưa có; không nhập dữ liệu người thật hoặc dữ liệu sức khỏe nhạy cảm vào beta này.
+- Sensitive payload encryption đã có executable evidence, nhưng chưa có Security/Privacy approval; chưa nhập dữ liệu người thật hoặc dữ liệu sức khỏe nhạy cảm vào beta này.
 
 ## Release, rollback và incident
 

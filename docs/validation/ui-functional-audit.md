@@ -57,4 +57,11 @@ Quy tắc hoàn thiện: mỗi control sau tích hợp phải là wired qua use 
 | Async state | 🟢 Route/mutation có timeout, retry, disable-on-submit; native save dialog không bị timeout giả | unit `async-operation` + UI acceptance |
 | Acceptance | 🟢 Navigation, Back/Forward/reload, controls và restart persistence được click qua Electron thật | `npm run acceptance:ui` |
 
-Các capability không có contract hoặc evidence vẫn bị disabled/abstain: camera thật, calibration/đo 30 giây, OSDI-6 clinical, PDF, encryption-at-rest và dynamic WPR egress. Chúng không được suy thành PASS trong UI.
+## Final feature completion re-audit
+
+- Camera checkup đã wired qua consent → local media permission → device → quality → calibration → measurement aggregate; survey-only vẫn là fallback. Camera mode Work Companion tiếp tục disabled vì chưa có ground-truth accuracy.
+- PDF đã wired qua preview, native Save dialog, Electron `printToPDF` local và atomic writer; Markdown/JSON không regression.
+- Sensitive payload encryption hoạt động dưới storage adapter; UI chỉ nói implementation đã có và vẫn chờ Security/Privacy approval.
+- Questionnaire synthetic dùng registry/adapter versioned; OSDI-6 clinical vẫn disabled và không có placeholder giả approved.
+- Mọi route/control còn lại tiếp tục PASS qua `npm run acceptance:ui`; control chưa đủ external evidence được disabled kèm lý do thay vì handler rỗng.
+- Dynamic egress vẫn `UNKNOWN`; Privacy UI không tuyên bố no-egress.

@@ -5,16 +5,16 @@
     {
       "id": "encryption-security-privacy",
       "state": "EXTERNAL_GATE",
-      "evidenceNeeded": ["Approved ADR-005 revision", "Authenticated-encryption and Windows key-lifecycle implementation", "Tamper, wrong-key, missing-key, migration, interruption, backup/recovery and delete/reset evidence"],
+      "evidenceNeeded": ["Security/Privacy acceptance of the proposed ADR-005 implementation", "Review of docs/validation/encryption-at-rest-evidence.md", "Approved metadata leakage, recovery and incident expectations"],
       "approvers": ["Security owner", "Privacy owner", "Product owner"],
       "recheck": "npm run pilot:sensitive-storage-gate"
     },
     {
       "id": "camera-ground-truth",
       "state": "EXTERNAL_GATE",
-      "evidenceNeeded": ["Explicit-consent real-device lifecycle record", "Approved calibration protocol", "Ground-truth dataset, threshold and accuracy result without raw-frame persistence"],
+      "evidenceNeeded": ["Full operator measurement run with acceptable quality", "Approved calibration protocol and measured physical reference", "Ground-truth dataset, threshold and accuracy result without raw-frame persistence"],
       "approvers": ["Product owner", "Safety/quality owner"],
-      "recheck": "npm run camera:validate:pilot"
+      "recheck": "npm run camera:measure:pilot"
     },
     {
       "id": "clinical-content",
