@@ -15,6 +15,13 @@ last_reviewed: 2026-07-14
 - Verification command: `node tools/m0/run-initializer-fixture-tests.mjs`.
 - Out of scope: camera, benchmark, Git/inventory tự động, manifest artifact, task tiếp theo.
 
+## T-M0-003D — Synthetic evidence pipeline integration
+
+- Goal: chạy local-only chuỗi `initialize → validate → scan → manifest → verify` trên evidence synthetic.
+- Dependencies: T-M0-003, T-M0-003A, T-M0-003B, T-M0-003C.
+- Verification command: `node tools/m0/run-synthetic-pipeline.mjs`.
+- Out of scope: camera, benchmark thật, measurement tooling hoặc candidate shell.
+
 ## T-M0-003B — SHA-256 manifest evidence artifact
 
 - Goal: sinh và verify manifest SHA-256 deterministic cho artifact `artifacts/...` đã qua scanner, dùng relative path/type/size/hash/scanner version/schema version.

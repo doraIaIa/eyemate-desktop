@@ -2,13 +2,13 @@
 
 Last updated: 2026-07-14
 Current milestone: M0 — Architecture POC
-Current task: T-M0-003C — Benchmark evidence run-directory initializer
-Task state: READY_FOR_COMMIT
+Current task: T-M0-003D — Synthetic evidence pipeline integration
+Task state: DONE
 
-Latest verified commit: 07d2f29
-Task base commit: 07d2f29
-Working tree: T-M0-003C diff only; unstaged
-Files currently modified: initializer tooling, evidence schema, task and README
+Latest verified commit: 51cad23
+Task base commit: 51cad23
+Working tree: clean after T-M0-003C commit
+Files currently modified: NONE
 
 Completed in current task:
 - Atomic initializer, component policy, cleanup, dry-run, concurrent worker and junction fixture.
@@ -19,25 +19,27 @@ Verification already run:
 - `git diff --check`: PASS
 
 Still remaining:
-- Review current diff and commit T-M0-003C if evidence remains current.
+- Select the next M0 measurement-readiness task.
 
 Next exact action:
-- Re-run initializer and regression suites, inspect diff, then commit.
+- Implement local measurement-tool inventory.
 
 Next exact command:
-- `node tools/m0/run-initializer-fixture-tests.mjs`
+- `node tools/m0/run-synthetic-pipeline.mjs`
 
 Blockers requiring user: NONE
 
 Acceptance:
-- REL-M0-003: PASS — initializer fixtures
+- REL-M0-003: PASS — initializer fixtures; file-symlink integration SKIP (EPERM), must rerun before benchmark chính thức
 - VAL-M0-001: PASS — regression fixtures
+- AC-M0-013: PASS (synthetic tooling scope) — pipeline runner
 
 Evidence paths:
-- `tools/m0/run-initializer-fixture-tests.mjs`
+- `tools/m0/run-synthetic-pipeline.mjs`
 
 Important decisions:
 - Initialization context is not a measurement run record.
+- Synthetic pipeline creates no retained evidence; all fixtures are cleaned from temporary roots.
 
 Do not redo:
-- Do not modify V1 or begin measurement/camera work before pipeline integration.
+- Do not modify V1; rerun file-symlink integration before benchmark chính thức.
