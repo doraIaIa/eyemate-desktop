@@ -3,12 +3,12 @@
 Last updated: 2026-07-14
 Current milestone: M1 — Personal Checkup MVP
 Current batch: M1-A foundation
-Current task: T-M1-008 — Camera port mock và privacy gate
+Current task: T-M1-010 — Tích hợp report và Privacy Center
 Task state: IN_PROGRESS
 
-Latest verified commit: `279eed7`
-Task base commit: `279eed7`
-Working tree: T-M1-007 đã kiểm chứng, chờ commit có chủ đích.
+Latest verified commit: `c3ee2d7`
+Task base commit: `c3ee2d7`
+Working tree: sạch sau batch implementation thứ hai.
 
 Completed:
 
@@ -20,6 +20,8 @@ Completed:
 - T-M1-005: State machine onboarding Local Only, consent camera có purpose/scope/version/time/decision, withdrawal persistence và camera-off/unavailable contract.
 - T-M1-006: Safety Gate deterministic có rule/version, xử lý confirmed/uncertain/catalogue incompatible; catalogue chỉ là placeholder nội bộ chưa clinically approved.
 - T-M1-007: Questionnaire synthetic versioned, survey-only report snapshot, missing/partial/cancel/recovery và safety-stop semantics.
+- T-M1-008/009: Camera mock states và distance zone abstention; không có camera runtime/capture thật hay exact centimet.
+- T-M1-010A: Export preview và deletion result typed đã có; chưa tích hợp UI/persistence hoàn chỉnh.
 
 Verification:
 
@@ -29,11 +31,11 @@ Verification:
 
 Remaining:
 
-- T-M1-008 camera port mock, off/denied/unavailable/low-quality và privacy sink gate.
+- T-M1-010 UI report/Privacy Center; T-M1-011 integration acceptance và release-like build.
 
 Next exact action:
 
-- Review và commit T-M1-007; triển khai camera port mock.
+- Tích hợp các use case M1 hiện có vào preload/main/renderer; không mở camera thật.
 
 Next exact command:
 
