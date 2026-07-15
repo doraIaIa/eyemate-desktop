@@ -19,7 +19,7 @@ Baseline: `fcaeaca`
 | Home metrics/orb/quick actions | 🔴 | Chưa có | Dùng aggregate đã lưu; camera-off hiển thị `—` |
 | Onboarding không camera | 🟢 | `onboarding:complete-without-camera` | Giữ trong wizard |
 | Survey response + Safety Gate | 🟢 | `checkup:run-survey-only` | Giữ contract survey-only hiện có |
-| OSDI 12 mục/camera calibration/đo 30 giây | ⚫ | Không có nội dung được cấp quyền hoặc phê duyệt clinical | Không giả lập clinical; adapter kỹ thuật vẫn tắt |
+| EyeMate Symptom Check v1 | 🟢 | 5 câu owner-approved, tổng 0–15 và ba nhóm hành động versioned | Không gọi là clinical instrument; disclaimer đầu/cuối và Safety Gate vẫn ưu tiên |
 | Session start/pause/resume/finish/cancel | 🟢 | `work-session:*` | Tách thành Work Companion route |
 | Mode camera | 🔴 | Domain chỉ có timer policy; không có capture | Disabled có giải thích; Timer Only là mode khả dụng |
 | Nudge request/accept/snooze/dismiss | 🟢 | `work-session:request-break-nudge`, `respond-nudge` | Hiển thị tuần tự, dismiss sau action |
@@ -37,7 +37,7 @@ Baseline: `fcaeaca`
 
 - Tất cả module đang cùng tồn tại trong một `<main>` nên route giả và content bị dồn trên một trang.
 - Không có loading nào bị treo do handler hiện tại, nhưng mọi IPC đều thiếu timeout/retry và lỗi có thể trở thành promise rejection không xử lý.
-- Camera runtime, raw EAR/distance, OSDI 12 mục, PDF và 30-day analytics chưa có contract thật. Không được đánh dấu PASS hay tạo dữ liệu giả.
+- Camera runtime accuracy, raw EAR/distance và 30-day analytics chưa có contract/ground truth đầy đủ. Không được đánh dấu PASS hay tạo dữ liệu giả.
 - Export path hiện phơi bày đường dẫn đầy đủ trong renderer; cần native dialog ở main process.
 - Dynamic egress vẫn `UNKNOWN`; Privacy UI không được tuyên bố đã chứng minh “không có kết nối”.
 
@@ -62,6 +62,6 @@ Quy tắc hoàn thiện: mỗi control sau tích hợp phải là wired qua use 
 - Camera checkup đã wired qua consent → local media permission → device → quality → calibration → measurement aggregate; survey-only vẫn là fallback. Camera mode Work Companion tiếp tục disabled vì chưa có ground-truth accuracy.
 - PDF đã wired qua preview, native Save dialog, Electron `printToPDF` local và atomic writer; Markdown/JSON không regression.
 - Sensitive payload encryption hoạt động dưới storage adapter; UI chỉ nói implementation đã có và vẫn chờ Security/Privacy approval.
-- Questionnaire synthetic dùng registry/adapter versioned; adapter OSDI 12 mục vẫn disabled, không có câu hỏi/bản dịch hoặc placeholder giả approved.
+- Questionnaire wellness dùng definition/scoring versioned; UI mặc định không hiển thị instrument lâm sàng hoặc placeholder bị khóa.
 - Mọi route/control còn lại tiếp tục PASS qua `npm run acceptance:ui`; control chưa đủ external evidence được disabled kèm lý do thay vì handler rỗng.
 - Dynamic egress vẫn `UNKNOWN`; Privacy UI không tuyên bố no-egress.

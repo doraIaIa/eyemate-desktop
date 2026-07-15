@@ -1,7 +1,7 @@
 # Living Aurora — Phase A audit và Visual Gate
 
-Ngày: 2026-07-14  
-Trạng thái: `PROPOSED / VISUAL_GATE_A`  
+Ngày: 2026-07-14
+Trạng thái: `PROPOSED / VISUAL_GATE_A`
 Phạm vi: reference screen và audit; chưa rollout UI production.
 
 ## Baseline và ranh giới

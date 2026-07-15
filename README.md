@@ -2,6 +2,37 @@
 
 > Bộ nguồn sự thật dùng để thiết kế, triển khai và kiểm chứng EyeMate V2.
 
+## Chạy dự án hiện tại
+
+Yêu cầu: Windows 10/11 x64, Node.js 24.x và npm 11.x. Camera là tùy chọn; Timer Only và questionnaire vẫn hoạt động khi camera không khả dụng.
+
+```powershell
+git clone https://github.com/doraIaIa/eyemate-desktop.git
+cd eyemate-desktop
+npm ci
+npm run dev
+```
+
+`npm run dev` build TypeScript rồi mở Electron tại production route `#/home`. Production hiện dùng Clarity Grid với top navigation. DevPanel unpackaged được bật cho lệnh này; nhấn `Ctrl+Shift+D` để mở/đóng và reset override khi đóng.
+
+Các route reference chỉ dùng cho đánh giá thiết kế, không gọi IPC/camera/database/network:
+
+- `#/design-lab/living-aurora`
+- `#/design-lab/taste-direction` — reference Clarity Grid hiện hành; tài liệu Taste/Afterimage cũ được giữ làm audit trail.
+
+Các lệnh chính:
+
+```powershell
+npm run typecheck
+npm run verify
+npm run acceptance:clarity-production
+npm run acceptance:dev-panel
+npm run build
+npm run build:demo
+```
+
+`build:demo` tạo MSIX engineering unsigned dưới `.m1/msix/`; thư mục `.m1` bị Git ignore. Xem [Quick Start](docs/handoff/QUICK_START.md) và [Handoff](docs/handoff/HANDOFF.md) trước khi tiếp tục feature.
+
 ## Bắt đầu ở đây
 
 1. Đọc [`MASTER_SPEC.md`](MASTER_SPEC.md) để hiểu sản phẩm, phạm vi và các cổng phát hành.

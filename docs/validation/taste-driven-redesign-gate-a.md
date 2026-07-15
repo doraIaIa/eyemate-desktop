@@ -2,10 +2,10 @@
 
 > **SUPERSEDED 2026-07-15:** Owner không duyệt visual direction tối màu “Nhật Ký Dư Ảnh”. Reference hiện hành tại cùng dev-only route là `Clarity Grid`; xem `docs/validation/clarity-grid-reference.md`. Nội dung bên dưới được giữ làm audit trail, không phải direction đang chờ duyệt.
 
-Ngày dựng reference: 2026-07-15  
-Task base commit: `26c30d3`  
-Direction: **Nhật Ký Dư Ảnh**  
-Trạng thái: `WAITING_FOR_VISUAL_GATE_A_APPROVAL`  
+Ngày dựng reference: 2026-07-15
+Task base commit: `26c30d3`
+Direction: **Nhật Ký Dư Ảnh**
+Trạng thái: `WAITING_FOR_VISUAL_GATE_A_APPROVAL`
 Phạm vi: Design Lab dev-only tại `#/design-lab/taste-direction`; chưa rollout production.
 
 ## Kết quả

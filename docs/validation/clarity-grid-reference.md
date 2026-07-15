@@ -1,7 +1,7 @@
 # EyeMate Clarity Grid — dev-only reference
 
-Ngày dựng: 2026-07-15  
-Route: `#/design-lab/taste-direction`  
+Ngày dựng: 2026-07-15
+Route: `#/design-lab/taste-direction`
 Phạm vi ban đầu: visual reference dev-only. Sau review motion, owner đã xác nhận production rollout; xem `clarity-grid-production-rollout.md`.
 
 ## Quyết định visual

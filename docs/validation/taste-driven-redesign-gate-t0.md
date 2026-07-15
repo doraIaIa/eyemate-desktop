@@ -1,8 +1,8 @@
 # Taste-driven production redesign: Gate T0
 
-Ngày audit: 2026-07-15  
-Task base commit: `26c30d3`  
-Trạng thái: `WAITING_FOR_TASTE_PLAN_APPROVAL`  
+Ngày audit: 2026-07-15
+Task base commit: `26c30d3`
+Trạng thái: `WAITING_FOR_TASTE_PLAN_APPROVAL`
 Phạm vi: audit và Taste Plan; chưa dựng Design Lab mới, chưa rollout production.
 
 ## Skill provenance
