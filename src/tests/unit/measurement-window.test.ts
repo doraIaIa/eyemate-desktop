@@ -45,3 +45,12 @@ test("ground truth calibration bị giới hạn và validate nghiêm ngặt", (
   assert.throws(() => validateCalibrationProfile({ ...calibration, groundTruthCm: 0 }), /INVALID_CAMERA_CALIBRATION_PROFILE/);
   assert.throws(() => validateCalibrationProfile({ ...calibration, deviceBinding: "camera-name" }), /INVALID_CAMERA_CALIBRATION_PROFILE/);
 });
+
+test("distance aggregate loại spike và giữ provenance thuật toán versioned", () => {
+  const frames = Array.from({ length: 30 }, (_, index) => valid(index * 1_000, 0.3, index === 10 ? 40 : 100));
+  const result = aggregateMeasurementWindow({ status: "COMPLETED", startedAtMs: 0, endedAtMs: 30_000, frames, calibration, currentDeviceBinding: binding });
+  assert.equal(result.distanceSummary.status, "OBSERVED");
+  assert.ok(result.reasonCodes.includes("DISTANCE_OUTLIERS_REJECTED"));
+  assert.match(result.algorithmVersion, /eyemate-window\/0\.2\.0$/);
+  assert.match(result.configVersion, /distance-ratio-filter\/1\.0\.0$/);
+});

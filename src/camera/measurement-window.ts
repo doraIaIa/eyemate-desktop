@@ -1,5 +1,7 @@
-export const CAMERA_ALGORITHM_VERSION = "mediapipe-face-landmarker/0.10.35+eyemate-window/0.1.0";
-export const CAMERA_CONFIG_VERSION = "camera-quality/0.1.0";
+import { DISTANCE_RATIO_FILTER_CONFIG, RatioZoneFilter } from "../distance/ratio-zone-filter.js";
+
+export const CAMERA_ALGORITHM_VERSION = "mediapipe-face-landmarker/0.10.35+eyemate-window/0.2.0";
+export const CAMERA_CONFIG_VERSION = `camera-quality/0.2.0+${DISTANCE_RATIO_FILTER_CONFIG.version}` as const;
 
 export type CameraQualityReason = "NO_FACE" | "MULTIPLE_FACES" | "LOW_VISIBILITY" | "POSE_UNSTABLE" | "LOW_LIGHT" | "INVALID_GEOMETRY";
 export type DistanceZone = "NEAR" | "COMFORT" | "FAR" | "UNKNOWN";
@@ -76,13 +78,6 @@ function countBlinks(samples: readonly AcceptedSample[]): number {
   return count;
 }
 
-function distanceZone(sample: AcceptedSample, profile: CameraCalibrationProfile): Exclude<DistanceZone, "UNKNOWN"> {
-  const relativeDistance = profile.referenceInterEyePx / sample.interEyeDistancePx;
-  if (relativeDistance < 0.85) return "NEAR";
-  if (relativeDistance > 1.15) return "FAR";
-  return "COMFORT";
-}
-
 export function validateCalibrationProfile(profile: CameraCalibrationProfile): CameraCalibrationProfile {
   if (profile.profileVersion !== "camera-calibration/0.1.0" || !/^[a-f0-9]{64}$/.test(profile.deviceBinding)
     || !Number.isInteger(profile.width) || profile.width < 320 || profile.width > 7680
@@ -104,10 +99,12 @@ export function aggregateMeasurementWindow(input: {
   if (!Number.isFinite(input.startedAtMs) || !Number.isFinite(input.endedAtMs) || input.endedAtMs < input.startedAtMs) throw new Error("INVALID_MEASUREMENT_WINDOW");
   const qualityDistribution = Object.fromEntries(QUALITY_REASONS.map((reason) => [reason, 0])) as Record<CameraQualityReason, number>;
   const accepted: AcceptedSample[] = [];
+  const distanceInputs: Array<number | null> = [];
   for (const frame of input.frames) {
     const reason = qualityReason(frame);
-    if (reason !== null) { qualityDistribution[reason] += 1; continue; }
+    if (reason !== null) { qualityDistribution[reason] += 1; distanceInputs.push(null); continue; }
     accepted.push({ timestampMs: frame.timestampMs, ear: (frame.leftEar! + frame.rightEar!) / 2, interEyeDistancePx: frame.interEyeDistancePx! });
+    distanceInputs.push(frame.interEyeDistancePx!);
   }
   const sampleCount = input.frames.length;
   const validSampleCount = accepted.length;
@@ -129,9 +126,20 @@ export function aggregateMeasurementWindow(input: {
   let distanceSummary: CameraMeasurementAggregate["distanceSummary"] = { status: "UNKNOWN" };
   if (enoughEvidence && input.calibration !== null && input.currentDeviceBinding === input.calibration.deviceBinding) {
     const zones = { NEAR: 0, COMFORT: 0, FAR: 0 };
-    for (const sample of accepted) zones[distanceZone(sample, input.calibration)] += 1;
-    const dominantZone = (Object.entries(zones).sort((left, right) => right[1] - left[1])[0]?.[0] ?? "COMFORT") as Exclude<DistanceZone, "UNKNOWN">;
-    distanceSummary = { status: "OBSERVED", dominantZone, zoneDistribution: zones };
+    const filter = new RatioZoneFilter(input.calibration.referenceInterEyePx);
+    let rejectedOutliers = 0;
+    for (const interEyeDistancePx of distanceInputs) {
+      const filtered = interEyeDistancePx === null ? filter.reject() : filter.push(interEyeDistancePx);
+      if (interEyeDistancePx !== null && filtered.status === "OUTLIER_REJECTED") rejectedOutliers += 1;
+      else if (filtered.status === "OBSERVED" && filtered.zone !== null) zones[filtered.zone] += 1;
+    }
+    if (rejectedOutliers > 0) reasonCodes.push("DISTANCE_OUTLIERS_REJECTED");
+    const observedZoneCount = zones.NEAR + zones.COMFORT + zones.FAR;
+    if (observedZoneCount === 0) reasonCodes.push("DISTANCE_FILTER_INSUFFICIENT_DATA");
+    else {
+      const dominantZone = Object.entries(zones).sort((left, right) => right[1] - left[1])[0]![0] as Exclude<DistanceZone, "UNKNOWN">;
+      distanceSummary = { status: "OBSERVED", dominantZone, zoneDistribution: zones };
+    }
   }
   return Object.freeze({
     schemaVersion: "camera-measurement-aggregate/0.1.0", status: enoughEvidence ? input.status : input.status === "COMPLETED" ? "INSUFFICIENT_DATA" : input.status,
