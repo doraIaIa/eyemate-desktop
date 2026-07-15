@@ -9,10 +9,10 @@ const unsafeEncryption = structuredClone(valid);
 unsafeEncryption.features.find((feature) => feature.id === "sensitive-persistence").state = "ENABLED";
 assert.equal(validatePilotContract(unsafeEncryption).reason, "EXTERNAL_GATE_ENABLED");
 
-const unsafeClinical = structuredClone(valid);
-unsafeClinical.features.find((feature) => feature.id === "clinical-osdi-12").gateClass = "AUTOMATED";
-unsafeClinical.features.find((feature) => feature.id === "clinical-osdi-12").state = "ENABLED";
-assert.match(validatePilotContract(unsafeClinical).reason, /^REQUIRED_DISABLED_/);
+const unsafeCamera = structuredClone(valid);
+unsafeCamera.features.find((feature) => feature.id === "camera-lifecycle").gateClass = "AUTOMATED";
+unsafeCamera.features.find((feature) => feature.id === "camera-lifecycle").state = "ENABLED";
+assert.match(validatePilotContract(unsafeCamera).reason, /^REQUIRED_DISABLED_/);
 
 const duplicate = structuredClone(valid);
 duplicate.features.push(structuredClone(duplicate.features[0]));

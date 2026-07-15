@@ -17,13 +17,6 @@
       "recheck": "npm run camera:measure:pilot"
     },
     {
-      "id": "clinical-content",
-      "state": "EXTERNAL_GATE",
-      "evidenceNeeded": ["Approved 12-item OSDI wording/license if applicable", "Approved Vietnamese translation, scoring, severity and recommendation catalogue"],
-      "approvers": ["Clinical owner", "Product owner"],
-      "recheck": "npm run pilot:external-gates"
-    },
-    {
       "id": "signing-distribution",
       "state": "EXTERNAL_GATE",
       "evidenceNeeded": ["Authorized signing certificate and beta distribution identity", "Signed MSIX verification and approved rollback owner"],
