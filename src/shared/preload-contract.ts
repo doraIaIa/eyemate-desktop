@@ -3,6 +3,7 @@ import type { CheckupSummary, PrivacySummary, SurveyRequest } from "./m1-contrac
 import type { WorkSession } from "../work-session/session-state.js";
 import type { NudgeDecision } from "../work-session/companion-policy.js";
 import type { PersonalReport } from "../personal-intelligence/report-service.js";
+import type { CameraCalibrationRecord } from "../camera/calibration-service.js";
 export type LocalExportFormat = "JSON" | "MARKDOWN" | "PDF";
 export interface LocalExportResult { readonly status: "EXPORTED" | "CANCELLED" | "FAILED"; readonly reason: string; }
 export type M3DataCategory = "BASELINE" | "PATTERN" | "SUMMARY" | "REPORT" | "ALL";
@@ -17,7 +18,7 @@ export interface UserPreferences {
   readonly reducedMotion: boolean;
 }
 export interface DataInventoryItem {
-  readonly category: "CHECKUP" | "SESSION" | "NUDGE" | "REPORT" | "PREFERENCE";
+  readonly category: "CHECKUP" | "SESSION" | "NUDGE" | "REPORT" | "PREFERENCE" | "CALIBRATION";
   readonly purpose: string;
   readonly recordCount: number;
   readonly retention: "UNTIL_USER_DELETES";
@@ -28,6 +29,7 @@ export interface EyeMatePreloadApi {
   getRuntimeInfo(): Promise<RuntimeInfo>;
   getPrivacySummary(): Promise<PrivacySummary>;
   runSurveyOnly(request: SurveyRequest): Promise<CheckupSummary>;
+  exportCheckupWithDialog(reportId: string, format: LocalExportFormat): Promise<LocalExportResult>;
   grantCameraConsent(): Promise<void>;
   completeOnboardingWithoutCamera(): Promise<void>;
   withdrawCameraConsent(): Promise<void>;
@@ -52,5 +54,8 @@ export interface EyeMatePreloadApi {
   exportM3WithDialog(format: LocalExportFormat, includeEvidence: boolean): Promise<LocalExportResult>;
   getUserPreferences(): Promise<UserPreferences>;
   updateUserPreferences(preferences: UserPreferences): Promise<UserPreferences>;
+  getCameraCalibration(): Promise<CameraCalibrationRecord | null>;
+  saveCameraCalibration(record: CameraCalibrationRecord): Promise<CameraCalibrationRecord>;
+  resetCameraCalibration(): Promise<"DELETED">;
   getDataInventory(): Promise<readonly DataInventoryItem[]>;
 }

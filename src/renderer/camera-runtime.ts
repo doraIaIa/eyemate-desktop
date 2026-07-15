@@ -62,11 +62,18 @@ export class LocalCameraRuntime {
   #context: CameraRuntimeContext | null = null;
   #stopping = false;
   #canvas = new OffscreenCanvas(32, 24);
+  #landmarkOverlayEnabled = false;
+  #landmarkOverlayCanvas: HTMLCanvasElement | null = null;
 
   constructor(callbacks: CameraRuntimeCallbacks) { this.#callbacks = callbacks; }
 
   get context(): CameraRuntimeContext | null { return this.#context; }
   get active(): boolean { return this.#stream !== null; }
+
+  setLandmarkOverlayEnabled(enabled: boolean): void {
+    this.#landmarkOverlayEnabled = enabled;
+    if (!enabled) { this.#landmarkOverlayCanvas?.remove(); this.#landmarkOverlayCanvas = null; }
+  }
 
   async enumerateDevices(): Promise<readonly { readonly deviceId: string; readonly label: string }[]> {
     if (!navigator.mediaDevices?.enumerateDevices) return [];
@@ -118,6 +125,8 @@ export class LocalCameraRuntime {
     for (const track of this.#stream?.getTracks() ?? []) track.stop();
     this.#stream = null;
     if (this.#video) this.#video.srcObject = null;
+    this.#landmarkOverlayCanvas?.remove();
+    this.#landmarkOverlayCanvas = null;
     this.#video = null;
     this.#context = null;
     navigator.mediaDevices?.removeEventListener("devicechange", this.#onDeviceChange);
@@ -137,6 +146,7 @@ export class LocalCameraRuntime {
 
   #emitObservation(result: FaceResult): void {
     const points = result.faceLandmarks[0];
+    if (points && this.#video && this.#landmarkOverlayEnabled) this.#drawLandmarkOverlay(points);
     let lightingScore = 0;
     if (this.#video) {
       const context = this.#canvas.getContext("2d", { willReadFrequently: true });
@@ -154,5 +164,25 @@ export class LocalCameraRuntime {
       rightEar: points ? eyeAspectRatio(points, [33, 160, 158, 133, 153, 144]) : null,
       interEyeDistancePx: points && this.#video && points[33] && points[263] ? distance(points[33], points[263]) * this.#video.videoWidth : null
     });
+  }
+
+  #drawLandmarkOverlay(points: readonly Landmark[]): void {
+    if (!this.#video) return;
+    if (!this.#landmarkOverlayCanvas) {
+      this.#landmarkOverlayCanvas = document.createElement("canvas");
+      this.#landmarkOverlayCanvas.className = "dev-landmark-overlay";
+      this.#landmarkOverlayCanvas.setAttribute("aria-hidden", "true");
+      document.body.append(this.#landmarkOverlayCanvas);
+    }
+    const bounds = this.#video.getBoundingClientRect();
+    const canvas = this.#landmarkOverlayCanvas;
+    canvas.width = Math.max(1, Math.round(bounds.width));
+    canvas.height = Math.max(1, Math.round(bounds.height));
+    canvas.style.left = `${bounds.left}px`; canvas.style.top = `${bounds.top}px`; canvas.style.width = `${bounds.width}px`; canvas.style.height = `${bounds.height}px`;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "rgba(180, 255, 80, .72)";
+    for (const point of points) { context.beginPath(); context.arc((1 - point.x) * canvas.width, point.y * canvas.height, 1.2, 0, Math.PI * 2); context.fill(); }
   }
 }

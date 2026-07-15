@@ -21,6 +21,12 @@ const eyeMateApi: EyeMatePreloadApi = {
     if (!isCheckupSummary(result)) throw new Error("PRELOAD_CHECKUP_CONTRACT_INVALID");
     return result;
   },
+  async exportCheckupWithDialog(reportId, format) {
+    if (!/^[a-z0-9-]{8,64}$/i.test(reportId) || !["JSON", "MARKDOWN", "PDF"].includes(format)) throw new Error("PRELOAD_CHECKUP_EXPORT_REQUEST_INVALID");
+    const result: unknown = await ipcRenderer.invoke("checkup:export-with-dialog", reportId, format);
+    if (typeof result !== "object" || result === null) throw new Error("PRELOAD_CHECKUP_EXPORT_INVALID");
+    return result as import("../shared/preload-contract.js").LocalExportResult;
+  },
   async grantCameraConsent() {
     await ipcRenderer.invoke("onboarding:grant-camera-consent");
   },
@@ -59,8 +65,22 @@ const eyeMateApi: EyeMatePreloadApi = {
   ,async exportM3WithDialog(format, includeEvidence) { const result: unknown = await ipcRenderer.invoke("m3:export-with-dialog", format, includeEvidence); if (typeof result !== "object" || result === null) throw new Error("PRELOAD_M3_EXPORT_DIALOG_INVALID"); return result as import("../shared/preload-contract.js").LocalExportResult; }
   ,async getUserPreferences() { const result: unknown = await ipcRenderer.invoke("settings:get"); if (!isUserPreferences(result)) throw new Error("PRELOAD_SETTINGS_CONTRACT_INVALID"); return result; }
   ,async updateUserPreferences(preferences) { const result: unknown = await ipcRenderer.invoke("settings:update", preferences); if (!isUserPreferences(result)) throw new Error("PRELOAD_SETTINGS_CONTRACT_INVALID"); return result; }
+  ,async getCameraCalibration() { const result: unknown = await ipcRenderer.invoke("camera-calibration:get"); if (result !== null && !isCameraCalibrationRecord(result)) throw new Error("PRELOAD_CAMERA_CALIBRATION_INVALID"); return result; }
+  ,async saveCameraCalibration(record) { if (!isCameraCalibrationRecord(record)) throw new Error("PRELOAD_CAMERA_CALIBRATION_INVALID"); const result: unknown = await ipcRenderer.invoke("camera-calibration:save", record); if (!isCameraCalibrationRecord(result)) throw new Error("PRELOAD_CAMERA_CALIBRATION_INVALID"); return result; }
+  ,async resetCameraCalibration() { const result: unknown = await ipcRenderer.invoke("camera-calibration:reset"); if (result !== "DELETED") throw new Error("PRELOAD_CAMERA_CALIBRATION_RESET_INVALID"); return result; }
   ,async getDataInventory() { const result: unknown = await ipcRenderer.invoke("privacy:get-data-inventory"); if (!Array.isArray(result) || !result.every(isDataInventoryItem)) throw new Error("PRELOAD_INVENTORY_CONTRACT_INVALID"); return result; }
 };
+
+function isCameraCalibrationRecord(value: unknown): value is import("../camera/calibration-service.js").CameraCalibrationRecord {
+  if (typeof value !== "object" || value === null) return false;
+  const item = value as Record<string, unknown>;
+  const profile = item.profile as Record<string, unknown> | undefined;
+  return item.schemaVersion === "camera-calibration-record/1.0.0" && item.algorithmVersion === "camera-calibration-median-cv/1.0.0"
+    && ["HIGH", "MEDIUM", "LOW"].includes(String(item.confidence)) && item.rawDataPersisted === false
+    && Number.isInteger(item.validSampleCount) && Number(item.validSampleCount) >= 30
+    && typeof profile === "object" && profile !== null && profile.profileVersion === "camera-calibration/0.1.0"
+    && typeof profile.deviceBinding === "string" && /^[a-f0-9]{64}$/.test(profile.deviceBinding);
+}
 
 function isUserPreferences(value: unknown): value is import("../shared/preload-contract.js").UserPreferences {
   if (typeof value !== "object" || value === null) return false;
@@ -72,7 +92,7 @@ function isUserPreferences(value: unknown): value is import("../shared/preload-c
 function isDataInventoryItem(value: unknown): value is import("../shared/preload-contract.js").DataInventoryItem {
   if (typeof value !== "object" || value === null) return false;
   const item = value as Record<string, unknown>;
-  return ["CHECKUP", "SESSION", "NUDGE", "REPORT", "PREFERENCE"].includes(String(item.category)) && typeof item.purpose === "string" && Number.isSafeInteger(item.recordCount) && Number(item.recordCount) >= 0 && item.retention === "UNTIL_USER_DELETES" && item.location === "LOCAL_ONLY";
+  return ["CHECKUP", "SESSION", "NUDGE", "REPORT", "PREFERENCE", "CALIBRATION"].includes(String(item.category)) && typeof item.purpose === "string" && Number.isSafeInteger(item.recordCount) && Number(item.recordCount) >= 0 && item.retention === "UNTIL_USER_DELETES" && item.location === "LOCAL_ONLY";
 }
 
 contextBridge.exposeInMainWorld("eyeMate", Object.freeze(eyeMateApi));

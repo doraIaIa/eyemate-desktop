@@ -8,7 +8,7 @@ const sourceDirectory = path.join(repositoryRoot, "src", "renderer");
 const destinationDirectory = path.join(repositoryRoot, "dist", "renderer");
 
 await mkdir(destinationDirectory, { recursive: true });
-for (const asset of ["index.html", "styles.css"]) {
+for (const asset of ["index.html", "styles.css", "taste-design-lab.css"]) {
   await cp(path.join(sourceDirectory, asset), path.join(destinationDirectory, asset));
 }
 

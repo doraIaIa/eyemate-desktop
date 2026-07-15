@@ -3,6 +3,7 @@ export type RuntimeMode = "LOCAL_ONLY";
 export interface RuntimeInfo {
   readonly mode: RuntimeMode;
   readonly applicationVersion: string;
+  readonly developerPanelEnabled: boolean;
 }
 
 export function isRuntimeInfo(value: unknown): value is RuntimeInfo {
@@ -11,5 +12,5 @@ export function isRuntimeInfo(value: unknown): value is RuntimeInfo {
   }
 
   const candidate = value as Record<string, unknown>;
-  return candidate.mode === "LOCAL_ONLY" && typeof candidate.applicationVersion === "string";
+  return candidate.mode === "LOCAL_ONLY" && typeof candidate.applicationVersion === "string" && typeof candidate.developerPanelEnabled === "boolean";
 }

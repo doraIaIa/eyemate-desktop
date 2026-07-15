@@ -6,11 +6,12 @@ import { randomUUID } from "node:crypto";
 import { createSecureWindowOptions } from "./window-options.js";
 import type { RuntimeInfo } from "../shared/runtime-contract.js";
 import { EYEMATE_APPLICATION_VERSION } from "../shared/product-meta.js";
+import { validateCameraCalibrationRecord, type CameraCalibrationRecord } from "../camera/calibration-service.js";
 import type { CheckupSummary, PrivacySummary, SurveyRequest } from "../shared/m1-contract.js";
 import { createSurveyOnlyExportPreview, resolveDeletionResult } from "../user-data/data-controls.js";
 import { DEFAULT_USER_PREFERENCES, openLocalSqliteStorage, resolveDatabasePath, type LocalSqliteStorage } from "../platform-electron/sqlite-storage.js";
 import type { M3DataCategory, UserPreferences } from "../shared/preload-contract.js";
-import { createSurveyDraft, createSurveyOnlyReport, recordSurveyAnswer } from "../symptom-checkup/survey-only.js";
+import { WELLNESS_MAXIMUM_SCORE, createWellnessCheckReport, wellnessQuestions, type WellnessQuestionId, type WellnessResponse } from "../symptom-checkup/wellness-check.js";
 import { evaluateSafetyGate, internalSafetyCatalogue } from "../safety/safety-gate.js";
 import { applySessionEvent, createSession, recoverSession, tickSession, type WorkSession } from "../work-session/session-state.js";
 import { decideNudge, type NudgeDecision } from "../work-session/companion-policy.js";
@@ -32,22 +33,45 @@ const smokeMode = process.argv.includes("--m1-smoke");
 const companionSmokeMode = process.argv.includes("--m2-smoke");
 const intelligenceSmokeMode = process.argv.includes("--m3-smoke");
 const uiValidationMode = process.argv.includes("--ui-validate");
+const livingAuroraValidationMode = process.argv.includes("--living-aurora-validate");
+const tasteDesignLabValidationMode = process.argv.includes("--taste-design-lab-validate");
+const clarityProductionValidationMode = process.argv.includes("--clarity-production-validate");
 const uiRecoverySeedMode = process.argv.includes("--ui-recovery-seed");
 const uiRecoveryCheckMode = process.argv.includes("--ui-recovery-check");
 const egressObservationMode = process.argv.includes("--egress-observe");
 const cameraRuntimeTestMode = process.argv.includes("--camera-runtime-test");
 const cameraRuntimeFullTestMode = process.argv.includes("--camera-runtime-full-test");
+const devPanelValidationMode = process.argv.includes("--dev-panel-validate");
+const developerPanelEnabled = !app.isPackaged && process.argv.includes("--enable-dev-panel");
 const uiCaptureArgument = process.argv.find((argument) => argument.startsWith("--ui-screenshot-dir="));
 const uiScreenshotDirectory = uiCaptureArgument?.slice("--ui-screenshot-dir=".length) ?? null;
 
-if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode || uiRecoverySeedMode || uiRecoveryCheckMode || egressObservationMode) {
+if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode || livingAuroraValidationMode || tasteDesignLabValidationMode || clarityProductionValidationMode || uiRecoverySeedMode || uiRecoveryCheckMode || egressObservationMode) {
   app.disableHardwareAcceleration();
+}
+
+async function runDevPanelValidation(window: BrowserWindow): Promise<void> {
+  const evaluate = async <T>(script: string): Promise<T> => await window.webContents.executeJavaScript(script, true) as T;
+  const wait = (milliseconds = 120): Promise<void> => new Promise((resolve) => setTimeout(resolve, milliseconds));
+  await wait(350);
+  if (!await evaluate<boolean>("window.eyeMate.getRuntimeInfo().then((value) => value.developerPanelEnabled === true)")) throw new Error("DEV_PANEL_RUNTIME_GATE_INVALID");
+  if (await evaluate<boolean>("Boolean(document.querySelector('.dev-panel'))")) throw new Error("DEV_PANEL_OPEN_BY_DEFAULT");
+  await evaluate("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'D', ctrlKey: true, shiftKey: true, bubbles: true })); true"); await wait();
+  if (!await evaluate<boolean>("Boolean(document.querySelector('.dev-panel')) && Boolean(document.querySelector('#dev-mode-badge')) && sessionStorage.getItem('eyemate:dev-panel:v1') !== null")) throw new Error("DEV_PANEL_SHORTCUT_OPEN_INVALID");
+  await evaluate(`(() => { const toggle = (id) => { const item = document.querySelector(id); item.click(); }; toggle('#dev-force-distance-enabled'); document.querySelector('#dev-force-distance').value = '45'; document.querySelector('#dev-force-distance').dispatchEvent(new Event('input', { bubbles: true })); toggle('#dev-force-ear-enabled'); document.querySelector('#dev-force-ear').value = '0.15'; document.querySelector('#dev-force-ear').dispatchEvent(new Event('input', { bubbles: true })); toggle('#dev-show-raw'); return true; })()`); await wait();
+  if (!await evaluate<boolean>("!document.querySelector('#dev-force-distance').disabled && !document.querySelector('#dev-force-ear').disabled && Boolean(document.querySelector('#dev-raw-metrics'))")) throw new Error("DEV_PANEL_OVERRIDE_INVALID");
+  await evaluate("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', ctrlKey: true, shiftKey: true, bubbles: true })); true"); await wait();
+  if (!await evaluate<boolean>("!document.querySelector('.dev-panel') && !document.querySelector('#dev-mode-badge') && !document.querySelector('#dev-raw-metrics') && sessionStorage.getItem('eyemate:dev-panel:v1') === null")) throw new Error("DEV_PANEL_CLOSE_RESET_INVALID");
+  await evaluate("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', ctrlKey: true, shiftKey: true, bubbles: true })); true"); await wait();
+  if (!await evaluate<boolean>("document.querySelector('#dev-force-distance-enabled').checked === false && document.querySelector('#dev-force-ear-enabled').checked === false && document.querySelector('#dev-show-raw').checked === false")) throw new Error("DEV_PANEL_REOPEN_RESET_INVALID");
+  console.log("DEV_PANEL_VALIDATION_PASS shortcut=true resetOnClose=true sessionOnly=true productionDefault=false rawExport=false");
 }
 
 function getRuntimeInfo(): RuntimeInfo {
   return {
     mode: "LOCAL_ONLY",
-    applicationVersion: EYEMATE_APPLICATION_VERSION
+    applicationVersion: EYEMATE_APPLICATION_VERSION,
+    developerPanelEnabled
   };
 }
 
@@ -140,18 +164,27 @@ function getPrivacySummary(): PrivacySummary {
 }
 
 function runSurveyOnly(request: SurveyRequest): CheckupSummary {
-  const allowed = ["NONE", "MILD", "NOTICEABLE", "UNSURE", "PREFER_NOT_TO_ANSWER"];
-  if (!allowed.includes(request.response) || !["CONFIRMED", "NEGATIVE", "UNSURE", "PREFER_NOT_TO_ANSWER"].includes(request.safety)) throw new Error("INVALID_SURVEY_REQUEST");
+  const allowed: readonly WellnessResponse[] = [0, 1, 2, 3, "UNKNOWN"];
+  if (!request.answers || typeof request.answers !== "object" || !["CONFIRMED", "NEGATIVE", "UNSURE", "PREFER_NOT_TO_ANSWER"].includes(request.safety)) throw new Error("INVALID_SURVEY_REQUEST");
+  for (const question of wellnessQuestions) if (!allowed.includes(request.answers[question.id])) throw new Error("INVALID_SURVEY_REQUEST");
   if (storage?.load()?.stage !== "COMPLETE") throw new Error("ONBOARDING_REQUIRED");
   const safety = evaluateSafetyGate({ answers: { safety_signal_a: request.safety, safety_signal_b: "NEGATIVE" } }, internalSafetyCatalogue);
-  const draft = recordSurveyAnswer(createSurveyDraft(), "comfort_now", request.response);
-  const report = createSurveyOnlyReport(draft, safety.outcome);
+  const answers = request.answers as Readonly<Record<WellnessQuestionId, WellnessResponse>>;
+  const report = createWellnessCheckReport(answers, safety.outcome);
   const createdAt = currentIso();
   const reportId = randomUUID();
-  storage?.saveSurveyOnlyReport({ reportId, status: report.status, action: report.action, provenanceVersion: report.provenance.reportSchemaVersion, createdAt });
-  const source = fromSurveyOnly({ reportId, createdAt, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", schemaVersion: report.provenance.reportSchemaVersion, symptomBurden: null });
+  storage?.saveSurveyOnlyReport({ reportId, status: report.status, action: report.actions.map((action) => action.id).join(","), provenanceVersion: report.provenance.questionnaireVersion, createdAt, wellnessPayload: { questionnaireVersion: report.provenance.questionnaireVersion, scoreVersion: report.provenance.scoreVersion, payloadJson: JSON.stringify(report) } });
+  const normalizedSymptomBurden = report.discomfortLoad.score === null ? null : Math.round(report.discomfortLoad.score * 10000 / WELLNESS_MAXIMUM_SCORE) / 100;
+  const source = fromSurveyOnly({ reportId, createdAt, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", schemaVersion: report.provenance.questionnaireVersion, symptomBurden: normalizedSymptomBurden });
   storage?.saveM3Record({ id: `source-${reportId}`, kind: "SOURCE", createdAt, payloadJson: JSON.stringify(source) });
-  return { status: report.status, source: report.source, camera: report.coverage.camera, action: report.action, missingData: report.missingData };
+  return { reportId, status: report.status, source: report.source, camera: "NOT_MEASURED", actions: report.actions, missingData: report.missingData, discomfortLoad: report.discomfortLoad, limitation: report.limitation };
+}
+
+async function renderWellnessExport(payload: string, format: LocalExportFormat): Promise<string | Buffer> {
+  const report = JSON.parse(payload) as { status: string; discomfortLoad: { score: number | null; maximumScore: number; label: string; actionGroup: string | null; scoreVersion: string }; provenance: { questionnaireVersion: string; recallPeriod: string }; limitation: string; disclaimer: string; answers: Record<string, string | number> };
+  if (format === "JSON") return JSON.stringify(report, null, 2);
+  const markdown = `# EyeMate Symptom Check\n\n> ${report.disclaimer}\n\n- Trạng thái: ${report.status}\n- Tổng điểm tự báo cáo: ${report.discomfortLoad.score ?? "—"}/${report.discomfortLoad.maximumScore}\n- Nhóm hành động: ${report.discomfortLoad.label}\n- Mã nhóm: ${report.discomfortLoad.actionGroup ?? "INSUFFICIENT_DATA"}\n- Nguồn: Dựa trên câu trả lời tự báo cáo\n- Phiên bản questionnaire: ${report.provenance.questionnaireVersion}\n- Thời gian hồi tưởng: ${report.provenance.recallPeriod}\n- Giới hạn: ${report.limitation}\n\n## Câu trả lời\n\n${Object.entries(report.answers).map(([id, value]) => `- ${id}: ${String(value)}`).join("\n")}\n\n> ${report.disclaimer}\n`;
+  return format === "PDF" ? await renderLocalPdf(markdown) : markdown;
 }
 
 function completeOnboardingWithoutCamera(): void {
@@ -214,6 +247,15 @@ function registerIpcHandlers(): void {
   ipcMain.handle("privacy:withdraw-camera-consent", (): void => withdrawCameraConsent());
   ipcMain.handle("privacy:delete-all-local-data", (): "DELETED" | "PARTIALLY_DELETED" | "FAILED" => storage?.deleteAllLocalData() ?? "FAILED");
   ipcMain.handle("reports:list-survey-only", () => storage?.listSurveyOnlyReports() ?? []);
+  ipcMain.handle("checkup:export-with-dialog", async (_event, reportId: string, format: LocalExportFormat) => {
+    if (!/^[a-z0-9-]{8,64}$/i.test(reportId) || !["JSON", "MARKDOWN", "PDF"].includes(format)) throw new Error("INVALID_CHECKUP_EXPORT_REQUEST");
+    const payload = storage?.getWellnessCheckPayload(reportId);
+    if (!payload) throw new Error("CHECKUP_EXPORT_NOT_AVAILABLE");
+    const selected = await dialog.showSaveDialog({ title: "Export EyeMate Symptom Check", defaultPath: `eyemate-symptom-check.${format === "JSON" ? "json" : format === "PDF" ? "pdf" : "md"}`, filters: [{ name: format === "JSON" ? "JSON" : format === "PDF" ? "PDF" : "Markdown", extensions: [format === "JSON" ? "json" : format === "PDF" ? "pdf" : "md"] }], properties: ["showOverwriteConfirmation", "createDirectory"] });
+    if (selected.canceled || !selected.filePath) return { status: "CANCELLED", reason: "USER_CANCELLED" };
+    const content = await renderWellnessExport(payload, format);
+    return format === "PDF" ? writeLocalPdfExport(selected.filePath, content as Buffer) : writeLocalExport(selected.filePath, content as string);
+  });
   ipcMain.handle("work-session:start", (_event, modeId?: WorkSession["modeId"]) => startWorkSession(modeId));
   ipcMain.handle("work-session:pause", () => updateWorkSession("PAUSE"));
   ipcMain.handle("work-session:resume", () => updateWorkSession("RESUME"));
@@ -262,6 +304,9 @@ function registerIpcHandlers(): void {
     if (typeof preferences !== "object" || preferences === null) throw new Error("INVALID_USER_PREFERENCES");
     return storage?.saveUserPreferences(preferences) ?? DEFAULT_USER_PREFERENCES;
   });
+  ipcMain.handle("camera-calibration:get", () => storage?.loadCameraCalibration() ?? null);
+  ipcMain.handle("camera-calibration:save", (_event, record: CameraCalibrationRecord) => storage?.saveCameraCalibration(validateCameraCalibrationRecord(record)) ?? validateCameraCalibrationRecord(record));
+  ipcMain.handle("camera-calibration:reset", () => storage?.deleteCameraCalibration() ?? "DELETED");
   ipcMain.handle("privacy:get-data-inventory", () => storage?.getDataInventory() ?? []);
 }
 
@@ -308,10 +353,10 @@ async function runSmoke(window: BrowserWindow): Promise<void> {
   }
 
   const surveyResult = await window.webContents.executeJavaScript(
-    "window.eyeMate.completeOnboardingWithoutCamera().then(() => window.eyeMate.runSurveyOnly({ response: 'MILD', safety: 'NEGATIVE' })).then((value) => `${value.status}:${value.source}:${value.camera}`)",
+    "window.eyeMate.completeOnboardingWithoutCamera().then(() => window.eyeMate.runSurveyOnly({ answers: Object.fromEntries(['eye_discomfort','screen_fatigue','temporary_blur','light_sensitivity','end_of_day_effort'].map((id) => [id, 1])), safety: 'NEGATIVE' })).then((value) => `${value.status}:${value.source}:${value.camera}`)",
     true
   );
-  if (surveyResult !== "COMPLETED:SURVEY_ONLY:NOT_MEASURED") {
+  if (surveyResult !== "COMPLETED:EYEMATE_WELLNESS_SELF_REPORTED:NOT_MEASURED") {
     throw new Error("M1_SURVEY_ONLY_FLOW_INVALID");
   }
 }
@@ -335,7 +380,7 @@ async function runCompanionSmoke(window: BrowserWindow): Promise<void> {
 async function runIntelligenceSmoke(window: BrowserWindow): Promise<void> {
   const result = await window.webContents.executeJavaScript(`(async () => {
     await window.eyeMate.completeOnboardingWithoutCamera();
-    await window.eyeMate.runSurveyOnly({ response: 'MILD', safety: 'NEGATIVE' });
+    await window.eyeMate.runSurveyOnly({ answers: Object.fromEntries(['eye_discomfort','screen_fatigue','temporary_blur','light_sensitivity','end_of_day_effort'].map((id) => [id, 1])), safety: 'NEGATIVE' });
     await window.eyeMate.startWorkSession('TIMER_ONLY');
     await window.eyeMate.finishWorkSession();
     await window.eyeMate.finishWorkSession();
@@ -351,6 +396,9 @@ async function runUiValidation(window: BrowserWindow): Promise<void> {
   const evaluate = async <T>(source: string): Promise<T> => await window.webContents.executeJavaScript(source, true) as T;
   const requireTrue = (value: unknown, reason: string): void => { if (value !== true) throw new Error(reason); };
   await evaluate("(() => { const style = document.createElement('style'); style.textContent = '*{animation:none!important;transition:none!important}'; document.head.append(style); return true; })()");
+  requireTrue(await evaluate("window.eyeMate.getRuntimeInfo().then((value) => value.developerPanelEnabled === false)"), "UI_DEV_PANEL_PRODUCTION_GATE_INVALID");
+  await evaluate("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', ctrlKey: true, shiftKey: true, bubbles: true })); true");
+  requireTrue(await evaluate("!document.querySelector('.dev-panel') && !document.querySelector('#dev-mode-badge')"), "UI_DEV_PANEL_PRODUCTION_LEAK");
   const capture = async (name: string, width = 1280, height = 800): Promise<void> => {
     if (uiScreenshotDirectory === null) return;
     window.setSize(width, height);
@@ -359,22 +407,30 @@ async function runUiValidation(window: BrowserWindow): Promise<void> {
     requireTrue(await evaluate("document.documentElement.scrollWidth <= window.innerWidth && document.querySelector('.app-shell').getBoundingClientRect().right <= window.innerWidth + 1"), `UI_LAYOUT_OVERFLOW_${width}x${height}`);
     const image = await window.webContents.capturePage();
     await mkdir(uiScreenshotDirectory, { recursive: true });
-    await writeFile(path.join(uiScreenshotDirectory, `${name}-${width}x${height}.png`), image.toPNG());
+    await writeFile(path.join(uiScreenshotDirectory, `clarity-production-${name}-${width}x${height}.png`), image.toPNG());
   };
 
   await wait(300);
-  requireTrue(await evaluate("location.hash === '#/home' && Boolean(document.querySelector('.vitals-orb'))"), "UI_HOME_ROUTE_INVALID");
+  requireTrue(await evaluate("location.hash === '#/home' && Boolean(document.querySelector('.clarity-home-grid')) && !document.querySelector('.vitals-orb') && document.querySelectorAll('.production-topbar [data-route]').length === 7"), "UI_HOME_ROUTE_INVALID");
   await capture("home");
   await capture("home", 1024, 768);
 
+  await evaluate("location.hash = '#/design-lab/living-aurora'; true"); await wait();
+  requireTrue(await evaluate("Boolean(document.querySelector('.aurora-lab')) && document.body.textContent.includes('DEMO/REFERENCE') && document.body.textContent.includes('KHÔNG GỌI IPC/CAMERA/DB')"), "UI_LIVING_AURORA_LAB_INVALID");
+  await evaluate("document.querySelector('[data-lumi-state=FOCUS]').click(); document.querySelector('#aurora-reduced-motion').click(); true"); await wait();
+  requireTrue(await evaluate("document.querySelector('.aurora-state').textContent.includes('FOCUS') && document.querySelector('.aurora-lab').classList.contains('aurora-lab-reduced')"), "UI_LIVING_AURORA_INTERACTION_INVALID");
+  await capture("living-aurora-reference", 1100, 760);
+
   await evaluate("document.querySelector('[data-route=checkup]').click(); true"); await wait();
   requireTrue(await evaluate("location.hash === '#/checkup' && Boolean(document.querySelector('#checkup-consent'))"), "UI_CHECKUP_ROUTE_INVALID");
+  requireTrue(await evaluate("!document.body.textContent.includes('OSDI') && !document.body.textContent.includes('DEQ-5') && document.body.textContent.includes('EyeMate Symptom Check') && document.body.textContent.includes('Đây không phải chẩn đoán y tế')"), "UI_WELLNESS_COPY_INVALID");
   await evaluate("document.querySelector('#checkup-consent').click(); true"); await wait();
-  await evaluate("document.querySelector('input[value=MILD]').click(); document.querySelector('#checkup-survey-next').click(); true"); await wait();
+  requireTrue(await evaluate("document.querySelectorAll('[data-wellness-question]').length === 5 && document.querySelectorAll('[data-wellness-question] input[type=radio][value=\\\"3\\\"]').length === 5 && !document.body.textContent.includes('Không áp dụng')"), "UI_WELLNESS_QUESTIONNAIRE_INVALID");
+  await evaluate("Array.from(document.querySelectorAll('[data-wellness-question]')).forEach((field) => field.querySelector('input[value=\\\"1\\\"]').click()); document.querySelector('#checkup-survey-next').click(); true"); await wait();
   await evaluate("document.querySelector('#checkup-camera-next').click(); true"); await wait();
   const checkupsBefore = await evaluate<number>("window.eyeMate.listSurveyOnlyReports().then((items) => items.length)");
   await evaluate("document.querySelector('#checkup-finish').click(); document.querySelector('#checkup-finish').click(); true"); await wait(350);
-  requireTrue(await evaluate("Boolean(document.querySelector('#checkup-done')) && document.body.textContent.includes('Survey-only')"), "UI_CHECKUP_FLOW_INVALID");
+  requireTrue(await evaluate("Boolean(document.querySelector('#checkup-done')) && document.body.textContent.includes('EyeMate Symptom Check') && document.body.textContent.includes('/ 15') && document.body.textContent.includes('Nhóm hành động sản phẩm') && document.body.textContent.includes('Đây không phải chẩn đoán y tế')"), "UI_CHECKUP_FLOW_INVALID");
   requireTrue(await evaluate(`window.eyeMate.listSurveyOnlyReports().then((items) => items.length === ${checkupsBefore + 1})`), "UI_CHECKUP_DOUBLE_SUBMIT_INVALID");
   await capture("checkup-result");
   await capture("checkup-result", 1024, 768);
@@ -384,7 +440,7 @@ async function runUiValidation(window: BrowserWindow): Promise<void> {
 
   await evaluate("document.querySelector('[data-route=companion]').click(); true"); await wait();
   await evaluate("document.querySelector('#session-start').click(); true"); await wait(300);
-  requireTrue(await evaluate("Boolean(document.querySelector('#session-toggle')) && document.body.textContent.includes('Phiên đang hoạt động')"), "UI_SESSION_START_INVALID");
+  requireTrue(await evaluate("Boolean(document.querySelector('#session-toggle')) && Boolean(document.querySelector('#companion-timer-ring[role=timer]')) && Boolean(document.querySelector('#session-ring-progress')) && document.body.textContent.includes('Phiên đang hoạt động') && document.body.textContent.includes('Preset 25 phút')"), "UI_SESSION_START_INVALID");
   await wait(1_050);
   requireTrue(await evaluate("document.querySelector('#session-timer').textContent !== '00:00:00'"), "UI_SESSION_TIMER_NOT_COUNTING");
   await evaluate("document.querySelector('#session-timer').textContent = '00:00:01'; true");
@@ -450,7 +506,7 @@ async function runUiValidation(window: BrowserWindow): Promise<void> {
   requireTrue(await evaluate("window.eyeMate.listM3Reports().then((items) => items.length === 0)"), "UI_REPORT_DELETE_INVALID");
 
   await evaluate("document.querySelector('[data-route=privacy]').click(); true"); await wait();
-  requireTrue(await evaluate("document.querySelectorAll('.inventory-card').length === 5"), "UI_DATA_INVENTORY_INVALID");
+  requireTrue(await evaluate("document.querySelectorAll('.inventory-card').length === 6 && document.body.textContent.toLowerCase().includes('calibration') && Boolean(document.querySelector('#privacy-reset-calibration'))"), "UI_DATA_INVENTORY_INVALID");
   await evaluate("document.querySelector('#toast-region').replaceChildren(); true");
   await capture("privacy");
   await capture("privacy", 1024, 768);
@@ -466,6 +522,7 @@ async function runUiValidation(window: BrowserWindow): Promise<void> {
   requireTrue(await evaluate("Array.from(document.querySelectorAll('.inventory-card .metric-value')).every((item) => item.textContent === '0')"), "UI_DELETE_INVENTORY_NOT_REFRESHED");
 
   await evaluate("document.querySelector('[data-route=settings]').click(); true"); await wait();
+  requireTrue(await evaluate("Boolean(document.querySelector('#settings-calibrate-camera')) && document.querySelector('#settings-camera-calibration').textContent.includes('không xuất centimet')"), "UI_CAMERA_CALIBRATION_ENTRY_INVALID");
   await evaluate("document.querySelector('#toast-region').replaceChildren(); true");
   await evaluate(`(() => { document.querySelector('#sound-toggle').click(); document.querySelector('#reduced-motion-toggle').click(); document.querySelector('#quiet-toggle').click(); const now = new Date(); const minute = now.getHours() * 60 + now.getMinutes(); const start = document.querySelector('#quiet-start'); const end = document.querySelector('#quiet-end'); const format = (value) => String(Math.floor(value / 60)).padStart(2,'0') + ':' + String(value % 60).padStart(2,'0'); start.value = format((minute + 1439) % 1440); end.value = format((minute + 2) % 1440); end.dispatchEvent(new Event('change')); return true; })()`); await wait(750);
   requireTrue(await evaluate("window.eyeMate.getUserPreferences().then((value) => value.soundEnabled && value.reducedMotion && value.quietHoursEnabled)"), "UI_SETTINGS_AUTOSAVE_INVALID");
@@ -485,6 +542,183 @@ async function runUiValidation(window: BrowserWindow): Promise<void> {
   await evaluate("history.back(); true"); await wait();
   await window.webContents.reload(); await wait(350);
   requireTrue(await evaluate("location.hash === '#/privacy' && Boolean(document.querySelector('#privacy-delete'))"), "UI_RELOAD_RESTORE_INVALID");
+}
+
+async function runLivingAuroraValidation(window: BrowserWindow): Promise<void> {
+  const evaluate = async <T>(source: string): Promise<T> => await window.webContents.executeJavaScript(source, true) as T;
+  const wait = async (milliseconds = 180): Promise<void> => await new Promise((resolve) => setTimeout(resolve, milliseconds));
+  await evaluate("location.hash = '#/design-lab/living-aurora'; true");
+  await wait();
+  const shellState = await evaluate("(() => ({ route: location.hash, lab: Boolean(document.querySelector('.aurora-lab')), sidebar: getComputedStyle(document.querySelector('.sidebar')).display, primaryCount: document.querySelectorAll('[data-aurora-destination]').length, utilities: document.querySelectorAll('[data-aurora-utility]').length, demo: document.body.textContent.includes('KHÔNG GỌI IPC/CAMERA/DB/NETWORK') }))()");
+  if (JSON.stringify(shellState) !== JSON.stringify({ route: "#/design-lab/living-aurora", lab: true, sidebar: "none", primaryCount: 5, utilities: 2, demo: true })) throw new Error(`LIVING_AURORA_SHELL_INVALID:${JSON.stringify(shellState)}`);
+  if (uiScreenshotDirectory) { const image = await window.webContents.capturePage(); await mkdir(uiScreenshotDirectory, { recursive: true }); await writeFile(path.join(uiScreenshotDirectory, "living-aurora-reference-1100x760.png"), image.toPNG()); }
+  for (const state of ["IDLE", "BREAK_SUGGESTED", "PRIVACY"]) {
+    await evaluate(`document.querySelector('[data-lumi-state=${state}]').click(); true`);
+    await wait(60);
+    const stateCheck = await evaluate(`document.querySelector('.lumi-prototype')?.classList.contains('state-${state.toLowerCase()}') && document.querySelector('.aurora-state')?.textContent?.includes('${state}')`);
+    if (!stateCheck) throw new Error(`LIVING_AURORA_MASCOT_STATE_INVALID:${state}`);
+    if (uiScreenshotDirectory) { const image = await window.webContents.capturePage(); await mkdir(uiScreenshotDirectory, { recursive: true }); await writeFile(path.join(uiScreenshotDirectory, `living-aurora-${state.toLowerCase()}-1100x760.png`), image.toPNG()); }
+  }
+  await evaluate("document.querySelector('#aurora-reduced-motion').click(); true");
+  await wait(60);
+  if (!await evaluate("document.querySelector('.aurora-lab')?.classList.contains('aurora-lab-reduced') && getComputedStyle(document.querySelector('.lumi-prototype')).animationName === 'none'")) throw new Error("LIVING_AURORA_REDUCED_MOTION_INVALID");
+  if (uiScreenshotDirectory) { const image = await window.webContents.capturePage(); await writeFile(path.join(uiScreenshotDirectory, "living-aurora-reduced-motion-1100x760.png"), image.toPNG()); await window.setSize(1280, 800); await wait(); const wideImage = await window.webContents.capturePage(); await writeFile(path.join(uiScreenshotDirectory, "living-aurora-reference-1280x800.png"), wideImage.toPNG()); }
+  await evaluate("location.hash = '#/home'; true");
+  await wait();
+  if (!await evaluate("getComputedStyle(document.querySelector('.production-topbar')).display !== 'none' && Boolean(document.querySelector('.clarity-home-grid')) && !document.querySelector('.vitals-orb')")) throw new Error("LIVING_AURORA_PRODUCTION_CLARITY_SHELL_REGRESSION");
+  console.log("LIVING_AURORA_DESIGN_LAB_PASS noIpcCameraDatabaseNetwork=true reducedMotion=true productionClarityShell=true");
+}
+
+async function runTasteDesignLabValidation(window: BrowserWindow): Promise<void> {
+  const evaluate = async <T>(source: string): Promise<T> => await window.webContents.executeJavaScript(source, true) as T;
+  const wait = async (milliseconds = 160): Promise<void> => await new Promise((resolve) => setTimeout(resolve, milliseconds));
+  const capture = async (name: string, width = 1100, height = 760): Promise<void> => {
+    await window.setSize(width, height);
+    await wait(760);
+    if (!uiScreenshotDirectory) return;
+    await mkdir(uiScreenshotDirectory, { recursive: true });
+    const image = await window.webContents.capturePage();
+    await writeFile(path.join(uiScreenshotDirectory, `${name}.png`), image.toPNG());
+  };
+  const openView = async (view: string): Promise<void> => {
+    const transitionStarted = await evaluate<boolean>(`(() => { document.querySelector('[data-taste-destination=${view}]').click(); return document.querySelector('.taste-lab')?.classList.contains('taste-view-leaving') === true; })()`);
+    if (!transitionStarted) throw new Error(`TASTE_VIEW_TRANSITION_MISSING:${view}`);
+    await wait();
+    if (!await evaluate(`Boolean(document.querySelector('[data-taste-view=${view}]'))`)) throw new Error(`TASTE_VIEW_TRANSITION_INCOMPLETE:${view}`);
+  };
+
+  await window.setSize(1100, 760);
+  await evaluate("location.hash = '#/design-lab/taste-direction'; true");
+  await wait();
+  const shellState = await evaluate("(() => ({ route: location.hash, lab: Boolean(document.querySelector('.taste-lab')), sidebar: getComputedStyle(document.querySelector('.sidebar')).display, destinations: document.querySelectorAll('.taste-nav-button[data-taste-destination]').length, demo: document.body.textContent.includes('KHÔNG GỌI IPC, CAMERA, DATABASE HOẶC NETWORK'), productionCards: document.querySelectorAll('.taste-lab .metric-card, .taste-lab .vitals-orb').length }))()");
+  if (JSON.stringify(shellState) !== JSON.stringify({ route: "#/design-lab/taste-direction", lab: true, sidebar: "none", destinations: 7, demo: true, productionCards: 0 })) throw new Error(`TASTE_DESIGN_LAB_SHELL_INVALID:${JSON.stringify(shellState)}`);
+  const motionProfile = await evaluate("(() => ({ viewEntry: getComputedStyle(document.querySelector('.taste-canvas > section')).animationName, navRoll: getComputedStyle(document.querySelector('.taste-nav-track')).transitionDuration, barEntry: getComputedStyle(document.querySelector('.taste-spark-bars i')).animationName }))()");
+  if (JSON.stringify(motionProfile) !== JSON.stringify({ viewEntry: "taste-view-enter", navRoll: "0.48s", barEntry: "taste-bar-rise" })) throw new Error(`TASTE_MOTION_PROFILE_INVALID:${JSON.stringify(motionProfile)}`);
+  const navigationVisible = await evaluate("(() => { const titlebar = document.querySelector('.titlebar')?.getBoundingClientRect(); const bar = document.querySelector('.taste-topbar')?.getBoundingClientRect(); const items = Array.from(document.querySelectorAll('.taste-topbar [data-taste-destination]')).map((item) => item.getBoundingClientRect()); return Boolean(titlebar && bar && bar.top >= titlebar.bottom && bar.bottom <= innerHeight && items.length === 8 && items.every((item) => item.top >= bar.top && item.bottom <= bar.bottom && item.left >= 0 && item.right <= innerWidth)); })()");
+  if (!navigationVisible) throw new Error("TASTE_DESIGN_LAB_NAVIGATION_CLIPPED");
+  const homeContent = await evaluate<string>("document.querySelector('[data-taste-view=HOME]').textContent");
+  for (const required of ["Phiên gần nhất", "Nhịp chớp mắt", "Khoảng cách", "Tải thị giác", "NOT_MEASURED", "INSUFFICIENT_DATA", "Bắt đầu phiên", "Khám mắt", "Xem báo cáo"]) if (!homeContent.includes(required)) throw new Error(`TASTE_HOME_CAPABILITY_MISSING:${required}`);
+  await capture("clarity-grid-home-1100x760");
+  await capture("clarity-grid-home-1280x800", 1280, 800);
+  await window.setSize(1100, 760); await wait();
+
+  const clickFeedback = await evaluate("(() => { const button = document.querySelector('.taste-button.primary'); const bounds = button.getBoundingClientRect(); button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: bounds.left + bounds.width / 2, clientY: bounds.top + bounds.height / 2 })); return Boolean(button.querySelector('.taste-click-ripple')); })()");
+  if (!clickFeedback) throw new Error("TASTE_CLICK_FEEDBACK_MISSING");
+  await wait(640);
+
+  const keyboardResult = await evaluate("(() => { const items = Array.from(document.querySelectorAll('.taste-nav-button')); items[0].focus(); items[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); return document.activeElement === items[1] && getComputedStyle(items[1]).outlineStyle !== 'none'; })()");
+  if (!keyboardResult) throw new Error("TASTE_DESIGN_LAB_KEYBOARD_FOCUS_INVALID");
+
+  for (const state of ["READY", "NOT_MEASURED", "INSUFFICIENT_DATA", "STALE", "LOW_QUALITY", "PRIVACY"]) {
+    await evaluate(`document.querySelector('[data-taste-trace-state=${state}]').click(); true`);
+    await wait(40);
+    if (!await evaluate(`document.querySelector('.taste-trace')?.classList.contains('trace-${state.toLowerCase()}') && document.querySelector('#taste-trace-title')?.textContent?.includes('${state}')`)) throw new Error(`TASTE_TRACE_STATE_INVALID:${state}`);
+  }
+  await evaluate("document.querySelector('[data-taste-trace-state=INSUFFICIENT_DATA]').click(); true"); await wait(40);
+  await evaluate("document.querySelector('#taste-reduced-motion').click(); true"); await wait(40);
+  if (!await evaluate("(() => { const bar = document.querySelector('.taste-spark-bars i'); const style = getComputedStyle(bar); return document.querySelector('.taste-lab')?.classList.contains('taste-reduced-motion') && getComputedStyle(document.querySelector('.taste-trace-contour')).transitionDuration === '0s' && getComputedStyle(document.querySelector('.taste-canvas > section')).animationName === 'none' && style.transform === 'none' && Number.parseFloat(style.height) > 0; })()")) throw new Error("TASTE_REDUCED_MOTION_INVALID");
+  await evaluate("document.querySelector('#taste-reduced-transparency').click(); true"); await wait(40);
+  if (!await evaluate("document.querySelector('.taste-lab')?.classList.contains('taste-reduced-transparency') && getComputedStyle(document.querySelector('.taste-lab')).backgroundImage === 'none'")) throw new Error("TASTE_REDUCED_TRANSPARENCY_INVALID");
+  await capture("clarity-grid-reduced-motion-1100x760");
+  await evaluate("document.querySelector('#taste-reduced-motion').click(); document.querySelector('#taste-reduced-transparency').click(); true"); await wait(40);
+
+  await openView("CHECKUP");
+  const checkupContent = await evaluate<string>("document.querySelector('[data-taste-view=CHECKUP]').textContent");
+  for (const required of ["Observation", "Pattern", "Missing", "Confidence", "Action", "NOT_MEASURED"]) if (!checkupContent.includes(required)) throw new Error(`TASTE_CHECKUP_EVIDENCE_MISSING:${required}`);
+  if (/OSDI|DEQ-5|chẩn đoán bệnh/.test(checkupContent)) throw new Error("TASTE_CHECKUP_COPY_INVALID");
+  await capture("clarity-grid-checkup-result-1100x760");
+
+  await openView("COMPANION");
+  const companionContent = await evaluate<string>("document.querySelector('[data-taste-view=COMPANION]').textContent");
+  for (const required of ["24:18", "Tạm dừng", "Hoàn thành", "Hủy phiên", "Nghỉ ngay", "Nhắc sau", "Bỏ qua"]) if (!companionContent.includes(required)) throw new Error(`TASTE_COMPANION_CONTROL_MISSING:${required}`);
+  await capture("clarity-grid-companion-active-1100x760");
+
+  await openView("REPORTS");
+  const reportContent = await evaluate<string>("document.querySelector('[data-taste-view=REPORTS]').textContent");
+  for (const required of ["47 phút", "1/7 ngày", "m3-report/0.1.0", "Preview Markdown", "Preview JSON", "Xóa report snapshots"]) if (!reportContent.includes(required)) throw new Error(`TASTE_REPORT_CAPABILITY_MISSING:${required}`);
+  await capture("clarity-grid-report-1100x760");
+
+  await openView("PRIVACY");
+  const privacyContent = await evaluate<string>("document.querySelector('[data-taste-view=PRIVACY]').textContent");
+  for (const required of ["Camera consent", "Preview và export", "Reset baseline", "Xóa toàn bộ dữ liệu", "PARTIALLY_DELETED", "UNKNOWN"]) if (!privacyContent.includes(required)) throw new Error(`TASTE_PRIVACY_CAPABILITY_MISSING:${required}`);
+  await openView("SETTINGS");
+  const settingsContent = await evaluate<string>("document.querySelector('[data-taste-view=SETTINGS]').textContent");
+  for (const required of ["Giảm chuyển động", "Break reminder", "Âm thanh nudge", "Quiet hours", "Camera mode", "Appearance"]) if (!settingsContent.includes(required)) throw new Error(`TASTE_SETTINGS_CAPABILITY_MISSING:${required}`);
+
+  await evaluate("location.hash = '#/home'; true");
+  await wait();
+  if (!await evaluate("getComputedStyle(document.querySelector('.production-topbar')).display !== 'none' && !document.body.classList.contains('taste-design-lab-active') && Boolean(document.querySelector('.clarity-home-grid')) && !document.querySelector('.vitals-orb')")) throw new Error("TASTE_PRODUCTION_CLARITY_SHELL_REGRESSION");
+  console.log("TASTE_DESIGN_LAB_PASS noIpcCameraDatabaseNetwork=true keyboardFocus=true motionProfile=true clickFeedback=true reducedMotion=true reducedTransparency=true productionClarityShell=true");
+}
+
+async function runClarityProductionValidation(window: BrowserWindow): Promise<void> {
+  const evaluate = async <T>(source: string): Promise<T> => await window.webContents.executeJavaScript(source, true) as T;
+  const wait = async (milliseconds = 240): Promise<void> => await new Promise((resolve) => setTimeout(resolve, milliseconds));
+  const capture = async (name: string, width = 1100, height = 760): Promise<void> => {
+    await window.setSize(width, height);
+    await wait(920);
+    if (!uiScreenshotDirectory) return;
+    await mkdir(uiScreenshotDirectory, { recursive: true });
+    const image = await window.webContents.capturePage();
+    await writeFile(path.join(uiScreenshotDirectory, `clarity-production-${name}-${width}x${height}.png`), image.toPNG());
+  };
+  const openRoute = async (route: string, requiredSelector: string): Promise<void> => {
+    await evaluate(`location.hash = '#/${route}'; true`);
+    await wait();
+    const state = await evaluate(`(() => ({ route: location.hash, content: Boolean(document.querySelector(${JSON.stringify(requiredSelector)})), active: document.querySelector('[data-route=${route}]')?.getAttribute('aria-current'), production: document.body.classList.contains('production-clarity-active') }))()`);
+    if (JSON.stringify(state) !== JSON.stringify({ route: `#/${route}`, content: true, active: "page", production: true })) throw new Error(`CLARITY_PRODUCTION_ROUTE_INVALID:${route}:${JSON.stringify(state)}`);
+  };
+
+  await window.setSize(1100, 760);
+  await wait(360);
+  const shell = await evaluate("(() => { const topbar = document.querySelector('.production-topbar')?.getBoundingClientRect(); return { route: location.hash, production: document.body.classList.contains('production-clarity-active'), navigation: document.querySelectorAll('.production-topbar [data-route]').length, topbar: Boolean(topbar && topbar.width >= innerWidth - 2 && topbar.height <= 70), home: Boolean(document.querySelector('.clarity-home-grid')), orb: Boolean(document.querySelector('.vitals-orb')), singleColumn: getComputedStyle(document.querySelector('.app-shell')).gridTemplateColumns.split(' ').length === 1 }; })()");
+  if (JSON.stringify(shell) !== JSON.stringify({ route: "#/home", production: true, navigation: 7, topbar: true, home: true, orb: false, singleColumn: true })) throw new Error(`CLARITY_PRODUCTION_SHELL_INVALID:${JSON.stringify(shell)}`);
+  const homeContent = await evaluate<string>("document.querySelector('.clarity-home').textContent");
+  for (const required of ["Phiên", "Nhịp chớp mắt", "Khoảng cách", "Tải thị giác", "NOT_MEASURED", "Bắt đầu phiên", "Khám mắt", "Xem báo cáo", "Privacy Center"]) if (!homeContent.includes(required)) throw new Error(`CLARITY_PRODUCTION_HOME_MISSING:${required}`);
+  const homeVisuals = await evaluate("(() => ({ chart: Boolean(document.querySelector('.production-trace-chart')), bars: document.querySelectorAll('.production-evidence-bar').length, tooltips: document.querySelectorAll('.production-evidence-bar title').length, focusableBars: document.querySelectorAll('.production-evidence-bar[tabindex=\"0\"]').length, sessionRing: Boolean(document.querySelector('.clarity-session-ring')), artwork: Boolean(document.querySelector('.clarity-home-artwork svg')), weeklyAnchor: Boolean(document.querySelector('.clarity-week-panel')), subtitle: document.querySelector('.brand small')?.textContent, legacyDecorativeBars: Boolean(document.querySelector('.production-trace-bars')) }))()");
+  if (JSON.stringify(homeVisuals) !== JSON.stringify({ chart: true, bars: 5, tooltips: 5, focusableBars: 5, sessionRing: true, artwork: true, weeklyAnchor: true, subtitle: "Visual wellbeing", legacyDecorativeBars: false })) throw new Error(`CLARITY_PRODUCTION_HOME_VISUAL_EVIDENCE_INVALID:${JSON.stringify(homeVisuals)}`);
+  const chartKeyboard = await evaluate("(() => { const bar = document.querySelector('.production-evidence-bar'); bar.focus(); return document.activeElement === bar && Boolean(bar.getAttribute('aria-label')?.includes('Thiếu dữ liệu')); })()");
+  if (!chartKeyboard) throw new Error("CLARITY_PRODUCTION_EVIDENCE_KEYBOARD_INVALID");
+  const keyboardFocus = await evaluate("(() => { const links = Array.from(document.querySelectorAll('.production-topbar [data-route]')); links[0].focus(); links[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); return document.activeElement === links[1] && getComputedStyle(links[1]).outlineStyle !== 'none'; })()");
+  if (!keyboardFocus) throw new Error("CLARITY_PRODUCTION_KEYBOARD_INVALID");
+  const clickFeedback = await evaluate("(() => { const button = document.querySelector('.clarity-quick-actions .btn-primary'); const bounds = button.getBoundingClientRect(); button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: bounds.left + bounds.width / 2, clientY: bounds.top + bounds.height / 2 })); return Boolean(button.querySelector('.production-click-ripple')); })()");
+  if (!clickFeedback) throw new Error("CLARITY_PRODUCTION_CLICK_FEEDBACK_INVALID");
+  await evaluate("document.querySelector('#app-main').focus({ preventScroll: true }); true");
+  await capture("home");
+  await capture("home", 1280, 800);
+  const wideHomeHeading = await evaluate<{ readonly innerWidth: number; readonly narrowMedia: boolean; readonly whiteSpace: string; readonly width: number; readonly height: number; readonly lineHeight: number; readonly fontSize: string; readonly parentMaxWidth: string }>("(() => { const heading = document.querySelector('.clarity-home .page-heading h1'); const style = getComputedStyle(heading); return { innerWidth, narrowMedia: matchMedia('(max-width: 900px)').matches, whiteSpace: style.whiteSpace, width: Math.round(heading.getBoundingClientRect().width), height: Math.round(heading.getBoundingClientRect().height), lineHeight: Math.round(Number.parseFloat(style.lineHeight)), fontSize: style.fontSize, parentMaxWidth: getComputedStyle(heading.parentElement).maxWidth }; })()");
+  if (wideHomeHeading.whiteSpace !== "nowrap" || wideHomeHeading.height > wideHomeHeading.lineHeight * 1.35) throw new Error(`CLARITY_PRODUCTION_WIDE_HEADING_WRAP_INVALID:${JSON.stringify(wideHomeHeading)}`);
+
+  await openRoute("checkup", "#checkup-consent");
+  const checkupHooks = await evaluate("Boolean(document.querySelector('#checkup-camera-consent')) && Boolean(document.querySelector('[data-checkup-cancel]')) && Boolean(document.querySelector('.wizard-card'))");
+  if (!checkupHooks) throw new Error("CLARITY_PRODUCTION_CHECKUP_HOOKS_MISSING");
+  await capture("checkup-entry");
+
+  await openRoute("companion", "#session-panel");
+  const companionHooks = await evaluate("Boolean(document.querySelector('#session-start, #session-toggle, #session-recover')) && document.body.textContent.includes('Timer Only') && document.body.textContent.includes('Camera + Timer')");
+  if (!companionHooks) throw new Error("CLARITY_PRODUCTION_COMPANION_HOOKS_MISSING");
+  await capture("companion-ready");
+
+  await openRoute("intelligence", "#intelligence-refresh, #intelligence-reset");
+  if (!await evaluate("document.body.textContent.includes('Baseline')")) throw new Error("CLARITY_PRODUCTION_INTELLIGENCE_HOOKS_MISSING");
+  await openRoute("reports", "#report-generate");
+  if (!await evaluate("document.querySelectorAll('[data-report-tab]').length === 4 && Boolean(document.querySelector('#report-content'))")) throw new Error("CLARITY_PRODUCTION_REPORT_HOOKS_MISSING");
+  await capture("reports");
+
+  await openRoute("privacy", "#privacy-export");
+  if (!await evaluate("document.querySelectorAll('.inventory-card').length === 6 && Boolean(document.querySelector('#privacy-reset-baseline')) && Boolean(document.querySelector('#privacy-reset-calibration')) && Boolean(document.querySelector('#privacy-delete')) && Boolean(document.querySelector('#camera-consent-toggle'))")) throw new Error("CLARITY_PRODUCTION_PRIVACY_HOOKS_MISSING");
+  await capture("privacy");
+
+  await openRoute("settings", "#reduced-motion-toggle");
+  if (!await evaluate("Boolean(document.querySelector('#break-reminder-toggle')) && Boolean(document.querySelector('#sound-toggle')) && Boolean(document.querySelector('#quiet-toggle')) && Boolean(document.querySelector('#settings-reset-baseline'))")) throw new Error("CLARITY_PRODUCTION_SETTINGS_HOOKS_MISSING");
+  await capture("settings");
+
+  await openRoute("home", ".clarity-home-grid");
+  await evaluate("document.body.classList.add('motion-reduced'); true");
+  const reducedMotionState = await evaluate("(() => { const bar = document.querySelector('.production-evidence-bar rect'); const art = document.querySelector('.clarity-art-lens'); return getComputedStyle(document.querySelector('#view')).animationName === 'none' && getComputedStyle(bar).transform === 'none' && bar.getBoundingClientRect().height > 0 && Number.parseFloat(getComputedStyle(art).strokeDashoffset) === 0; })()");
+  if (!reducedMotionState) throw new Error("CLARITY_PRODUCTION_REDUCED_MOTION_INVALID");
+  await capture("reduced-motion");
+  console.log("CLARITY_PRODUCTION_ROLLOUT_PASS routes=7 startupHome=true topNavigation=true noOrb=true semanticEvidenceChart=true evidenceTooltips=true sessionProgress=true weeklyAnchor=true keyboardFocus=true clickFeedback=true reducedMotion=true functionalHooksPreserved=true");
 }
 
 async function runUiRecoverySeed(window: BrowserWindow): Promise<void> {
@@ -560,10 +794,14 @@ app.whenReady().then(async () => {
   registerIpcHandlers();
   const window = await createMainWindow();
 
-  if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode || uiRecoverySeedMode || uiRecoveryCheckMode || egressObservationMode || cameraRuntimeTestMode || cameraRuntimeFullTestMode) {
+  if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode || livingAuroraValidationMode || tasteDesignLabValidationMode || clarityProductionValidationMode || uiRecoverySeedMode || uiRecoveryCheckMode || egressObservationMode || cameraRuntimeTestMode || cameraRuntimeFullTestMode || devPanelValidationMode) {
     try {
-      if (cameraRuntimeTestMode || cameraRuntimeFullTestMode) await runCameraRuntimeTest(window, cameraRuntimeFullTestMode);
+      if (devPanelValidationMode) await runDevPanelValidation(window);
+      else if (cameraRuntimeTestMode || cameraRuntimeFullTestMode) await runCameraRuntimeTest(window, cameraRuntimeFullTestMode);
       else if (egressObservationMode) await runEgressObservation(window);
+      else if (livingAuroraValidationMode) await runLivingAuroraValidation(window);
+      else if (tasteDesignLabValidationMode) await runTasteDesignLabValidation(window);
+      else if (clarityProductionValidationMode) await runClarityProductionValidation(window);
       else if (uiValidationMode) await runUiValidation(window);
       else if (uiRecoverySeedMode) {
         await runUiRecoverySeed(window);

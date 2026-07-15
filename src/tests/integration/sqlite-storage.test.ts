@@ -12,6 +12,7 @@ import {
   resolveDatabasePath
 } from "../../platform-electron/sqlite-storage.js";
 import { createSensitiveDataCodec } from "../../platform-electron/storage-crypto.js";
+import { createCameraCalibrationRecord } from "../../camera/calibration-service.js";
 
 function createFixturePath(name: string): string {
   return join(mkdtempSync(join(tmpdir(), "eyemate-m1-storage-")), name, "eyemate.sqlite");
@@ -28,6 +29,21 @@ test("SQLite local tạo dữ liệu onboarding ngoài installation directory", 
     assert.equal(result.storage.listSurveyOnlyReports().length, 1);
     assert.deepEqual(result.storage.load(), { stage: "PRIVACY_SEEN", updatedAt: "2026-07-14T00:00:00.000Z" });
     assert.equal(result.storage.loadCameraConsent()?.decision, "SKIPPED");
+    result.storage.close();
+  }
+  rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });
+});
+
+test("Wellness Check lưu version và payload tự báo cáo, rồi xóa cùng local reset", () => {
+  const databasePath = createFixturePath("wellness-payload");
+  const result = openLocalSqliteStorage(databasePath);
+  assert.equal(result.state, "READY");
+  if (result.state === "READY") {
+    const payload = JSON.stringify({ questionnaireVersion: "eyemate-symptom-check/1.0.0", answers: { eye_discomfort: 2 }, total: 2, maximumScore: 15 });
+    result.storage.saveSurveyOnlyReport({ reportId: "wellness-0001", status: "COMPLETED", action: "LOOK_AWAY_BREAK", provenanceVersion: "eyemate-symptom-check/1.0.0", createdAt: "2026-07-14T00:00:00.000Z", wellnessPayload: { questionnaireVersion: "eyemate-symptom-check/1.0.0", scoreVersion: "eyemate-symptom-check-total/1.0.0", payloadJson: payload } });
+    assert.equal(result.storage.getWellnessCheckPayload("wellness-0001"), payload);
+    assert.equal(result.storage.deleteAllLocalData(), "DELETED");
+    assert.equal(result.storage.getWellnessCheckPayload("wellness-0001"), null);
     result.storage.close();
   }
   rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });
@@ -84,6 +100,33 @@ test("rút camera consent được ghi lại sau restart", () => {
   assert.equal(reopened.state, "READY");
   if (reopened.state === "READY") {
     assert.equal(reopened.storage.loadCameraConsent()?.decision, "WITHDRAWN");
+    reopened.storage.close();
+  }
+  rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });
+});
+
+test("calibration aggregate được mã hóa, persist qua restart và reset độc lập", () => {
+  const databasePath = createFixturePath("camera-calibration");
+  const codec = createSensitiveDataCodec(Buffer.alloc(32, 7));
+  const record = createCameraCalibrationRecord({
+    deviceBinding: "c".repeat(64), width: 640, height: 480, referenceDistanceCm: 50,
+    interEyeDistanceSamplesPx: Array(30).fill(100), calibratedAt: "2026-07-15T00:00:00.000Z"
+  });
+  const initial = openLocalSqliteStorage(databasePath, { sensitiveDataCodec: codec });
+  assert.equal(initial.state, "READY");
+  if (initial.state === "READY") {
+    initial.storage.saveCameraCalibration(record);
+    assert.deepEqual(initial.storage.loadCameraCalibration(), record);
+    initial.storage.close();
+  }
+  const physical = readFileSync(databasePath);
+  assert.equal(physical.includes(Buffer.from(record.profile.deviceBinding)), false);
+  const reopened = openLocalSqliteStorage(databasePath, { sensitiveDataCodec: codec });
+  assert.equal(reopened.state, "READY");
+  if (reopened.state === "READY") {
+    assert.deepEqual(reopened.storage.loadCameraCalibration(), record);
+    assert.equal(reopened.storage.deleteCameraCalibration(), "DELETED");
+    assert.equal(reopened.storage.loadCameraCalibration(), null);
     reopened.storage.close();
   }
   rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });

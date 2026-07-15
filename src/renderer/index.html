@@ -6,33 +6,34 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'" />
     <title>EyeMate</title>
     <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./taste-design-lab.css" />
   </head>
   <body class="theme-default">
+    <a class="skip-link" href="#app-main">Bỏ qua điều hướng</a>
     <header class="titlebar" aria-label="Thanh tiêu đề ứng dụng">
       <span class="titlebar-mark" aria-hidden="true"></span>
       <span>EyeMate</span>
       <span class="titlebar-caption">Local companion for healthier screen time</span>
     </header>
     <div class="app-shell">
-      <aside class="sidebar">
-        <a class="brand" href="#/home" aria-label="EyeMate — Trang chủ">
-          <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M5 24c5-9 11-14 19-14s14 5 19 14c-5 9-11 14-19 14S10 33 5 24Z"/><circle cx="24" cy="24" r="7"/></svg>
-          <span><strong>EyeMate</strong><small>visual wellbeing</small></span>
+      <header class="sidebar production-topbar">
+        <a class="brand" href="#/home" aria-label="EyeMate, về Hôm nay">
+          <span class="brand-mark" aria-hidden="true">✳</span>
+          <span><strong>EyeMate</strong><small>Visual wellbeing</small></span>
         </a>
         <nav class="primary-nav" aria-label="Điều hướng chính">
-          <a href="#/home" data-route="home"><span aria-hidden="true">◉</span> Tổng quan</a>
-          <a href="#/checkup" data-route="checkup"><span aria-hidden="true">◇</span> Khám mắt</a>
-          <a href="#/companion" data-route="companion"><span aria-hidden="true">◷</span> Đồng hành</a>
-          <a href="#/intelligence" data-route="intelligence"><span aria-hidden="true">⌁</span> Thấu hiểu</a>
-          <a href="#/reports" data-route="reports"><span aria-hidden="true">⌁</span> Báo cáo</a>
-          <a href="#/privacy" data-route="privacy"><span aria-hidden="true">⌾</span> Quyền riêng tư</a>
-          <a href="#/settings" data-route="settings"><span aria-hidden="true">⚙</span> Cài đặt</a>
+          <a href="#/home" data-route="home" aria-label="Hôm nay"><span class="nav-label-window" aria-hidden="true"><span class="nav-label-track"><span>Hôm nay</span><span>Hôm nay</span></span></span></a>
+          <a href="#/checkup" data-route="checkup" aria-label="Khám mắt"><span class="nav-label-window" aria-hidden="true"><span class="nav-label-track"><span>Khám mắt</span><span>Khám mắt</span></span></span></a>
+          <a href="#/companion" data-route="companion" aria-label="Đồng hành"><span class="nav-label-window" aria-hidden="true"><span class="nav-label-track"><span>Đồng hành</span><span>Đồng hành</span></span></span></a>
+          <a href="#/intelligence" data-route="intelligence" aria-label="Thấu hiểu"><span class="nav-label-window" aria-hidden="true"><span class="nav-label-track"><span>Thấu hiểu</span><span>Thấu hiểu</span></span></span></a>
+          <a href="#/reports" data-route="reports" aria-label="Báo cáo"><span class="nav-label-window" aria-hidden="true"><span class="nav-label-track"><span>Báo cáo</span><span>Báo cáo</span></span></span></a>
+          <a href="#/privacy" data-route="privacy" aria-label="Privacy Center"><span class="nav-label-window" aria-hidden="true"><span class="nav-label-track"><span>Privacy Center</span><span>Privacy Center</span></span></span></a>
+          <a href="#/settings" data-route="settings" aria-label="Cài đặt"><span class="nav-label-window" aria-hidden="true"><span class="nav-label-track"><span>Cài đặt</span><span>Cài đặt</span></span></span></a>
         </nav>
         <footer class="sidebar-footer">
           <span class="local-badge"><span aria-hidden="true">●</span> Local Only</span>
-          <small>Không cần mạng · dữ liệu ở thiết bị</small>
         </footer>
-      </aside>
+      </header>
       <main id="app-main" tabindex="-1">
         <div id="view" aria-live="polite"></div>
       </main>

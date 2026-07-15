@@ -4,8 +4,9 @@ import { DatabaseSync } from "node:sqlite";
 import type { CameraConsentRecord, CameraConsentRepository, OnboardingProgress, OnboardingProgressRepository, OnboardingStage } from "../user-data/ports.js";
 import type { DataInventoryItem, UserPreferences } from "../shared/preload-contract.js";
 import type { SensitiveDataCodec } from "./storage-crypto.js";
+import { validateCameraCalibrationRecord, type CameraCalibrationRecord } from "../camera/calibration-service.js";
 
-export const STORAGE_SCHEMA_VERSION = 10;
+export const STORAGE_SCHEMA_VERSION = 12;
 export const RECOVERY_REQUIRED = "MIGRATION_RECOVERY_REQUIRED";
 
 export type StorageOpenResult =
@@ -122,6 +123,14 @@ function createV10Schema(database: DatabaseSync): void {
   database.exec("CREATE TABLE IF NOT EXISTS app_preferences (singleton INTEGER PRIMARY KEY CHECK (singleton = 1), value_json TEXT NOT NULL, updated_at TEXT NOT NULL);");
 }
 
+function createV11Schema(database: DatabaseSync): void {
+  database.exec("CREATE TABLE IF NOT EXISTS wellness_checkup_payload (report_id TEXT PRIMARY KEY, questionnaire_version TEXT NOT NULL, score_version TEXT NOT NULL, payload_json TEXT NOT NULL, FOREIGN KEY(report_id) REFERENCES checkup_report_snapshot(report_id) ON DELETE CASCADE);");
+}
+
+function createV12Schema(database: DatabaseSync): void {
+  database.exec("CREATE TABLE IF NOT EXISTS camera_calibration (singleton INTEGER PRIMARY KEY CHECK (singleton = 1), payload_json TEXT NOT NULL, updated_at TEXT NOT NULL);");
+}
+
 function getSchemaVersion(database: DatabaseSync): number {
   const result = database.prepare("PRAGMA user_version").get() as { user_version: number };
   return result.user_version;
@@ -172,6 +181,9 @@ function migrateSensitivePayloads(database: DatabaseSync, databasePath: string, 
     }
     for (const row of database.prepare("SELECT singleton, value_json FROM app_preferences").all() as unknown as readonly { singleton: number; value_json: string }[]) {
       database.prepare("UPDATE app_preferences SET value_json = ? WHERE singleton = ?").run(encryptedValue(codec, row.value_json, "preferences:singleton:value"), row.singleton);
+    }
+    for (const row of database.prepare("SELECT report_id, payload_json FROM wellness_checkup_payload").all() as unknown as readonly { report_id: string; payload_json: string }[]) {
+      database.prepare("UPDATE wellness_checkup_payload SET payload_json = ? WHERE report_id = ?").run(encryptedValue(codec, row.payload_json, `wellness:${row.report_id}:payload`), row.report_id);
     }
     if (forceFailure) throw new Error("FORCED_ENCRYPTION_MIGRATION_FAILURE");
     database.prepare("INSERT INTO sensitive_storage_state VALUES (1, ?, ?)").run(codec.version, codec.encrypt("EYEMATE_STORAGE_KEY_OK", "storage:key-check"));
@@ -248,9 +260,14 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
     `).run(record.purpose, record.scope, record.textVersion, record.decision, record.decidedAt);
   }
 
-  saveSurveyOnlyReport(snapshot: { readonly reportId: string; readonly status: "COMPLETED" | "INSUFFICIENT_DATA" | "SAFETY_STOP"; readonly action: string; readonly provenanceVersion: string; readonly createdAt: string }): void {
+  saveSurveyOnlyReport(snapshot: { readonly reportId: string; readonly status: "COMPLETED" | "INSUFFICIENT_DATA" | "SAFETY_STOP"; readonly action: string; readonly provenanceVersion: string; readonly createdAt: string; readonly wellnessPayload?: { readonly questionnaireVersion: string; readonly scoreVersion: string; readonly payloadJson: string } }): void {
     if (!/^[a-z0-9-]{8,64}$/i.test(snapshot.reportId) || Number.isNaN(Date.parse(snapshot.createdAt))) throw new Error("INVALID_REPORT_SNAPSHOT");
     this.#database.prepare("INSERT INTO checkup_report_snapshot VALUES (?, ?, 'SURVEY_ONLY', 'NOT_MEASURED', ?, ?, ?)").run(snapshot.reportId, snapshot.status, encryptedValue(this.#codec, snapshot.action, `checkup:${snapshot.reportId}:action`), snapshot.provenanceVersion, snapshot.createdAt);
+    if (snapshot.wellnessPayload !== undefined) {
+      if (snapshot.wellnessPayload.questionnaireVersion.length === 0 || snapshot.wellnessPayload.scoreVersion.length === 0 || snapshot.wellnessPayload.payloadJson.length === 0 || snapshot.wellnessPayload.payloadJson.length > 100_000) throw new Error("INVALID_WELLNESS_PAYLOAD");
+      JSON.parse(snapshot.wellnessPayload.payloadJson);
+      this.#database.prepare("INSERT INTO wellness_checkup_payload VALUES (?, ?, ?, ?)").run(snapshot.reportId, snapshot.wellnessPayload.questionnaireVersion, snapshot.wellnessPayload.scoreVersion, encryptedValue(this.#codec, snapshot.wellnessPayload.payloadJson, `wellness:${snapshot.reportId}:payload`));
+    }
   }
 
   saveSession(session: PersistedSession): void {
@@ -320,6 +337,26 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
     return validated;
   }
 
+  loadCameraCalibration(): CameraCalibrationRecord | null {
+    const row = this.#database.prepare("SELECT payload_json FROM camera_calibration WHERE singleton = 1").get() as { payload_json: string } | undefined;
+    if (row === undefined) return null;
+    try {
+      return validateCameraCalibrationRecord(JSON.parse(decryptedValue(this.#codec, row.payload_json, "calibration:singleton:payload")) as CameraCalibrationRecord);
+    } catch { throw new Error("INVALID_CAMERA_CALIBRATION_RECORD"); }
+  }
+
+  saveCameraCalibration(record: CameraCalibrationRecord): CameraCalibrationRecord {
+    const validated = validateCameraCalibrationRecord(record);
+    const payload = encryptedValue(this.#codec, JSON.stringify(validated), "calibration:singleton:payload");
+    this.#database.prepare("INSERT INTO camera_calibration VALUES (1, ?, ?) ON CONFLICT(singleton) DO UPDATE SET payload_json=excluded.payload_json, updated_at=excluded.updated_at").run(payload, new Date().toISOString());
+    return validated;
+  }
+
+  deleteCameraCalibration(): "DELETED" {
+    this.#database.exec("DELETE FROM camera_calibration;");
+    return "DELETED";
+  }
+
   getDataInventory(): readonly DataInventoryItem[] {
     const count = (table: string): number => Number((this.#database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count);
     return [
@@ -328,6 +365,7 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
       { category: "NUDGE", purpose: "Giữ response và chống nudge trùng", recordCount: count("companion_nudge"), retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" },
       { category: "REPORT", purpose: "Giữ baseline, pattern và report dẫn xuất", recordCount: count("m3_record"), retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" },
       { category: "PREFERENCE", purpose: "Giữ cài đặt trải nghiệm", recordCount: count("app_preferences"), retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" }
+      ,{ category: "CALIBRATION", purpose: "Giữ aggregate hiệu chỉnh gắn với camera", recordCount: count("camera_calibration"), retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" }
     ];
   }
 
@@ -360,7 +398,7 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
   }
 
   deleteAllLocalData(): "DELETED" {
-    this.#database.exec("BEGIN IMMEDIATE; DELETE FROM app_preferences; DELETE FROM m3_record; DELETE FROM session_summary; DELETE FROM companion_nudge; DELETE FROM work_session; DELETE FROM checkup_report_snapshot; DELETE FROM camera_consent; DELETE FROM onboarding_progress; COMMIT;");
+    this.#database.exec("BEGIN IMMEDIATE; DELETE FROM camera_calibration; DELETE FROM app_preferences; DELETE FROM m3_record; DELETE FROM session_summary; DELETE FROM companion_nudge; DELETE FROM work_session; DELETE FROM checkup_report_snapshot; DELETE FROM camera_consent; DELETE FROM onboarding_progress; COMMIT;");
     this.#database.exec("PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);");
     rmSync(`${this.#databasePath}.backup-v1`, { force: true });
     rmSync(`${this.#databasePath}.backup-encrypted`, { force: true });
@@ -372,6 +410,12 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
       const value = row as { report_id: string; status: string; action: string; created_at: string };
       return { status: value.status, action: decryptedValue(this.#codec, value.action, `checkup:${value.report_id}:action`), createdAt: value.created_at };
     });
+  }
+
+  getWellnessCheckPayload(reportId: string): string | null {
+    if (!/^[a-z0-9-]{8,64}$/i.test(reportId)) throw new Error("INVALID_REPORT_ID");
+    const row = this.#database.prepare("SELECT payload_json FROM wellness_checkup_payload WHERE report_id = ?").get(reportId) as { payload_json: string } | undefined;
+    return row === undefined ? null : decryptedValue(this.#codec, row.payload_json, `wellness:${reportId}:payload`);
   }
 
   close(): void {
@@ -463,6 +507,8 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
       createV8Schema(database);
       createV9Schema(database);
       createV10Schema(database);
+      createV11Schema(database);
+      createV12Schema(database);
       database.exec(`PRAGMA user_version = ${STORAGE_SCHEMA_VERSION}; COMMIT;`);
       if (options.sensitiveDataCodec) migrateSensitivePayloads(database, safePath, options.sensitiveDataCodec, options.forceEncryptionMigrationFailure === true);
       assertIntegrity(database);
@@ -476,7 +522,7 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
       return { state: "READY", storage: new LocalSqliteStorage(database, safePath, options.sensitiveDataCodec), migrated: encryptionMigrated };
     }
 
-    if (version < 1 || version > 9) throw new Error("UNSUPPORTED_SCHEMA_VERSION");
+    if (version < 1 || version > 11) throw new Error("UNSUPPORTED_SCHEMA_VERSION");
 
     copyFileSync(safePath, `${safePath}.backup-v1`, 0);
     backupCreated = true;
@@ -491,6 +537,8 @@ export function openLocalSqliteStorage(databasePath: string, options: OpenStorag
     createV8Schema(database);
     createV9Schema(database);
     createV10Schema(database);
+    createV11Schema(database);
+    createV12Schema(database);
     database.exec(`PRAGMA user_version = ${STORAGE_SCHEMA_VERSION}; COMMIT;`);
     assertIntegrity(database);
     database.prepare("INSERT INTO migration_record VALUES (?, ?, ?, ?, ?)").run(
