@@ -49,6 +49,23 @@ test("Wellness Check lưu version và payload tự báo cáo, rồi xóa cùng l
   rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });
 });
 
+test("Integrated Checkup lưu camera status và assessment payload mà không lưu dữ liệu raw", () => {
+  const databasePath = createFixturePath("integrated-checkup");
+  const result = openLocalSqliteStorage(databasePath, { sensitiveDataCodec: createSensitiveDataCodec(Buffer.alloc(32, 13)) });
+  assert.equal(result.state, "READY");
+  if (result.state === "READY") {
+    const payload = JSON.stringify({ cameraEvidence: { status: "COMPLETED", rawDataPersisted: false }, assessment: { disclaimer: "WELLNESS_EDUCATION_NOT_DIAGNOSIS" } });
+    result.storage.saveSurveyOnlyReport({ reportId: "integrated-0001", status: "COMPLETED", source: "INTEGRATED_CHECKUP", cameraStatus: "COMPLETED", action: "LOOK_AWAY_BREAK", provenanceVersion: "eyemate-symptom-check/1.0.0", createdAt: "2026-07-15T00:00:00.000Z", wellnessPayload: { questionnaireVersion: "eyemate-symptom-check/1.0.0", scoreVersion: "eyemate-symptom-check-total/1.0.0", payloadJson: payload } });
+    const item = result.storage.listSurveyOnlyReports()[0];
+    assert.equal(item?.source, "INTEGRATED_CHECKUP");
+    assert.equal(item?.cameraStatus, "COMPLETED");
+    assert.equal(result.storage.getWellnessCheckPayload("integrated-0001"), payload);
+    result.storage.close();
+  }
+  assert.equal(/raw[_-]?(?:frame|video|landmarks?)|pixel[_-]?buffer/i.test(readFileSync(databasePath).toString("utf8")), false);
+  rmSync(dirname(dirname(databasePath)), { recursive: true, force: true });
+});
+
 test("migration cũ tạo backup và giữ dữ liệu onboarding", () => {
   const databasePath = createFixturePath("migration");
   createV1StorageFixture(databasePath);

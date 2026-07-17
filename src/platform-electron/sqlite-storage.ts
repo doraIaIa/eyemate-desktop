@@ -260,9 +260,12 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
     `).run(record.purpose, record.scope, record.textVersion, record.decision, record.decidedAt);
   }
 
-  saveSurveyOnlyReport(snapshot: { readonly reportId: string; readonly status: "COMPLETED" | "INSUFFICIENT_DATA" | "SAFETY_STOP"; readonly action: string; readonly provenanceVersion: string; readonly createdAt: string; readonly wellnessPayload?: { readonly questionnaireVersion: string; readonly scoreVersion: string; readonly payloadJson: string } }): void {
+  saveSurveyOnlyReport(snapshot: { readonly reportId: string; readonly status: "COMPLETED" | "INSUFFICIENT_DATA" | "SAFETY_STOP"; readonly action: string; readonly provenanceVersion: string; readonly createdAt: string; readonly source?: "SURVEY_ONLY" | "INTEGRATED_CHECKUP"; readonly cameraStatus?: string; readonly wellnessPayload?: { readonly questionnaireVersion: string; readonly scoreVersion: string; readonly payloadJson: string } }): void {
     if (!/^[a-z0-9-]{8,64}$/i.test(snapshot.reportId) || Number.isNaN(Date.parse(snapshot.createdAt))) throw new Error("INVALID_REPORT_SNAPSHOT");
-    this.#database.prepare("INSERT INTO checkup_report_snapshot VALUES (?, ?, 'SURVEY_ONLY', 'NOT_MEASURED', ?, ?, ?)").run(snapshot.reportId, snapshot.status, encryptedValue(this.#codec, snapshot.action, `checkup:${snapshot.reportId}:action`), snapshot.provenanceVersion, snapshot.createdAt);
+    const source = snapshot.source ?? "SURVEY_ONLY";
+    const cameraStatus = snapshot.cameraStatus ?? "NOT_MEASURED";
+    if (!["SURVEY_ONLY", "INTEGRATED_CHECKUP"].includes(source) || !/^[A-Z_]{3,40}$/.test(cameraStatus)) throw new Error("INVALID_REPORT_SNAPSHOT");
+    this.#database.prepare("INSERT INTO checkup_report_snapshot VALUES (?, ?, ?, ?, ?, ?, ?)").run(snapshot.reportId, snapshot.status, source, cameraStatus, encryptedValue(this.#codec, snapshot.action, `checkup:${snapshot.reportId}:action`), snapshot.provenanceVersion, snapshot.createdAt);
     if (snapshot.wellnessPayload !== undefined) {
       if (snapshot.wellnessPayload.questionnaireVersion.length === 0 || snapshot.wellnessPayload.scoreVersion.length === 0 || snapshot.wellnessPayload.payloadJson.length === 0 || snapshot.wellnessPayload.payloadJson.length > 100_000) throw new Error("INVALID_WELLNESS_PAYLOAD");
       JSON.parse(snapshot.wellnessPayload.payloadJson);
@@ -360,7 +363,7 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
   getDataInventory(): readonly DataInventoryItem[] {
     const count = (table: string): number => Number((this.#database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count);
     return [
-      { category: "CHECKUP", purpose: "Lưu snapshot checkup survey-only", recordCount: count("checkup_report_snapshot"), retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" },
+      { category: "CHECKUP", purpose: "Lưu snapshot checkup và assessment wellness tích hợp", recordCount: count("checkup_report_snapshot"), retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" },
       { category: "SESSION", purpose: "Khôi phục phiên và tạo Session Summary", recordCount: count("work_session") + count("session_summary"), retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" },
       { category: "NUDGE", purpose: "Giữ response và chống nudge trùng", recordCount: count("companion_nudge"), retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" },
       { category: "REPORT", purpose: "Giữ baseline, pattern và report dẫn xuất", recordCount: count("m3_record"), retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" },
@@ -405,10 +408,10 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
     return "DELETED";
   }
 
-  listSurveyOnlyReports(): readonly { readonly status: string; readonly action: string; readonly createdAt: string }[] {
-    return this.#database.prepare("SELECT report_id, status, action, created_at FROM checkup_report_snapshot ORDER BY created_at DESC").all().map((row) => {
-      const value = row as { report_id: string; status: string; action: string; created_at: string };
-      return { status: value.status, action: decryptedValue(this.#codec, value.action, `checkup:${value.report_id}:action`), createdAt: value.created_at };
+  listSurveyOnlyReports(): readonly { readonly status: string; readonly action: string; readonly createdAt: string; readonly cameraStatus: string; readonly source: string }[] {
+    return this.#database.prepare("SELECT report_id, status, source, camera_status, action, created_at FROM checkup_report_snapshot ORDER BY created_at DESC").all().map((row) => {
+      const value = row as { report_id: string; status: string; source: string; camera_status: string; action: string; created_at: string };
+      return { status: value.status, source: value.source, cameraStatus: value.camera_status, action: decryptedValue(this.#codec, value.action, `checkup:${value.report_id}:action`), createdAt: value.created_at };
     });
   }
 

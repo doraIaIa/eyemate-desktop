@@ -45,6 +45,32 @@ export interface CameraMeasurementAggregate {
   readonly rawDataPersisted: false;
 }
 
+export function validateCameraMeasurementAggregate(value: CameraMeasurementAggregate): CameraMeasurementAggregate {
+  if (value.schemaVersion !== "camera-measurement-aggregate/0.1.0"
+    || !["COMPLETED", "INSUFFICIENT_DATA", "CANCELLED", "CAMERA_FAILED", "TIMEOUT"].includes(value.status)
+    || !Number.isFinite(value.durationMs) || value.durationMs < 0 || value.durationMs > 120_000
+    || !Number.isInteger(value.sampleCount) || value.sampleCount < 0 || value.sampleCount > 10_000
+    || !Number.isInteger(value.validSampleCount) || value.validSampleCount < 0 || value.validSampleCount > value.sampleCount
+    || !Number.isFinite(value.validSampleRatio) || value.validSampleRatio < 0 || value.validSampleRatio > 1
+    || !Number.isFinite(value.confidence) || value.confidence < 0 || value.confidence > 1
+    || value.algorithmVersion !== CAMERA_ALGORITHM_VERSION || value.configVersion !== CAMERA_CONFIG_VERSION
+    || !(value.calibrationProfileVersion === null || value.calibrationProfileVersion === "camera-calibration/0.1.0")
+    || value.rawDataPersisted !== false || !Array.isArray(value.reasonCodes)) throw new Error("INVALID_CAMERA_MEASUREMENT_AGGREGATE");
+  for (const reason of QUALITY_REASONS) {
+    if (!Number.isInteger(value.qualityDistribution[reason]) || value.qualityDistribution[reason] < 0) throw new Error("INVALID_CAMERA_MEASUREMENT_AGGREGATE");
+  }
+  if (value.blinkSummary.status === "OBSERVED") {
+    if (!Number.isInteger(value.blinkSummary.count) || value.blinkSummary.count < 0 || !Number.isFinite(value.blinkSummary.ratePerMinute) || value.blinkSummary.ratePerMinute < 0 || value.blinkSummary.ratePerMinute > 120) throw new Error("INVALID_CAMERA_MEASUREMENT_AGGREGATE");
+  } else if (value.blinkSummary.status !== "UNKNOWN") throw new Error("INVALID_CAMERA_MEASUREMENT_AGGREGATE");
+  if (value.distanceSummary.status === "OBSERVED") {
+    if (!["NEAR", "COMFORT", "FAR"].includes(value.distanceSummary.dominantZone)) throw new Error("INVALID_CAMERA_MEASUREMENT_AGGREGATE");
+    for (const zone of ["NEAR", "COMFORT", "FAR"] as const) {
+      if (!Number.isInteger(value.distanceSummary.zoneDistribution[zone]) || value.distanceSummary.zoneDistribution[zone] < 0) throw new Error("INVALID_CAMERA_MEASUREMENT_AGGREGATE");
+    }
+  } else if (value.distanceSummary.status !== "UNKNOWN") throw new Error("INVALID_CAMERA_MEASUREMENT_AGGREGATE");
+  return Object.freeze({ ...value, reasonCodes: Object.freeze([...value.reasonCodes]) });
+}
+
 interface AcceptedSample { readonly timestampMs: number; readonly ear: number; readonly interEyeDistancePx: number; }
 
 const QUALITY_REASONS: readonly CameraQualityReason[] = ["NO_FACE", "MULTIPLE_FACES", "LOW_VISIBILITY", "POSE_UNSTABLE", "LOW_LIGHT", "INVALID_GEOMETRY"];
@@ -62,14 +88,19 @@ function qualityReason(frame: CameraFrameObservation): CameraQualityReason | nul
 }
 
 function countBlinks(samples: readonly AcceptedSample[]): number {
+  if (samples.length === 0) return 0;
+  const sortedEar = samples.map((sample) => sample.ear).sort((a, b) => a - b);
+  const medianEar = sortedEar[Math.floor(sortedEar.length / 2)] ?? 0.3;
+  const closedThreshold = Math.max(0.12, Math.min(0.24, medianEar * 0.72));
+  const openThreshold = Math.max(closedThreshold + 0.02, medianEar * 0.86);
   let closedFrames = 0;
   let count = 0;
   let closed = false;
   for (const sample of samples) {
-    if (sample.ear < 0.2) {
+    if (sample.ear <= closedThreshold) {
       closedFrames += 1;
       if (!closed && closedFrames >= 2) closed = true;
-    } else {
+    } else if (sample.ear >= openThreshold) {
       if (closed) count += 1;
       closed = false;
       closedFrames = 0;

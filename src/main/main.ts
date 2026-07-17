@@ -7,11 +7,13 @@ import { createSecureWindowOptions } from "./window-options.js";
 import type { RuntimeInfo } from "../shared/runtime-contract.js";
 import { EYEMATE_APPLICATION_VERSION } from "../shared/product-meta.js";
 import { validateCameraCalibrationRecord, type CameraCalibrationRecord } from "../camera/calibration-service.js";
-import type { CheckupSummary, PrivacySummary, SurveyRequest } from "../shared/m1-contract.js";
+import { validateCameraMeasurementAggregate, type CameraMeasurementAggregate } from "../camera/measurement-window.js";
+import type { CheckupSummary, IntegratedCheckupRequest, PrivacySummary, SurveyRequest } from "../shared/m1-contract.js";
 import { createSurveyOnlyExportPreview, resolveDeletionResult } from "../user-data/data-controls.js";
 import { DEFAULT_USER_PREFERENCES, openLocalSqliteStorage, resolveDatabasePath, type LocalSqliteStorage } from "../platform-electron/sqlite-storage.js";
 import type { M3DataCategory, UserPreferences } from "../shared/preload-contract.js";
 import { WELLNESS_MAXIMUM_SCORE, createWellnessCheckReport, wellnessQuestions, type WellnessQuestionId, type WellnessResponse } from "../symptom-checkup/wellness-check.js";
+import { actionsWithCameraEvidence, buildEyeHealthAssessment, cameraEvidenceFromAggregate, type CheckupCameraEvidence, type EyeHealthAssessment } from "../symptom-checkup/eye-health-assessment.js";
 import { evaluateSafetyGate, internalSafetyCatalogue } from "../safety/safety-gate.js";
 import { applySessionEvent, createSession, recoverSession, tickSession, type WorkSession } from "../work-session/session-state.js";
 import { decideNudge, type NudgeDecision } from "../work-session/companion-policy.js";
@@ -46,8 +48,10 @@ const developerPanelEnabled = !app.isPackaged && process.argv.includes("--enable
 const uiCaptureArgument = process.argv.find((argument) => argument.startsWith("--ui-screenshot-dir="));
 const uiScreenshotDirectory = uiCaptureArgument?.slice("--ui-screenshot-dir=".length) ?? null;
 
-if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode || livingAuroraValidationMode || tasteDesignLabValidationMode || clarityProductionValidationMode || uiRecoverySeedMode || uiRecoveryCheckMode || egressObservationMode) {
+if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode || livingAuroraValidationMode || tasteDesignLabValidationMode || clarityProductionValidationMode || uiRecoverySeedMode || uiRecoveryCheckMode || egressObservationMode || cameraRuntimeTestMode || cameraRuntimeFullTestMode || devPanelValidationMode) {
   app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch("disable-gpu");
+  app.commandLine.appendSwitch("disable-gpu-compositing");
 }
 
 async function runDevPanelValidation(window: BrowserWindow): Promise<void> {
@@ -163,26 +167,46 @@ function getPrivacySummary(): PrivacySummary {
   };
 }
 
-function runSurveyOnly(request: SurveyRequest): CheckupSummary {
+function validateIntegratedCheckupRequest(request: IntegratedCheckupRequest): { readonly answers: Readonly<Record<WellnessQuestionId, WellnessResponse>>; readonly safety: SurveyRequest["safety"]; readonly cameraMeasurement: CameraMeasurementAggregate | null } {
   const allowed: readonly WellnessResponse[] = [0, 1, 2, 3, "UNKNOWN"];
   if (!request.answers || typeof request.answers !== "object" || !["CONFIRMED", "NEGATIVE", "UNSURE", "PREFER_NOT_TO_ANSWER"].includes(request.safety)) throw new Error("INVALID_SURVEY_REQUEST");
   for (const question of wellnessQuestions) if (!allowed.includes(request.answers[question.id])) throw new Error("INVALID_SURVEY_REQUEST");
+  const cameraMeasurement = request.cameraMeasurement === undefined || request.cameraMeasurement === null ? null : validateCameraMeasurementAggregate(request.cameraMeasurement);
+  return { answers: request.answers as Readonly<Record<WellnessQuestionId, WellnessResponse>>, safety: request.safety, cameraMeasurement };
+}
+
+function runCheckup(request: IntegratedCheckupRequest): CheckupSummary {
+  const validated = validateIntegratedCheckupRequest(request);
   if (storage?.load()?.stage !== "COMPLETE") throw new Error("ONBOARDING_REQUIRED");
-  const safety = evaluateSafetyGate({ answers: { safety_signal_a: request.safety, safety_signal_b: "NEGATIVE" } }, internalSafetyCatalogue);
-  const answers = request.answers as Readonly<Record<WellnessQuestionId, WellnessResponse>>;
-  const report = createWellnessCheckReport(answers, safety.outcome);
+  const safety = evaluateSafetyGate({ answers: { safety_signal_a: validated.safety, safety_signal_b: "NEGATIVE" } }, internalSafetyCatalogue);
+  const report = createWellnessCheckReport(validated.answers, safety.outcome);
+  const cameraEvidence = cameraEvidenceFromAggregate(validated.cameraMeasurement);
+  const assessment = buildEyeHealthAssessment(report, cameraEvidence);
+  const actions = actionsWithCameraEvidence(report.actions, cameraEvidence);
   const createdAt = currentIso();
   const reportId = randomUUID();
-  storage?.saveSurveyOnlyReport({ reportId, status: report.status, action: report.actions.map((action) => action.id).join(","), provenanceVersion: report.provenance.questionnaireVersion, createdAt, wellnessPayload: { questionnaireVersion: report.provenance.questionnaireVersion, scoreVersion: report.provenance.scoreVersion, payloadJson: JSON.stringify(report) } });
+  storage?.saveSurveyOnlyReport({ reportId, status: report.status, source: cameraEvidence.status === "NOT_MEASURED" ? "SURVEY_ONLY" : "INTEGRATED_CHECKUP", cameraStatus: cameraEvidence.status, action: actions.map((action) => action.id).join(","), provenanceVersion: report.provenance.questionnaireVersion, createdAt, wellnessPayload: { questionnaireVersion: report.provenance.questionnaireVersion, scoreVersion: report.provenance.scoreVersion, payloadJson: JSON.stringify({ ...report, actions, cameraEvidence, assessment }) } });
   const normalizedSymptomBurden = report.discomfortLoad.score === null ? null : Math.round(report.discomfortLoad.score * 10000 / WELLNESS_MAXIMUM_SCORE) / 100;
   const source = fromSurveyOnly({ reportId, createdAt, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", schemaVersion: report.provenance.questionnaireVersion, symptomBurden: normalizedSymptomBurden });
   storage?.saveM3Record({ id: `source-${reportId}`, kind: "SOURCE", createdAt, payloadJson: JSON.stringify(source) });
-  return { reportId, status: report.status, source: report.source, camera: "NOT_MEASURED", actions: report.actions, missingData: report.missingData, discomfortLoad: report.discomfortLoad, limitation: report.limitation };
+  return { reportId, status: report.status, source: report.source, camera: cameraEvidence.status, cameraEvidence, assessment, actions, missingData: report.missingData, discomfortLoad: report.discomfortLoad, limitation: report.limitation };
+}
+
+function runSurveyOnly(request: SurveyRequest): CheckupSummary {
+  return runCheckup({ ...request, cameraMeasurement: null });
 }
 
 async function renderWellnessExport(payload: string, format: LocalExportFormat): Promise<string | Buffer> {
-  const report = JSON.parse(payload) as { status: string; discomfortLoad: { score: number | null; maximumScore: number; label: string; actionGroup: string | null; scoreVersion: string }; provenance: { questionnaireVersion: string; recallPeriod: string }; limitation: string; disclaimer: string; answers: Record<string, string | number> };
+  const report = JSON.parse(payload) as { status: string; discomfortLoad: { score: number | null; maximumScore: number; label: string; actionGroup: string | null; scoreVersion: string }; provenance: { questionnaireVersion: string; recallPeriod: string }; limitation: string; disclaimer: string; answers: Record<string, string | number>; cameraEvidence?: CheckupCameraEvidence; assessment?: EyeHealthAssessment };
   if (format === "JSON") return JSON.stringify(report, null, 2);
+  {
+    const camera = report.cameraEvidence;
+    const cameraSection = camera ? `\n\n## Camera evidence\n\n- Trạng thái: ${camera.status}\n- Mẫu hợp lệ: ${camera.validSampleCount}/${camera.sampleCount}\n- Blink rate: ${camera.blinkRatePerMinute ?? "UNKNOWN"}\n- Distance zone: ${camera.distanceZone}\n- Raw data persisted: ${camera.rawDataPersisted}\n- Reason codes: ${camera.reasonCodes.join(", ") || "NONE"}\n` : "\n\n## Camera evidence\n\n- Trạng thái: NOT_MEASURED\n";
+    const assessment = report.assessment;
+    const assessmentSection = assessment ? `\n\n## Bảng đánh giá wellness tích hợp\n\n- Kết luận sản phẩm: ${assessment.overallLabel}\n- Độ tin cậy dữ liệu: ${Math.round(assessment.dataConfidence * 100)}%\n- Cơ sở giáo dục sức khỏe: ${assessment.sourceBasis.join(", ")}\n- Giới hạn: wellness education, không phải chẩn đoán.\n\n| Thành phần | Quan sát | Evidence | Tín hiệu | Confidence | Hành động |\n|---|---|---|---|---|---|\n${assessment.rows.map((row) => `| ${row.dimension} | ${row.observation} | ${row.evidence} | ${row.signal} | ${row.confidence} | ${row.action} |`).join("\n")}\n` : "";
+    const integratedMarkdown = `# EyeMate Symptom Check\n\n> ${report.disclaimer}\n\n- Trạng thái: ${report.status}\n- Tổng điểm tự báo cáo: ${report.discomfortLoad.score ?? "—"}/${report.discomfortLoad.maximumScore}\n- Nhóm hành động: ${report.discomfortLoad.label}\n- Mã nhóm: ${report.discomfortLoad.actionGroup ?? "INSUFFICIENT_DATA"}\n- Nguồn: Self-report wellness + camera observation nếu có đủ dữ liệu\n- Phiên bản questionnaire: ${report.provenance.questionnaireVersion}\n- Thời gian hồi tưởng: ${report.provenance.recallPeriod}\n- Giới hạn: ${report.limitation}${cameraSection}${assessmentSection}\n\n## Câu trả lời\n\n${Object.entries(report.answers).map(([id, value]) => `- ${id}: ${String(value)}`).join("\n")}\n\n> ${report.disclaimer}\n`;
+    return format === "PDF" ? await renderLocalPdf(integratedMarkdown) : integratedMarkdown;
+  }
   const markdown = `# EyeMate Symptom Check\n\n> ${report.disclaimer}\n\n- Trạng thái: ${report.status}\n- Tổng điểm tự báo cáo: ${report.discomfortLoad.score ?? "—"}/${report.discomfortLoad.maximumScore}\n- Nhóm hành động: ${report.discomfortLoad.label}\n- Mã nhóm: ${report.discomfortLoad.actionGroup ?? "INSUFFICIENT_DATA"}\n- Nguồn: Dựa trên câu trả lời tự báo cáo\n- Phiên bản questionnaire: ${report.provenance.questionnaireVersion}\n- Thời gian hồi tưởng: ${report.provenance.recallPeriod}\n- Giới hạn: ${report.limitation}\n\n## Câu trả lời\n\n${Object.entries(report.answers).map(([id, value]) => `- ${id}: ${String(value)}`).join("\n")}\n\n> ${report.disclaimer}\n`;
   return format === "PDF" ? await renderLocalPdf(markdown) : markdown;
 }
@@ -242,6 +266,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle("runtime:get-info", (): RuntimeInfo => getRuntimeInfo());
   ipcMain.handle("privacy:get-summary", (): PrivacySummary => getPrivacySummary());
   ipcMain.handle("checkup:run-survey-only", (_event, request: SurveyRequest): CheckupSummary => runSurveyOnly(request));
+  ipcMain.handle("checkup:run", (_event, request: IntegratedCheckupRequest): CheckupSummary => runCheckup(request));
   ipcMain.handle("onboarding:grant-camera-consent", (): void => grantCameraConsent());
   ipcMain.handle("onboarding:complete-without-camera", (): void => completeOnboardingWithoutCamera());
   ipcMain.handle("privacy:withdraw-camera-consent", (): void => withdrawCameraConsent());

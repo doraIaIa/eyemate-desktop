@@ -4,7 +4,7 @@ import type { PersonalReport } from "../personal-intelligence/report-service.js"
 import type { WorkSession } from "../work-session/session-state.js";
 import { LOCAL_OPERATION_TIMEOUT, withOperationTimeout } from "./async-operation.js";
 import { LocalCameraRuntime, type CameraRuntimeState } from "./camera-runtime.js";
-import { aggregateMeasurementWindow, validateCalibrationProfile, type CameraCalibrationProfile, type CameraFrameObservation, type CameraMeasurementAggregate } from "../camera/measurement-window.js";
+import { aggregateMeasurementWindow, type CameraCalibrationProfile, type CameraFrameObservation, type CameraMeasurementAggregate } from "../camera/measurement-window.js";
 import { WELLNESS_DISCLAIMER, wellnessQuestions, type WellnessQuestionId } from "../symptom-checkup/wellness-check.js";
 import { renderTasteDesignLab } from "./taste-design-lab.js";
 import { CAMERA_CALIBRATION_CONFIG, createCameraCalibrationRecord, type CameraCalibrationRecord } from "../camera/calibration-service.js";
@@ -41,6 +41,9 @@ const cameraFrames: CameraFrameObservation[] = [];
 let settingsCalibrationSamples: number[] | null = null;
 let settingsCalibrationStartedAt: number | null = null;
 let settingsCalibrationTicker: number | null = null;
+let checkupCalibrationSamples: number[] | null = null;
+let checkupCalibrationStartedAt: number | null = null;
+let checkupCalibrationTicker: number | null = null;
 let activeDevOverrides: DevOverrides = EMPTY_DEV_OVERRIDES;
 let designLabMascotState = "WELCOME";
 let designLabReducedMotion = false;
@@ -60,6 +63,7 @@ const cameraRuntime = new LocalCameraRuntime({
     latestCameraObservation = effectiveObservation;
     if (cameraMeasurementStartedAt !== null) cameraFrames.push(effectiveObservation);
     if (settingsCalibrationSamples !== null && observationQuality(effectiveObservation).acceptable && effectiveObservation.interEyeDistancePx !== null) settingsCalibrationSamples.push(effectiveObservation.interEyeDistancePx);
+    if (checkupCalibrationSamples !== null && observationQuality(effectiveObservation).acceptable && effectiveObservation.interEyeDistancePx !== null) checkupCalibrationSamples.push(effectiveObservation.interEyeDistancePx);
     updateDevRawMetrics();
     updateCameraLiveUi();
   }
@@ -243,6 +247,18 @@ function humanLabel(value: string): string {
     SAFETY_GATE_STOP: "Safety Gate yêu cầu ưu tiên hướng dẫn an toàn",
     SEEK_PROFESSIONAL_HELP: "Dừng checkup và tìm tư vấn chuyên môn phù hợp",
     INSUFFICIENT_DATA: "Chưa đủ dữ liệu",
+    SELF_REPORTED_COMFORT: "Tự ghi nhận cảm giác mắt",
+    BLINK_BEHAVIOR: "Hành vi chớp mắt",
+    VIEWING_DISTANCE: "Khoảng cách nhìn",
+    VISUAL_WORKLOAD: "Tải thị giác",
+    DATA_CONFIDENCE: "Độ tin cậy dữ liệu",
+    SUPPORTIVE: "Hỗ trợ",
+    WATCH: "Theo dõi",
+    ADJUST: "Cần điều chỉnh",
+    PAUSE_AND_RECHECK: "Nghỉ và kiểm tra lại",
+    MISSING: "Thiếu dữ liệu",
+    LOW_BLINK_OBSERVATION_WINDOW: "blink rate thấp trong cửa sổ đo",
+    NEAR_VIEWING_DISTANCE_OBSERVED: "quan sát thấy khoảng cách gần",
     blinkDeviation: "độ lệch blink rate",
     breakCompliance: "mức tuân thủ nghỉ",
     distanceDeviation: "khoảng cách",
@@ -334,7 +350,7 @@ function cameraGuidance(): string {
   const quality = observationQuality(latestCameraObservation);
   if (cameraState !== "ACTIVE") return "Bước 1: chọn camera (nếu có nhiều thiết bị), rồi nhấn “Mở camera”.";
   if (!quality.acceptable) return "Bước 2: giữ một khuôn mặt trong khung, nhìn thẳng và tăng ánh sáng nếu cần. Nút hiệu chỉnh sẽ mở khi chất lượng phù hợp.";
-  if (cameraCalibration === null) return "Bước 3: dùng thước đo khoảng cách thật từ mắt đến màn hình, nhập số đo rồi nhấn “Xác nhận hiệu chỉnh”.";
+  if (cameraCalibration === null) return "Bước 3: dùng thước đo khoảng cách thật từ mắt đến camera/webcam, nhập số đo rồi nhấn “Hiệu chỉnh 5 giây”.";
   return "Hiệu chỉnh đã sẵn sàng. Bước 4: nhấn “Tiếp tục đo”, sau đó bắt đầu cửa sổ 30 giây.";
 }
 
@@ -371,6 +387,10 @@ async function populateCameraDevices(): Promise<void> {
 async function stopCameraFlow(): Promise<void> {
   if (cameraMeasurementTicker !== null) window.clearInterval(cameraMeasurementTicker);
   cameraMeasurementTicker = null;
+  if (checkupCalibrationTicker !== null) window.clearInterval(checkupCalibrationTicker);
+  checkupCalibrationTicker = null;
+  checkupCalibrationStartedAt = null;
+  checkupCalibrationSamples = null;
   cameraMeasurementStartedAt = null;
   cameraFrames.length = 0;
   latestCameraObservation = null;
@@ -390,41 +410,201 @@ async function finishCameraMeasurement(status: CameraMeasurementAggregate["statu
   cameraMeasurement = aggregateMeasurementWindow({ status, startedAtMs: startedAt, endedAtMs: endedAt, frames: cameraFrames, calibration: cameraCalibration, currentDeviceBinding });
   cameraFrames.length = 0;
   await cameraRuntime.stop();
-  const result = await runMutation(null, window.eyeMate.runSurveyOnly(pendingSurvey));
+  const result = await runMutation(null, window.eyeMate.runCheckup({ ...pendingSurvey, cameraMeasurement }));
   if (result !== null) { checkupResult = result; checkupStep = 5; renderCheckup(); }
+}
+
+function wellnessQuestionLabel(id: string): string {
+  return wellnessQuestions.find((question) => question.id === id)?.wording ?? humanLabel(id);
+}
+
+function formatPercent(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
+function confidenceLabel(value: string): string {
+  if (value === "HIGH") return "Cao";
+  if (value === "MEDIUM") return "Vừa";
+  if (value === "LOW") return "Thấp";
+  return "Thiếu dữ liệu";
+}
+
+function signalLabel(value: string): string {
+  if (value === "SUPPORTIVE") return "Ổn định";
+  if (value === "WATCH") return "Theo dõi";
+  if (value === "ADJUST") return "Nên điều chỉnh";
+  if (value === "PAUSE_AND_RECHECK") return "Nghỉ và kiểm tra lại";
+  return "Thiếu dữ liệu";
+}
+
+function signalToneClass(value: string): string {
+  if (value === "SUPPORTIVE") return "supportive";
+  if (value === "WATCH") return "watch";
+  if (value === "ADJUST") return "adjust";
+  if (value === "PAUSE_AND_RECHECK") return "pause";
+  return "missing";
+}
+
+function actionLabel(id: string): string {
+  const labels: Record<string, string> = {
+    LOOK_AWAY_BREAK: "Nghỉ nhìn xa theo nhịp ngắn",
+    CONSCIOUS_BLINK: "Chớp mắt chủ động vài lần",
+    ADJUST_SCREEN_SETUP: "Điều chỉnh màn hình và ánh sáng",
+    RECHECK_AFTER_REST: "Kiểm tra lại sau khi nghỉ",
+    CONSIDER_PROFESSIONAL_GUIDANCE: "Cân nhắc gặp chuyên gia nếu triệu chứng kéo dài"
+  };
+  return labels[id] ?? humanLabel(id);
+}
+
+function actionReasonLabel(reasonCode: string): string {
+  const labels: Record<string, string> = {
+    MAINTAIN_SUPPORTIVE_ROUTINE: "duy trì thói quen hỗ trợ",
+    ADD_SUPPORTIVE_BREAKS: "cần thêm nhịp nghỉ",
+    REVIEW_SCREEN_SETUP: "nên rà soát vị trí màn hình",
+    PRIORITIZE_REST: "ưu tiên nghỉ và theo dõi lại",
+    RECHECK_SELF_REPORTED_EXPERIENCE: "tự báo cáo cần được kiểm tra lại",
+    INSUFFICIENT_SELF_REPORTED_DATA: "câu trả lời chưa đủ để tính điểm",
+    LOW_BLINK_OBSERVATION_WINDOW: "camera chưa thấy đủ lần chớp rõ",
+    NEAR_VIEWING_DISTANCE_OBSERVED: "khoảng cách có xu hướng gần",
+    SAFETY_GATE_STOP: "có tín hiệu cần dừng"
+  };
+  return labels[reasonCode] ?? humanLabel(reasonCode);
+}
+
+function evidenceSourceLabel(source: string): string {
+  if (source === "CAMERA_OBSERVATION") return "Camera cục bộ";
+  if (source === "SAFETY_GATE") return "Safety Gate";
+  return "Tự báo cáo";
+}
+
+function cameraEvidenceLabel(summary: CheckupSummary | null): string {
+  const evidence = summary?.cameraEvidence;
+  if (!evidence || evidence.status === "NOT_MEASURED") return "Không dùng camera trong lần checkup này.";
+  if (evidence.status !== "COMPLETED") return `Camera chưa tạo đủ dữ liệu ổn định (${humanLabel(evidence.status)}).`;
+  const blink = evidence.blinkRatePerMinute === null
+    ? "Chưa ước tính được nhịp chớp"
+    : evidence.blinkRatePerMinute === 0
+      ? "Chưa nhận diện lần chớp rõ trong 30 giây"
+      : `Ước tính ${evidence.blinkRatePerMinute}/phút`;
+  const distance = evidence.distanceZone === "UNKNOWN" ? "Khoảng cách chưa rõ" : `Khoảng cách: ${humanLabel(evidence.distanceZone)}`;
+  return `${blink} · ${distance}`;
+}
+
+function renderSymptomResultCard(summary: CheckupSummary): string {
+  const missing = summary.missingData.map(wellnessQuestionLabel);
+  if (summary.discomfortLoad.score === null) {
+    return `<article class="result-metric-card missing"><p class="label">EyeMate Symptom Check</p><h3>Chưa tính được điểm triệu chứng</h3><p>Còn ${missing.length} câu chưa có câu trả lời định lượng.</p><ul>${missing.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul><button class="text-link" id="checkup-answer-missing" type="button">Quay lại trả lời câu còn thiếu</button></article>`;
+  }
+  const score = summary.discomfortLoad.score;
+  const percent = score / summary.discomfortLoad.maximumScore;
+  return `<article class="result-metric-card"><p class="label">EyeMate Symptom Check</p><div class="score-row"><strong>${score}</strong><span>/ ${summary.discomfortLoad.maximumScore}</span></div><div class="score-bar" aria-label="Điểm triệu chứng ${score} trên ${summary.discomfortLoad.maximumScore}"><span style="width:${Math.round(percent * 100)}%"></span></div><p>${escapeHtml(summary.discomfortLoad.label)}</p><small>5/5 câu tự báo cáo · thang wellness nội bộ, không phải công cụ chẩn đoán.</small></article>`;
+}
+
+function renderCameraResultCard(summary: CheckupSummary): string {
+  const evidence = summary.cameraEvidence;
+  const quality = evidence.sampleCount > 0 ? `${formatPercent(evidence.validSampleRatio)} khung hình đủ chất lượng` : "Không có dữ liệu camera";
+  return `<article class="result-metric-card"><p class="label">Quan sát camera cục bộ</p><h3>${escapeHtml(cameraEvidenceLabel(summary))}</h3><p>${quality}. Raw frame, video và landmark không được lưu.</p><small>Camera chỉ bổ sung bằng chứng hành vi; không xác nhận bệnh và không thay thế khám lâm sàng.</small></article>`;
+}
+
+function assessmentMarkup(summary: CheckupSummary): string {
+  const rows = summary.assessment.rows.map((row) => `<article class="assessment-row ${signalToneClass(row.signal)}" role="row"><div class="assessment-row-title"><span class="signal-dot" aria-hidden="true"></span><strong>${humanLabel(row.dimension)}</strong><span>${signalLabel(row.signal)}</span></div><p>${escapeHtml(row.observation)}</p><small>Độ tin cậy: ${confidenceLabel(row.confidence)} · Bằng chứng: ${escapeHtml(row.evidence)}</small><small>Hành động: ${escapeHtml(row.action)}</small></article>`).join("");
+  return `<section class="result-report" aria-label="Báo cáo wellness tổng hợp"><div class="result-hero"><div><p class="eyebrow">Tổng kết wellness</p><h2>${escapeHtml(summary.assessment.overallLabel)}</h2><p>Độ tin cậy dữ liệu ${formatPercent(summary.assessment.dataConfidence)}. Đây là báo cáo hỗ trợ wellness, không phải chẩn đoán y tế.</p></div><span class="result-stamp ${signalToneClass(summary.assessment.overallSignal)}">${signalLabel(summary.assessment.overallSignal)}</span></div><div class="result-metric-grid">${renderSymptomResultCard(summary)}${renderCameraResultCard(summary)}</div><h3 class="section-heading">Phân tích chi tiết</h3><div class="assessment-table" role="table" aria-label="Bảng đánh giá wellness tích hợp">${rows}</div></section>`;
+}
+
+function renderCheckupResultContent(summary: CheckupSummary): string {
+  const missing = summary.missingData.map(wellnessQuestionLabel);
+  const actions = summary.actions.map((action) => `<li><strong>${actionLabel(action.id)}</strong><span>${evidenceSourceLabel(action.evidenceSource)} · ${actionReasonLabel(action.reasonCode)}</span></li>`).join("");
+  const missingText = missing.length ? `Chưa đủ ở: ${missing.map(escapeHtml).join(", ")}.` : "Không có câu tự báo cáo bị thiếu.";
+  return `<div><p class="eyebrow">Bước 5 / 5</p><h2>Kết quả checkup hôm nay</h2><span class="status-pill ${summary.status === "SAFETY_STOP" ? "warning" : ""}">${humanLabel(summary.status)}</span>${assessmentMarkup(summary)}<h3 class="section-heading">Gợi ý wellness có thể làm ngay</h3><ul class="wellness-action-list">${actions}</ul><h3 class="section-heading">Dữ liệu thiếu và giới hạn</h3><div class="clinical-note"><strong>Giới hạn cần đọc</strong><p>${missingText} ${summary.limitation}. EyeMate không hợp nhất survey và camera thành kết luận bệnh.</p><p>${escapeHtml(WELLNESS_DISCLAIMER)}</p></div></div><div class="actions result-actions"><button class="btn btn-primary" id="checkup-done" type="button">Về tổng quan</button><button class="btn" data-checkup-export="PDF" type="button">Export PDF</button><button class="btn" data-checkup-export="MARKDOWN" type="button">Export Markdown</button><button class="btn" data-checkup-export="JSON" type="button">Export JSON</button><button class="btn btn-ghost" id="checkup-repeat" type="button">Làm lại</button></div>`;
 }
 
 function renderCheckup(): void {
   const titles = ["EyeMate Symptom Check", "Năm câu tự báo cáo", "Kiểm tra camera", "Đo với camera", "Kết quả"];
-  const stepBars = Array.from({ length: 5 }, (_, index) => `<span class="step ${index + 1 < checkupStep ? "done" : index + 1 === checkupStep ? "active" : ""}"></span>`).join("");
+  const stepBars = titles.map((title, index) => `<span class="step ${index + 1 < checkupStep ? "done" : index + 1 === checkupStep ? "active" : ""}"><b>${index + 1 < checkupStep ? "✓" : index + 1}</b><small>${title}</small></span>`).join("");
   let content = "";
   if (checkupStep === 1) content = `<div><p class="eyebrow">Bước 1 / 5</p><h2>${titles[0]}</h2><div class="callout disclaimer" role="note"><strong>Lưu ý quan trọng</strong><br>${escapeHtml(WELLNESS_DISCLAIMER)}</div><p class="subtle">Questionnaire này do EyeMate tự phát triển cho mục đích wellness. Camera chỉ mở sau lựa chọn rõ ràng của bạn.</p><div class="callout success"><strong>Local Only</strong><br>Model và xử lý chạy trên máy. Không upload, không lưu raw frame, video hoặc landmark.</div></div><div class="actions"><button class="btn btn-primary" id="checkup-camera-consent" type="button">Cho phép dùng camera</button><button class="btn" id="checkup-consent" type="button">Tiếp tục không camera</button><button class="btn btn-ghost" data-checkup-cancel type="button">Hủy</button></div>`;
-  if (checkupStep === 2) content = `<div><p class="eyebrow">Bước 2 / 5</p><h2>${titles[1]}</h2><p class="subtle">Trong 7 ngày gần đây, hãy ghi lại trải nghiệm của bạn. EyeMate Symptom Check gồm 5 câu tự phát triển, không phải công cụ lâm sàng đã được validation.</p>${wellnessSurveyFields()}<label class="label" for="safety-response">Tín hiệu cần dừng</label><select class="field" id="safety-response"><option value="NEGATIVE">Không có tín hiệu cần dừng</option><option value="CONFIRMED">Có tín hiệu cần dừng</option><option value="UNSURE">Chưa chắc</option><option value="PREFER_NOT_TO_ANSWER">Không muốn trả lời</option></select></div><div class="actions"><button class="btn" id="checkup-back" type="button">Quay lại</button><button class="btn btn-primary" id="checkup-survey-next" type="button">Tiếp tục</button><button class="btn btn-ghost" data-checkup-cancel type="button">Hủy</button></div>`;
-  if (checkupStep === 3) content = cameraRequested ? `<div><p class="eyebrow">Bước 3 / 5</p><h2>${titles[2]}</h2><p class="subtle">Chỉ cần làm lần lượt bốn bước bên dưới. Bạn có thể bỏ qua camera bất cứ lúc nào.</p><ol class="camera-steps" aria-label="Các bước hiệu chỉnh camera"><li class="${cameraState === "ACTIVE" ? "done" : "active"}">Mở camera</li><li class="${observationQuality(latestCameraObservation).acceptable ? "done" : ""}">Đưa khuôn mặt vào khung hình</li><li class="${cameraCalibration !== null ? "done" : ""}">Nhập khoảng cách thật bằng thước</li><li class="${cameraCalibration !== null ? "active" : ""}">Bắt đầu đo 30 giây</li></ol><div class="camera-calibration"><video id="camera-preview" aria-label="Xem trước camera cục bộ"></video><div><label class="label" for="camera-device">Camera đang dùng</label><select class="field" id="camera-device"><option>Camera mặc định</option></select><p class="callout" id="camera-runtime-state" aria-live="polite">${cameraStatusMessage()}</p><p class="callout" id="camera-quality-state" aria-live="polite">${observationQuality(latestCameraObservation).label}</p><p class="camera-guidance" id="camera-guidance" aria-live="polite">${cameraGuidance()}</p><div class="camera-reading"><span><small>EAR trực tiếp</small><strong id="camera-live-ear">—</strong></span></div><label class="label" for="calibration-distance">Khoảng cách thật từ mắt đến màn hình (cm)</label><input class="field" id="calibration-distance" type="number" min="20" max="150" value="60" inputmode="decimal" aria-describedby="calibration-help"><p class="subtle" id="calibration-help">Dùng thước đo một lần. Số này chỉ dùng để hiệu chỉnh cục bộ, không phải chẩn đoán.</p></div></div></div><div class="actions"><button class="btn" id="checkup-back" type="button">Quay lại</button><button class="btn btn-primary" id="checkup-open-camera" type="button">1. Mở camera</button><button class="btn" id="checkup-calibrate" type="button" disabled title="Hoàn tất bước 1 và 2 trước">3. Xác nhận hiệu chỉnh</button><button class="btn btn-primary" id="checkup-measure-next" type="button" disabled title="Hoàn tất hiệu chỉnh trước">4. Tiếp tục đo</button><button class="btn btn-ghost" id="checkup-camera-next" type="button">Bỏ qua camera</button></div>` : `<div><p class="eyebrow">Bước 3 / 5</p><h2>${titles[2]}</h2><div class="callout warning"><strong>Camera đang tắt</strong><br>Bạn chưa cấp consent camera. EyeMate sẽ tiếp tục survey-only và không suy đoán chỉ số camera.</div></div><div class="actions"><button class="btn" id="checkup-back" type="button">Quay lại</button><button class="btn btn-primary" id="checkup-camera-next" type="button">Dùng survey-only</button><button class="btn btn-ghost" data-checkup-cancel type="button">Hủy</button></div>`;
+  if (checkupStep === 2) content = `<div><p class="eyebrow">Bước 2 / 5</p><h2>${titles[1]}</h2><p class="subtle">Trong 7 ngày gần đây, hãy ghi lại trải nghiệm của bạn. EyeMate Symptom Check gồm 5 câu tự phát triển, không phải công cụ lâm sàng đã được validation.</p>${surveyValidationMessage ? `<div class="callout warning survey-validation" role="alert">${escapeHtml(surveyValidationMessage)}</div>` : ""}${wellnessSurveyFields()}<label class="label" for="safety-response">Tín hiệu cần dừng</label><select class="field" id="safety-response"><option value="NEGATIVE">Không có tín hiệu cần dừng</option><option value="CONFIRMED">Có tín hiệu cần dừng</option><option value="UNSURE">Chưa chắc</option><option value="PREFER_NOT_TO_ANSWER">Không muốn trả lời</option></select></div><div class="actions"><button class="btn" id="checkup-back" type="button">Quay lại</button><button class="btn btn-primary" id="checkup-survey-next" type="button">Tiếp tục</button><button class="btn btn-ghost" data-checkup-cancel type="button">Hủy</button></div>`;
+  if (checkupStep === 3) content = cameraRequested ? `<div><p class="eyebrow">Bước 3 / 5</p><h2>${titles[2]}</h2><p class="subtle">Chỉ cần làm lần lượt bốn bước bên dưới. Bạn có thể bỏ qua camera bất cứ lúc nào.</p><ol class="camera-steps" aria-label="Các bước hiệu chỉnh camera"><li class="${cameraState === "ACTIVE" ? "done" : "active"}">Mở camera</li><li class="${observationQuality(latestCameraObservation).acceptable ? "done" : ""}">Đưa khuôn mặt vào khung hình</li><li class="${cameraCalibration !== null ? "done" : ""}">Hiệu chỉnh 5 giây hoặc dùng profile đã lưu</li><li class="${cameraCalibration !== null ? "active" : ""}">Bắt đầu đo 30 giây</li></ol><div class="camera-calibration"><video id="camera-preview" aria-label="Xem trước camera cục bộ"></video><div><label class="label" for="camera-device">Camera đang dùng</label><select class="field" id="camera-device"><option>Camera mặc định</option></select><p class="callout" id="camera-runtime-state" aria-live="polite">${cameraStatusMessage()}</p><p class="callout" id="camera-quality-state" aria-live="polite">${observationQuality(latestCameraObservation).label}</p><p class="camera-guidance" id="camera-guidance" aria-live="polite">${cameraGuidance()}</p><div class="camera-reading"><span><small>EAR trực tiếp</small><strong id="camera-live-ear">—</strong></span></div><label class="label" for="calibration-distance">Khoảng cách thật từ mắt đến camera/webcam (cm)</label><input class="field" id="calibration-distance" type="number" min="20" max="150" value="60" inputmode="decimal" aria-describedby="calibration-help"><p class="subtle" id="calibration-help">Đo từ vùng giữa hai mắt đến ống kính webcam. Số này chỉ dùng để hiệu chỉnh cục bộ, không phải chẩn đoán.</p></div></div></div><div class="actions"><button class="btn" id="checkup-back" type="button">Quay lại</button><button class="btn btn-primary" id="checkup-open-camera" type="button">1. Mở camera</button><button class="btn" id="checkup-calibrate" type="button" disabled title="Hoàn tất bước 1 và 2 trước">3. Hiệu chỉnh 5 giây</button><button class="btn btn-primary" id="checkup-measure-next" type="button" disabled title="Hoàn tất hiệu chỉnh trước">4. Tiếp tục đo</button><button class="btn btn-ghost" id="checkup-camera-next" type="button">Bỏ qua camera</button></div>` : `<div><p class="eyebrow">Bước 3 / 5</p><h2>${titles[2]}</h2><div class="callout warning"><strong>Camera đang tắt</strong><br>Bạn chưa cấp consent camera. EyeMate sẽ tiếp tục survey-only và không suy đoán chỉ số camera.</div></div><div class="actions"><button class="btn" id="checkup-back" type="button">Quay lại</button><button class="btn btn-primary" id="checkup-camera-next" type="button">Dùng survey-only</button><button class="btn btn-ghost" data-checkup-cancel type="button">Hủy</button></div>`;
   if (checkupStep === 4) content = cameraRequested && cameraCalibration !== null && cameraRuntime.active ? `<div><p class="eyebrow">Bước 4 / 5</p><h2>${titles[3]}</h2><div class="measurement-countdown" aria-live="polite"><strong id="camera-countdown">00:30</strong><span>giữ tư thế tự nhiên</span></div><div class="camera-reading"><span><small>EAR</small><strong id="camera-live-ear">—</strong></span><span><small>Chất lượng</small><strong id="camera-quality-state">Đang chờ</strong></span></div><p class="subtle">Quan sát per-frame chỉ tồn tại trong RAM trong cửa sổ 30 giây và bị xóa ngay sau khi tổng hợp.</p></div><div class="actions"><button class="btn btn-primary" id="checkup-measure-start" type="button">Bắt đầu 30 giây</button><button class="btn btn-danger" data-checkup-cancel type="button">Hủy đo</button></div>` : `<div><p class="eyebrow">Bước 4 / 5</p><h2>${titles[3]}</h2><div class="empty-state"><div><div class="empty-icon" aria-hidden="true">◉</div><h3>Đo camera đã được bỏ qua an toàn</h3><p class="subtle">EAR, khoảng cách và blink counter không được suy đoán khi camera tắt.</p></div></div></div><div class="actions"><button class="btn" id="checkup-back" type="button">Quay lại</button><button class="btn btn-primary" id="checkup-finish" type="button">Xem kết quả</button><button class="btn btn-ghost" data-checkup-cancel type="button">Hủy</button></div>`;
-  const cameraEvidence = cameraMeasurement === null ? "Survey-only · camera không đo" : cameraMeasurement.status === "COMPLETED" ? `Camera local · ${cameraMeasurement.validSampleCount}/${cameraMeasurement.sampleCount} mẫu hợp lệ · blink ${cameraMeasurement.blinkSummary.status === "OBSERVED" ? `${cameraMeasurement.blinkSummary.ratePerMinute}/phút` : "UNKNOWN"} · khoảng cách ${cameraMeasurement.distanceSummary.status === "OBSERVED" ? humanLabel(cameraMeasurement.distanceSummary.dominantZone) : "UNKNOWN"}` : `Camera ${humanLabel(cameraMeasurement.status)} · kết quả camera UNKNOWN`;
-  if (checkupStep === 5) content = checkupResult ? `<div><p class="eyebrow">Bước 5 / 5</p><h2>${titles[4]}</h2><span class="status-pill ${checkupResult.status === "SAFETY_STOP" ? "warning" : ""}">${humanLabel(checkupResult.status)}</span><section class="grid grid-2" aria-label="Tổng quan hôm nay"><div class="callout success"><strong>EyeMate Symptom Check</strong><br><span class="metric-value">${checkupResult.discomfortLoad.score === null ? "—" : checkupResult.discomfortLoad.score.toFixed(0)}</span> / ${checkupResult.discomfortLoad.maximumScore}<br>${checkupResult.discomfortLoad.label}<br><small>Nhóm hành động sản phẩm · dựa trên câu trả lời tự báo cáo</small></div><div class="callout"><strong>Camera</strong><br>${cameraEvidence}<br><small>Chất lượng/độ tin cậy chỉ có khi có đủ dữ liệu.</small></div></section><h3 class="section-heading">Gợi ý wellness</h3><div class="grid grid-2">${checkupResult.actions.map((action) => `<div class="callout"><strong>${humanLabel(action.id)}</strong><br><small>Nguồn: ${action.evidenceSource === "SAFETY_GATE" ? "Safety Gate" : "Tự báo cáo"} · ${humanLabel(action.reasonCode)}</small></div>`).join("")}</div><h3 class="section-heading">Dữ liệu thiếu và giới hạn</h3><p class="subtle">${checkupResult.missingData.length ? `Chưa chắc/chưa đủ: ${checkupResult.missingData.join(", ")}. ` : "Không có câu tự báo cáo bị thiếu. "}${checkupResult.limitation}. Không hợp nhất câu trả lời và camera thành kết luận bệnh.</p><p class="subtle">Nên check lại sau khi nghỉ mắt hoặc khi trải nghiệm thay đổi. Safety Gate luôn được ưu tiên khi có tín hiệu cần dừng.</p><div class="callout disclaimer" role="note"><strong>Lưu ý quan trọng</strong><br>${escapeHtml(WELLNESS_DISCLAIMER)}</div></div><div class="actions"><button class="btn" data-checkup-export="MARKDOWN" type="button">Export Markdown</button><button class="btn" data-checkup-export="JSON" type="button">Export JSON</button><button class="btn" data-checkup-export="PDF" type="button">Export PDF</button><button class="btn btn-primary" id="checkup-done" type="button">Về tổng quan</button><button class="btn" id="checkup-repeat" type="button">Làm lại</button></div>` : `<div class="empty-state"><div><div class="empty-icon">!</div><h2>Chưa có kết quả</h2><button class="btn" id="checkup-repeat" type="button">Bắt đầu lại</button></div></div>`;
+  if (checkupStep === 5) content = checkupResult ? renderCheckupResultContent(checkupResult) : `<div class="empty-state"><div><div class="empty-icon">!</div><h2>Chưa có kết quả</h2><button class="btn" id="checkup-repeat" type="button">Bắt đầu lại</button></div></div>`;
   setView(`${pageHeading("Checkup", "Một phút để lắng nghe đôi mắt", "Flow từng bước, camera-off an toàn và không đưa ra chẩn đoán.")}<section class="wizard"><div class="stepper" aria-label="Tiến trình checkup">${stepBars}</div><article class="card wizard-card">${content}</article></section>`);
   bindCheckupControls();
 }
 
 function wellnessSurveyFields(): string {
-  return wellnessQuestions.map((question, index) => `<fieldset class="option-grid" data-wellness-question="${question.id}"><legend class="label">${index + 1}. ${question.wording}</legend>${question.responseScale.map((label, value) => `<label class="option"><input type="radio" name="wellness-${question.id}" value="${value}"> <span>${value} · ${label}</span></label>`).join("")}<label class="option"><input type="radio" name="wellness-${question.id}" value="UNKNOWN" checked> <span>Chưa chắc</span></label>${question.supportsNotApplicable ? `<label class="option"><input type="radio" name="wellness-${question.id}" value="NOT_APPLICABLE"> <span>Không áp dụng</span></label>` : ""}</fieldset>`).join("");
+  return wellnessQuestions.map((question, index) => {
+    const current = pendingSurvey.answers[question.id];
+    return `<fieldset class="option-grid" data-wellness-question="${question.id}"><legend class="label">${index + 1}. ${question.wording}</legend>${question.responseScale.map((label, value) => `<label class="option"><input type="radio" name="wellness-${question.id}" value="${value}" ${current === value ? "checked" : ""}> <span>${value} · ${label}</span></label>`).join("")}<label class="option"><input type="radio" name="wellness-${question.id}" value="UNKNOWN"> <span>Chưa chắc / bỏ qua câu này</span></label>${question.supportsNotApplicable ? `<label class="option"><input type="radio" name="wellness-${question.id}" value="NOT_APPLICABLE"> <span>Không áp dụng</span></label>` : ""}</fieldset>`;
+  }).join("");
+}
+
+async function startCheckupCalibration(button: HTMLButtonElement): Promise<void> {
+  const context = cameraRuntime.context;
+  const observation = latestCameraObservation;
+  const referenceDistanceCm = Number(document.querySelector<HTMLInputElement>("#calibration-distance")?.value);
+  if (!context || !observation || !observationQuality(observation).acceptable || observation.interEyeDistancePx === null) {
+    showToast("Chưa đủ chất lượng để hiệu chỉnh.", "warning");
+    return;
+  }
+  if (!Number.isFinite(referenceDistanceCm) || referenceDistanceCm < 20 || referenceDistanceCm > 150) {
+    showToast("Khoảng cách hiệu chỉnh phải từ 20 đến 150 cm.", "warning");
+    return;
+  }
+  if (checkupCalibrationStartedAt !== null) return;
+  checkupCalibrationSamples = [];
+  checkupCalibrationStartedAt = performance.now();
+  button.disabled = true;
+  button.textContent = "Đang hiệu chỉnh 5 giây…";
+  checkupCalibrationTicker = window.setInterval(() => {
+    if (checkupCalibrationStartedAt === null) return;
+    if (performance.now() - checkupCalibrationStartedAt >= CAMERA_CALIBRATION_CONFIG.captureDurationMs) void finishCheckupCalibration(context, referenceDistanceCm, button);
+  }, 100);
+}
+
+async function finishCheckupCalibration(context: { readonly deviceBinding: string; readonly width: number; readonly height: number }, referenceDistanceCm: number, button: HTMLButtonElement): Promise<void> {
+  const samples = checkupCalibrationSamples ?? [];
+  checkupCalibrationStartedAt = null;
+  checkupCalibrationSamples = null;
+  if (checkupCalibrationTicker !== null) window.clearInterval(checkupCalibrationTicker);
+  checkupCalibrationTicker = null;
+  try {
+    const record = createCameraCalibrationRecord({ ...context, referenceDistanceCm, interEyeDistanceSamplesPx: samples, calibratedAt: new Date().toISOString() });
+    const saved = await window.eyeMate.saveCameraCalibration(record);
+    cameraCalibration = saved.profile;
+    button.textContent = "Đã hiệu chỉnh";
+    showToast(`Đã lưu calibration ${saved.confidence}; ${saved.validSampleCount} mẫu hợp lệ.`);
+    updateCameraLiveUi();
+  } catch {
+    cameraCalibration = null;
+    button.disabled = false;
+    button.textContent = "3. Hiệu chỉnh 5 giây";
+    showToast(`Chưa đủ dữ liệu hiệu chỉnh: ${samples.length}/${CAMERA_CALIBRATION_CONFIG.minimumValidSamples} mẫu hợp lệ.`, "warning");
+    updateCameraLiveUi();
+  }
 }
 
 let pendingSurvey: { answers: Record<WellnessQuestionId, SurveyResponse>; safety: SafetyResponse } = {
   answers: Object.fromEntries(wellnessQuestions.map((question) => [question.id, "UNKNOWN"])) as Record<WellnessQuestionId, SurveyResponse>,
   safety: "NEGATIVE"
 };
+let surveyValidationMessage: string | null = null;
 function bindCheckupControls(): void {
   document.querySelector<HTMLButtonElement>("#checkup-camera-consent")?.addEventListener("click", async (event) => { const result = await runMutation(event.currentTarget as HTMLButtonElement, window.eyeMate.grantCameraConsent()); if (result !== null) { cameraRequested = true; checkupStep = 2; renderCheckup(); } });
   document.querySelector<HTMLButtonElement>("#checkup-consent")?.addEventListener("click", async (event) => { const result = await runMutation(event.currentTarget as HTMLButtonElement, window.eyeMate.completeOnboardingWithoutCamera()); if (result !== null) { checkupStep = 2; renderCheckup(); } });
   document.querySelector("#checkup-back")?.addEventListener("click", () => { if (checkupStep <= 3) { void stopCameraFlow(); cameraCalibration = null; } checkupStep = Math.max(1, checkupStep - 1); renderCheckup(); });
   document.querySelector("#checkup-survey-next")?.addEventListener("click", () => {
+    const missingRequired = wellnessQuestions.filter((question) => document.querySelector<HTMLInputElement>(`input[name='wellness-${question.id}']:checked`) === null);
+    if (missingRequired.length > 0) {
+      surveyValidationMessage = `Bạn còn ${missingRequired.length} câu chưa chọn: ${missingRequired.map((question) => `${wellnessQuestions.indexOf(question) + 1}. ${question.wording}`).join("; ")}. Chọn 0–3 để tính điểm, hoặc chọn “Chưa chắc / bỏ qua câu này” nếu thật sự chưa có dữ liệu.`;
+      showToast("Còn câu chưa trả lời nên EyeMate chưa thể tính điểm.", "warning");
+      renderCheckup();
+      return;
+    }
     const answers = Object.fromEntries(wellnessQuestions.map((question) => {
       const value = document.querySelector<HTMLInputElement>(`input[name='wellness-${question.id}']:checked`)?.value ?? "UNKNOWN";
-      return [question.id, /^[0-3]$/.test(value) ? Number(value) as SurveyResponse : value as SurveyResponse];
+      return [question.id, /^[0-3]$/.test(value) ? Number(value) as SurveyResponse : "UNKNOWN" as SurveyResponse];
     })) as Record<WellnessQuestionId, SurveyResponse>;
+    surveyValidationMessage = null;
     pendingSurvey = { answers, safety: (document.querySelector<HTMLSelectElement>("#safety-response")?.value ?? "NEGATIVE") as SafetyResponse };
     checkupStep = 3; renderCheckup();
   });
@@ -435,17 +615,18 @@ function bindCheckupControls(): void {
     const selected = selectedValue && selectedValue !== "Camera mặc định" ? selectedValue : undefined;
     cameraCalibration = null; latestCameraObservation = null;
     const context = await runMutation(event.currentTarget as HTMLButtonElement, cameraRuntime.start(video, selected), undefined, 20_000);
-    if (context !== null) { await populateCameraDevices(); updateCameraLiveUi(); }
+    if (context !== null) {
+      const saved = await window.eyeMate.getCameraCalibration().catch(() => null);
+      if (saved?.profile.deviceBinding === context.deviceBinding) {
+        cameraCalibration = saved.profile;
+        showToast("Đã dùng calibration đã lưu cho camera hiện tại.");
+      } else if (saved !== null) {
+        showToast("Calibration đã lưu không khớp camera/resolution hiện tại; cần hiệu chỉnh lại.", "warning");
+      }
+      await populateCameraDevices(); updateCameraLiveUi();
+    }
   });
-  document.querySelector<HTMLButtonElement>("#checkup-calibrate")?.addEventListener("click", (event) => {
-    const context = cameraRuntime.context; const observation = latestCameraObservation; const distanceValue = Number(document.querySelector<HTMLInputElement>("#calibration-distance")?.value);
-    if (!context || !observation || !observationQuality(observation).acceptable || observation.interEyeDistancePx === null) { showToast("Chưa đủ chất lượng để hiệu chỉnh.", "warning"); return; }
-    try {
-      cameraCalibration = validateCalibrationProfile({ profileVersion: "camera-calibration/0.1.0", deviceBinding: context.deviceBinding, width: context.width, height: context.height, groundTruthCm: distanceValue, referenceInterEyePx: observation.interEyeDistancePx, calibratedAt: new Date().toISOString() });
-      showToast("Hiệu chỉnh local đã sẵn sàng cho camera hiện tại."); updateCameraLiveUi();
-      (event.currentTarget as HTMLButtonElement).textContent = "Đã hiệu chỉnh";
-    } catch { cameraCalibration = null; showToast("Khoảng cách hiệu chỉnh phải từ 20 đến 150 cm.", "warning"); }
-  });
+  document.querySelector<HTMLButtonElement>("#checkup-calibrate")?.addEventListener("click", (event) => void startCheckupCalibration(event.currentTarget as HTMLButtonElement));
   document.querySelector("#checkup-measure-next")?.addEventListener("click", () => { checkupStep = 4; renderCheckup(); });
   document.querySelector<HTMLButtonElement>("#checkup-measure-start")?.addEventListener("click", (event) => {
     if (!cameraRuntime.active || cameraCalibration === null || cameraMeasurementStartedAt !== null) return;
@@ -466,8 +647,9 @@ function bindCheckupControls(): void {
     if (result) showToast(result.status === "EXPORTED" ? "Đã xuất EyeMate Symptom Check cục bộ." : "Đã hủy export.");
   });
   document.querySelector("#checkup-done")?.addEventListener("click", () => { location.hash = "#/home"; });
-  document.querySelector("#checkup-repeat")?.addEventListener("click", () => { void stopCameraFlow(); checkupStep = 1; checkupResult = null; cameraMeasurement = null; renderCheckup(); });
-  for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>("[data-checkup-cancel]"))) button.addEventListener("click", () => { void stopCameraFlow(); checkupStep = 1; checkupResult = null; cameraMeasurement = null; location.hash = "#/home"; });
+  document.querySelector("#checkup-answer-missing")?.addEventListener("click", () => { surveyValidationMessage = "Hoàn tất các câu còn thiếu để EyeMate tính điểm 0–15."; checkupStep = 2; renderCheckup(); });
+  document.querySelector("#checkup-repeat")?.addEventListener("click", () => { void stopCameraFlow(); checkupStep = 1; checkupResult = null; cameraMeasurement = null; surveyValidationMessage = null; renderCheckup(); });
+  for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>("[data-checkup-cancel]"))) button.addEventListener("click", () => { void stopCameraFlow(); checkupStep = 1; checkupResult = null; cameraMeasurement = null; surveyValidationMessage = null; location.hash = "#/home"; });
   if (checkupStep === 3 && cameraRequested) void populateCameraDevices();
 }
 

@@ -49,7 +49,7 @@ export interface SelfReportedDiscomfortLoad {
 export interface WellnessAction {
   readonly id: "LOOK_AWAY_BREAK" | "CONSCIOUS_BLINK" | "ADJUST_SCREEN_SETUP" | "RECHECK_AFTER_REST" | "CONSIDER_PROFESSIONAL_GUIDANCE";
   readonly reasonCode: string;
-  readonly evidenceSource: "SELF_REPORTED" | "SAFETY_GATE";
+  readonly evidenceSource: "SELF_REPORTED" | "CAMERA_OBSERVATION" | "SAFETY_GATE";
 }
 
 export interface WellnessCheckReport {

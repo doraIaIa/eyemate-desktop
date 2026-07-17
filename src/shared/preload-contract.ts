@@ -1,5 +1,5 @@
 import type { RuntimeInfo } from "./runtime-contract.js";
-import type { CheckupSummary, PrivacySummary, SurveyRequest } from "./m1-contract.js";
+import type { CheckupSummary, IntegratedCheckupRequest, PrivacySummary, SurveyRequest } from "./m1-contract.js";
 import type { WorkSession } from "../work-session/session-state.js";
 import type { NudgeDecision } from "../work-session/companion-policy.js";
 import type { PersonalReport } from "../personal-intelligence/report-service.js";
@@ -29,12 +29,13 @@ export interface EyeMatePreloadApi {
   getRuntimeInfo(): Promise<RuntimeInfo>;
   getPrivacySummary(): Promise<PrivacySummary>;
   runSurveyOnly(request: SurveyRequest): Promise<CheckupSummary>;
+  runCheckup(request: IntegratedCheckupRequest): Promise<CheckupSummary>;
   exportCheckupWithDialog(reportId: string, format: LocalExportFormat): Promise<LocalExportResult>;
   grantCameraConsent(): Promise<void>;
   completeOnboardingWithoutCamera(): Promise<void>;
   withdrawCameraConsent(): Promise<void>;
   deleteAllLocalData(): Promise<"DELETED" | "PARTIALLY_DELETED" | "FAILED">;
-  listSurveyOnlyReports(): Promise<readonly { readonly status: string; readonly action: string; readonly createdAt: string }[]>;
+  listSurveyOnlyReports(): Promise<readonly { readonly status: string; readonly action: string; readonly createdAt: string; readonly cameraStatus?: string; readonly source?: string }[]>;
   startWorkSession(modeId?: WorkSession["modeId"]): Promise<WorkSession>;
   pauseWorkSession(): Promise<WorkSession>;
   resumeWorkSession(): Promise<WorkSession>;

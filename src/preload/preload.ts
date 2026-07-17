@@ -21,6 +21,11 @@ const eyeMateApi: EyeMatePreloadApi = {
     if (!isCheckupSummary(result)) throw new Error("PRELOAD_CHECKUP_CONTRACT_INVALID");
     return result;
   },
+  async runCheckup(request) {
+    const result: unknown = await ipcRenderer.invoke("checkup:run", request);
+    if (!isCheckupSummary(result)) throw new Error("PRELOAD_CHECKUP_CONTRACT_INVALID");
+    return result;
+  },
   async exportCheckupWithDialog(reportId, format) {
     if (!/^[a-z0-9-]{8,64}$/i.test(reportId) || !["JSON", "MARKDOWN", "PDF"].includes(format)) throw new Error("PRELOAD_CHECKUP_EXPORT_REQUEST_INVALID");
     const result: unknown = await ipcRenderer.invoke("checkup:export-with-dialog", reportId, format);
@@ -44,7 +49,7 @@ const eyeMateApi: EyeMatePreloadApi = {
   async listSurveyOnlyReports() {
     const result: unknown = await ipcRenderer.invoke("reports:list-survey-only");
     if (!Array.isArray(result) || !result.every((value) => typeof value === "object" && value !== null)) throw new Error("PRELOAD_REPORT_LIST_INVALID");
-    return result as readonly { readonly status: string; readonly action: string; readonly createdAt: string }[];
+    return result as readonly { readonly status: string; readonly action: string; readonly createdAt: string; readonly cameraStatus?: string; readonly source?: string }[];
   },
   async startWorkSession(modeId) { return await ipcRenderer.invoke("work-session:start", modeId); },
   async pauseWorkSession() { return await ipcRenderer.invoke("work-session:pause"); },

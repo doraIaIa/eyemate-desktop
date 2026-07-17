@@ -17,6 +17,13 @@ test("window 30 giây chỉ tạo aggregate và đếm blink theo transition", (
   assert.equal(result.rawDataPersisted, false);
 });
 
+test("blink counter dùng ngưỡng thích nghi để không bỏ sót người có EAR nền cao", () => {
+  const frames = Array.from({ length: 30 }, (_, index) => valid(index * 1_000, 0.34));
+  frames[8] = valid(8_000, 0.23); frames[9] = valid(9_000, 0.22); frames[10] = valid(10_000, 0.34);
+  const result = aggregateMeasurementWindow({ status: "COMPLETED", startedAtMs: 0, endedAtMs: 30_000, frames, calibration, currentDeviceBinding: binding });
+  assert.deepEqual(result.blinkSummary, { status: "OBSERVED", count: 1, ratePerMinute: 2 });
+});
+
 test("quality thấp và camera fail không biến missing thành zero", () => {
   const frames = Array.from({ length: 30 }, (_, index) => ({ ...valid(index * 1_000), faceCount: 0 }));
   const result = aggregateMeasurementWindow({ status: "COMPLETED", startedAtMs: 0, endedAtMs: 30_000, frames, calibration: null, currentDeviceBinding: null });
