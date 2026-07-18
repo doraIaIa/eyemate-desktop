@@ -40,6 +40,16 @@ export interface StoredCheckupListItem {
   readonly cameraReasonCodes?: readonly string[];
 }
 
+export interface StoredSessionSummaryListItem {
+  readonly summaryId: string;
+  readonly sessionId: string;
+  readonly status: string;
+  readonly elapsedActiveMs: number;
+  readonly createdAt: string;
+  readonly interventionCount: number;
+  readonly acceptedBreakCount: number;
+}
+
 export interface EyeMatePreloadApi {
   getRuntimeInfo(): Promise<RuntimeInfo>;
   getPrivacySummary(): Promise<PrivacySummary>;
@@ -57,7 +67,7 @@ export interface EyeMatePreloadApi {
   finishWorkSession(): Promise<WorkSession>;
   cancelWorkSession(): Promise<WorkSession>;
   getWorkSession(): Promise<WorkSession | null>;
-  listSessionSummaries(): Promise<readonly { readonly summaryId: string; readonly sessionId: string; readonly status: string; readonly elapsedActiveMs: number; readonly createdAt: string }[]>;
+  listSessionSummaries(): Promise<readonly StoredSessionSummaryListItem[]>;
   requestBreakNudge(): Promise<NudgeDecision & { readonly nudgeId: string }>;
   respondToNudge(nudgeId: string, response: NudgeResponse): Promise<boolean>;
   generateM3Report(): Promise<PersonalReport>;

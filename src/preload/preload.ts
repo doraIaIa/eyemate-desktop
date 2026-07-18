@@ -57,7 +57,11 @@ const eyeMateApi: EyeMatePreloadApi = {
   async finishWorkSession() { return await ipcRenderer.invoke("work-session:finish"); },
   async cancelWorkSession() { return await ipcRenderer.invoke("work-session:cancel"); },
   async getWorkSession() { return await ipcRenderer.invoke("work-session:get"); },
-  async listSessionSummaries() { const result: unknown = await ipcRenderer.invoke("work-session:list-summaries"); if (!Array.isArray(result)) throw new Error("PRELOAD_SUMMARY_LIST_INVALID"); return result as readonly { readonly summaryId: string; readonly sessionId: string; readonly status: string; readonly elapsedActiveMs: number; readonly createdAt: string }[]; }
+  async listSessionSummaries() {
+    const result: unknown = await ipcRenderer.invoke("work-session:list-summaries");
+    if (!Array.isArray(result) || !result.every(isStoredSessionSummaryListItem)) throw new Error("PRELOAD_SUMMARY_LIST_INVALID");
+    return result;
+  }
   ,async requestBreakNudge() { return await ipcRenderer.invoke("work-session:request-break-nudge"); }
   ,async respondToNudge(nudgeId, response) { return await ipcRenderer.invoke("work-session:respond-nudge", nudgeId, response); }
   ,async generateM3Report() { return await ipcRenderer.invoke("m3:generate-report"); }
@@ -95,6 +99,15 @@ function isUserPreferences(value: unknown): value is import("../shared/preload-c
     && Number.isInteger(item.customWorkDurationMinutes) && Number(item.customWorkDurationMinutes) >= 5 && Number(item.customWorkDurationMinutes) <= 180
     && Number.isInteger(item.customBreakDurationMinutes) && Number(item.customBreakDurationMinutes) >= 1 && Number(item.customBreakDurationMinutes) <= 60
     && Number.isInteger(item.customReminderAtMinutes) && Number(item.customReminderAtMinutes) >= 1 && Number(item.customReminderAtMinutes) <= Number(item.customWorkDurationMinutes);
+}
+
+function isStoredSessionSummaryListItem(value: unknown): value is import("../shared/preload-contract.js").StoredSessionSummaryListItem {
+  if (typeof value !== "object" || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.summaryId === "string" && typeof item.sessionId === "string" && typeof item.status === "string" && typeof item.createdAt === "string"
+    && Number.isSafeInteger(item.elapsedActiveMs) && Number(item.elapsedActiveMs) >= 0
+    && Number.isSafeInteger(item.interventionCount) && Number(item.interventionCount) >= 0
+    && Number.isSafeInteger(item.acceptedBreakCount) && Number(item.acceptedBreakCount) >= 0;
 }
 
 function isDataInventoryItem(value: unknown): value is import("../shared/preload-contract.js").DataInventoryItem {

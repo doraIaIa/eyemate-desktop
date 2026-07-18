@@ -1,5 +1,5 @@
 import type { CheckupSummary, SafetyResponse, SurveyResponse } from "../shared/m1-contract.js";
-import type { DataInventoryItem, LocalExportFormat, NudgeResponse, StoredCheckupListItem, UserPreferences } from "../shared/preload-contract.js";
+import type { DataInventoryItem, LocalExportFormat, NudgeResponse, StoredCheckupListItem, StoredSessionSummaryListItem, UserPreferences } from "../shared/preload-contract.js";
 import type { PersonalReport } from "../personal-intelligence/report-service.js";
 import type { WorkSession } from "../work-session/session-state.js";
 import { LOCAL_OPERATION_TIMEOUT, withOperationTimeout } from "./async-operation.js";
@@ -13,6 +13,8 @@ import { DevPanelController } from "./dev-panel.js";
 import { evaluateCompanionCycle, getCompanionModeProfile } from "../work-session/companion-cycle.js";
 import { buildWorkRhythm, type WorkRhythmSummary } from "../personal-intelligence/work-rhythm.js";
 import { renderEnterpriseDemo } from "./enterprise-demo.js";
+import { createPersonalDemoSnapshot } from "./personal-demo-data.js";
+import type { RuntimeInfo } from "../shared/runtime-contract.js";
 
 type RouteId = "home" | "checkup" | "companion" | "intelligence" | "reports" | "privacy" | "settings" | "design-lab" | "taste-design-lab" | "enterprise-demo";
 type ReportTab = "overview" | "week" | "month" | "history";
@@ -58,6 +60,7 @@ let activeDevOverrides: DevOverrides = EMPTY_DEV_OVERRIDES;
 let designLabMascotState = "WELCOME";
 let designLabReducedMotion = false;
 let designLabDestination = "Hôm nay";
+let runtimeInfoPromise: Promise<RuntimeInfo> | null = null;
 
 const cameraRuntime = new LocalCameraRuntime({
   onState(state, reason) {
@@ -154,12 +157,18 @@ function productionEvidenceTrace(items: readonly HomeEvidenceItem[], note: strin
 }
 
 function productionHomeArtwork(): string {
-  return `<div class="clarity-home-artwork" aria-hidden="true"><svg viewBox="0 0 220 96" focusable="false">
-    <text class="clarity-optotype" x="8" y="19">E F P</text><text class="clarity-optotype faint" x="151" y="86">T O Z</text>
-    <path class="clarity-art-trace trace-back" d="M9 55C42 25 80 25 111 49C137 69 169 72 211 38"></path>
-    <path class="clarity-art-trace trace-front" d="M11 61C49 82 83 80 111 54C139 28 171 28 209 48"></path>
-    <path class="clarity-art-lens" d="M67 53C80 37 98 29 115 31C133 33 149 43 159 57C145 72 128 79 110 77C92 75 77 67 67 53Z"></path>
-    <circle class="clarity-art-focus" cx="113" cy="54" r="10"></circle><circle class="clarity-art-point" cx="113" cy="54" r="3"></circle>
+  return `<div class="clarity-home-artwork" aria-hidden="true"><svg viewBox="0 0 460 150" focusable="false">
+    <defs>
+      <linearGradient id="home-sky-haze" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f9fff0" stop-opacity=".16"/><stop offset=".58" stop-color="#e2eddf" stop-opacity=".72"/><stop offset="1" stop-color="#d7e4d2" stop-opacity=".1"/></linearGradient>
+      <linearGradient id="home-hill-front" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#dce9d9" stop-opacity=".92"/><stop offset="1" stop-color="#eef4ea" stop-opacity=".28"/></linearGradient>
+      <radialGradient id="home-sun" cx=".5" cy=".48" r=".62"><stop stop-color="#ffdf86" stop-opacity=".7"/><stop offset="1" stop-color="#ffecc0" stop-opacity="0"/></radialGradient>
+    </defs>
+    <circle cx="330" cy="69" r="43" fill="url(#home-sun)"></circle>
+    <path class="clarity-art-trace trace-back" d="M18 97C88 66 143 68 206 46C238 35 255 8 287 20C334 38 348 70 451 25"></path>
+    <path class="clarity-art-lens" d="M0 116C74 87 139 89 207 70C272 52 318 62 461 37V150H0Z" fill="url(#home-sky-haze)"></path>
+    <path class="clarity-art-trace trace-front" d="M96 115C166 83 218 86 273 76C338 64 372 85 460 66"></path>
+    <path d="M0 124C96 104 159 108 219 95C282 82 357 88 460 72V150H0Z" fill="url(#home-hill-front)"></path>
+    <path class="home-bird" d="M378 31c5-5 10-5 15 0M398 22c6-5 12-5 18 0"></path>
   </svg></div>`;
 }
 
@@ -301,13 +310,139 @@ function humanLabel(value: string): string {
   return escapeHtml(labels[value] ?? value.replaceAll("_", " ").toLocaleLowerCase("vi-VN"));
 }
 
+function homeTrendSparkline(points: readonly number[], labels: readonly string[], label: string): string {
+  const width = 238;
+  const height = 122;
+  const min = 0;
+  const safePoints = points.length ? points : [0];
+  const max = Math.max(30, ...safePoints);
+  const step = width / Math.max(1, safePoints.length - 1);
+  const coordinates = safePoints.map((point, index) => {
+    const normalized = Math.max(0, Math.min(1, (point - min) / (max - min)));
+    return { x: Math.round(index * step), y: Math.round(height - normalized * (height - 16) - 8), value: point };
+  });
+  const line = coordinates.map((point) => `${point.x},${point.y}`).join(" ");
+  const area = `0,${height} ${line} ${width},${height}`;
+  const axisLabels = labels.map((item) => item.split(",", 1)[0]?.trim() || item);
+  return `<figure class="home-trend" aria-label="${escapeHtml(label)}">
+    <figcaption><span>Thời lượng phiên 7 ngày</span><small>${max} phút</small></figcaption>
+    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(label)}">
+      <defs><linearGradient id="home-trend-fill" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#a9dc32" stop-opacity=".28"/><stop offset="1" stop-color="#a9dc32" stop-opacity="0"/></linearGradient></defs>
+      <path class="home-trend-area" d="M${area}Z"></path>
+      <polyline class="home-trend-line" points="${line}"></polyline>
+      ${coordinates.map((point, index) => `<circle class="home-trend-point" cx="${point.x}" cy="${point.y}" r="${index === coordinates.length - 1 ? 5 : 3.6}"><title>${labels[index] ?? `Ngày ${index + 1}`}: ${Math.round(point.value)}</title></circle>`).join("")}
+    </svg>
+    <div class="home-trend-axis" aria-hidden="true">${axisLabels.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>
+  </figure>`;
+}
+
+function homeMeditationIllustration(): string {
+  return `<div class="home-meditation-art" aria-hidden="true">
+    <img src="./assets/illustrations/companion-meditation-card.png" alt="" loading="eager" decoding="async" />
+  </div>`;
+}
+
+function homeSparkIcon(): string {
+  return `<svg viewBox="0 0 36 36" focusable="false" aria-hidden="true"><path d="M16.5 2.8 20 12.6l9.8 3.4-9.8 3.5-3.5 9.7-3.5-9.7-9.8-3.5 9.8-3.4 3.5-9.8Z"></path><path d="M28.6 5.8 30 9.4l3.6 1.4-3.6 1.3-1.4 3.7-1.3-3.7-3.7-1.3 3.7-1.4 1.3-3.6Z"></path></svg>`;
+}
+
+function homeSettingsIcon(): string {
+  return `<svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M4 7h8M16 7h4M14 5v4M4 17h4M12 17h8M10 15v4"></path></svg>`;
+}
+
+function homePeopleIcon(): string {
+  return `<svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M8.5 12.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM15.8 11.8a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM3.8 18.5c.9-2.8 2.5-4.2 4.8-4.2s3.9 1.4 4.8 4.2M12.6 16.2c.8-1.2 1.9-1.8 3.3-1.8 2 0 3.4 1.2 4.2 3.6"></path></svg>`;
+}
+
+function homeMetricBars(progress: number | null): string {
+  const seed = progress === null ? [18, 24, 16, 28, 21, 24, 19, 27, 22, 17] : [24, 42, 34, 58, 47, 70, 50, 62, 45, 39];
+  return `<div class="home-micro-bars" aria-hidden="true">${seed.map((value, index) => `<i style="--bar:${Math.round((progress ?? value) * (0.48 + index * 0.035))}%"></i>`).join("")}</div>`;
+}
+
+function homeHabitDays(rhythm: WorkRhythmSummary): string {
+  return `<div class="home-habit-days" aria-label="${rhythm.activeDays} ngày có dữ liệu trong tuần">${rhythm.days.map((day) => `<span class="${day.sessionCount > 0 ? "done" : "pending"}"><b>${day.sessionCount > 0 ? "✓" : ""}</b><small>${escapeHtml(day.label)}</small></span>`).join("")}</div>`;
+}
+
+function homeLocalDateKey(value: string): string | null {
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return null;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function homeRecentCompletedSummaries(summaries: readonly StoredSessionSummaryListItem[], dayCount = 7): readonly StoredSessionSummaryListItem[] {
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - dayCount + 1);
+  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+  return summaries.filter((summary) => {
+    const createdAt = new Date(summary.createdAt);
+    return summary.status === "COMPLETED" && !Number.isNaN(createdAt.valueOf()) && createdAt >= start && createdAt < end;
+  });
+}
+
+function homeWorkMetrics(rhythm: WorkRhythmSummary, summaries: readonly StoredSessionSummaryListItem[]): { readonly screenValue: string; readonly screenNote: string; readonly breakValue: string; readonly breakNote: string; readonly sessionValue: string; readonly sessionNote: string } {
+  const recent = homeRecentCompletedSummaries(summaries, rhythm.dayCount);
+  const todayMinutes = rhythm.days.at(-1)?.minutes ?? 0;
+  const acceptedBreakCount = recent.reduce((sum, summary) => sum + summary.acceptedBreakCount, 0);
+  const interventionCount = recent.reduce((sum, summary) => sum + summary.interventionCount, 0);
+  const durationBackfilled = recent.length > rhythm.completedSessions;
+  const screenValue = todayMinutes > 0 ? formatMinutesHuman(todayMinutes) : rhythm.totalMinutes > 0 ? formatMinutesHuman(rhythm.totalMinutes) : recent.length > 0 ? "Chưa rõ" : "Chưa có";
+  const screenNote = todayMinutes > 0 ? "Hôm nay · từ phiên đã hoàn tất" : rhythm.totalMinutes > 0 ? `${rhythm.activeDays}/${rhythm.dayCount} ngày có duration` : recent.length > 0 ? "Phiên cũ thiếu duration hợp lệ" : "Chưa có phiên hoàn tất";
+  const breakValue = acceptedBreakCount > 0 ? String(acceptedBreakCount) : interventionCount > 0 ? "Chưa rõ" : "Chưa lưu";
+  const breakNote = acceptedBreakCount > 0 ? "lời nhắc nghỉ đã chấp nhận" : interventionCount > 0 ? "có lời nhắc nhưng chưa có phản hồi nghỉ" : "chưa lưu sự kiện nghỉ riêng";
+  const sessionValue = rhythm.completedSessions > 0 ? String(rhythm.completedSessions) : recent.length > 0 ? "Chưa rõ" : "0";
+  const sessionNote = durationBackfilled ? `${rhythm.completedSessions}/${recent.length} phiên có duration hợp lệ` : `${rhythm.activeDays}/${rhythm.dayCount} ngày có phiên`;
+  return { screenValue, screenNote, breakValue, breakNote, sessionValue, sessionNote };
+}
+
+function personalDemoBanner(): string {
+  return `<aside class="personal-demo-banner" role="status"><strong>Dữ liệu mẫu</strong><span>Snapshot synthetic chỉ để trình bày giao diện và báo cáo. Không đọc, ghi hoặc trộn với dữ liệu cá nhân.</span></aside>`;
+}
+
+function getRuntimeInfoCached(): Promise<RuntimeInfo> {
+  runtimeInfoPromise ??= window.eyeMate.getRuntimeInfo();
+  return runtimeInfoPromise;
+}
+
+function applyRuntimePresentation(runtime: RuntimeInfo): void {
+  const demo = runtime.dataMode === "SYNTHETIC_DEMO";
+  document.body.classList.toggle("personal-demo-active", demo);
+  const badge = document.querySelector<HTMLElement>(".local-badge");
+  if (badge) badge.innerHTML = demo ? `<span aria-hidden="true">●</span> Dữ liệu mẫu` : `<span aria-hidden="true">●</span> Local only`;
+  document.querySelector<HTMLElement>(".titlebar-caption")!.textContent = demo ? "Chế độ trình bày dữ liệu mẫu · không dùng dữ liệu cá nhân" : "Local companion for healthier screen time";
+}
+
+function homeEvidenceBarsFromRhythm(rhythm: WorkRhythmSummary, summaries: readonly StoredSessionSummaryListItem[]): string {
+  const acceptedByDate = new Map<string, number>();
+  for (const summary of homeRecentCompletedSummaries(summaries, rhythm.dayCount)) {
+    const key = homeLocalDateKey(summary.createdAt);
+    if (key !== null) acceptedByDate.set(key, (acceptedByDate.get(key) ?? 0) + summary.acceptedBreakCount);
+  }
+  const maxBreaks = Math.max(1, ...rhythm.days.map((day) => acceptedByDate.get(day.date) ?? 0));
+  const maxMinutes = Math.max(30, ...rhythm.days.map((day) => day.minutes));
+  const maxSessions = Math.max(1, ...rhythm.days.map((day) => day.sessionCount));
+  return `<div class="home-evidence-bars" aria-label="Bằng chứng 7 ngày qua">${rhythm.days.map((day) => {
+    const breaks = acceptedByDate.get(day.date) ?? 0;
+    const breakHeight = Math.round(breaks / maxBreaks * 100);
+    const screenHeight = Math.round(day.minutes / maxMinutes * 100);
+    const sessionHeight = Math.round(day.sessionCount / maxSessions * 100);
+    return `<span title="${escapeHtml(`${day.label}: ${breaks} nghỉ mắt đã phản hồi, ${day.minutes} phút phiên, ${day.sessionCount} phiên`)}"><i class="break" style="--h:${breakHeight}%"></i><i class="screen" style="--h:${screenHeight}%"></i><i class="session" style="--h:${sessionHeight}%"></i><small>${escapeHtml(day.label)}</small></span>`;
+  }).join("")}</div>`;
+}
+
+function homeEvidenceLegend(): string {
+  return `<div class="home-evidence-legend" aria-label="Chú thích màu biểu đồ"><span class="legend-break">Nghỉ mắt đã phản hồi</span><span class="legend-screen">Phút phiên</span><span class="legend-session">Số phiên</span></div>`;
+}
+
+function homeNextActionClock(): string {
+  return `<div class="home-action-clock" aria-hidden="true"><svg viewBox="0 0 96 96" focusable="false"><circle cx="48" cy="48" r="36"></circle><path d="M48 23v25l17 10"></path><path class="clock-ring" d="M48 10a38 38 0 1 1-1 0"></path></svg><strong>20:20:20</strong></div>`;
+}
+
 async function renderHome(): Promise<void> {
   const [runtime, reports, summaries, m3Reports, session, privacy, preferences] = await withOperationTimeout(Promise.all([
     window.eyeMate.getRuntimeInfo(), window.eyeMate.listSurveyOnlyReports(), window.eyeMate.listSessionSummaries(), window.eyeMate.listM3Reports(), window.eyeMate.getWorkSession(), window.eyeMate.getPrivacySummary(), window.eyeMate.getUserPreferences()
   ]));
   const homeProfile = companionProfile(session?.modeId ?? preferences.defaultMode, preferences);
   const latest = m3Reports.at(-1);
-  const vli = latest?.daily.vli.score;
   const completedSummaries = summaries.filter((summary) => summary.status === "COMPLETED");
   const sessionCount = completedSummaries.length;
   const latestSummary = completedSummaries[0];
@@ -325,6 +460,7 @@ async function renderHome(): Promise<void> {
   const currentCameraEvidence = checkupResult?.cameraEvidence;
   const blinkCoverage = currentCameraEvidence && currentCameraEvidence.status !== "NOT_MEASURED" && currentCameraEvidence.blinkRatePerMinute !== null ? currentCameraEvidence.validSampleRatio * 100 : reports[0]?.blinkRatePerMinute !== null && reports[0]?.blinkRatePerMinute !== undefined ? (reports[0].validSampleRatio ?? 0) * 100 : null;
   const distanceCoverage = currentCameraEvidence && currentCameraEvidence.status !== "NOT_MEASURED" && currentCameraEvidence.distanceZone !== "UNKNOWN" ? currentCameraEvidence.validSampleRatio * 100 : reports[0]?.distanceZone && reports[0].distanceZone !== "UNKNOWN" ? (reports[0].validSampleRatio ?? 0) * 100 : null;
+  const vli = latest?.daily.vli.score;
   const evidenceItems: readonly HomeEvidenceItem[] = [
     { id: "session", label: "Phiên", coverage: sessionCount > 0 || session?.state === "ACTIVE" ? 100 : null, detail: sessionCount > 0 ? `${sessionCount} phiên hoàn tất đã lưu.` : session?.state === "ACTIVE" ? `Phiên ${homeProfile.label} đang hoạt động.` : "Chưa có phiên hoàn tất." },
     { id: "checkup", label: "Checkup", coverage: reports.length > 0 ? 100 : null, detail: reports.length > 0 ? `${reports.length} checkup tự báo cáo đã lưu.` : "Chưa có checkup tự báo cáo." },
@@ -333,6 +469,7 @@ async function renderHome(): Promise<void> {
     { id: "vli", label: "Tải", coverage: latest?.daily.vli.status === "AVAILABLE" ? Math.round(latest.daily.vli.dataConfidence * 100) : null, detail: latest?.daily.vli.status === "AVAILABLE" ? `Tải thị giác tổng hợp có ${Math.round(latest.daily.vli.dataConfidence * 100)}% thành phần dữ liệu.` : "Chưa đủ thành phần để tổng hợp tải thị giác." }
   ];
   const homeRhythm = buildWorkRhythm(completedSummaries, 7);
+  const visibleWorkMetrics = homeWorkMetrics(homeRhythm, completedSummaries);
   const availableEvidenceCount = evidenceItems.filter((item) => item.coverage !== null).length;
   const evidenceNote = `${availableEvidenceCount}/5 nhóm có dữ liệu trực tiếp. ${homeRhythm.activeDays}/7 ngày gần nhất có phiên hoàn tất.`;
   const weeklyValue = `${homeRhythm.activeDays}/7 ngày`;
@@ -1052,16 +1189,20 @@ function showEyeRestBreak(suggestedBreakMinutes: number): void {
 function showSessionSummary(session: WorkSession): void { showModal("Phiên đã hoàn thành", `<div class="grid grid-2"><div class="callout success"><span class="label">Tổng thời gian</span><strong class="metric-value">${formatDuration(session.elapsedActiveMs)}</strong></div><div class="callout"><span class="label">Dữ liệu camera</span><strong>Không đo</strong></div></div><p class="subtle" style="margin-top:16px">Session Summary đã lưu cục bộ. So sánh baseline cần thêm dữ liệu hợp lệ.</p>`, "<a class=\"btn btn-primary\" href=\"#/reports\">Xem báo cáo</a>"); document.querySelector(".modal a")?.addEventListener("click", closeModal); }
 
 async function renderIntelligence(): Promise<void> {
-  const [reports, summaries] = await withOperationTimeout(Promise.all([window.eyeMate.listM3Reports(), window.eyeMate.listSessionSummaries()]));
-  const report = reports.at(-1);
-  const rhythm = buildWorkRhythm(summaries, intelligenceRange);
-  setView(`${pageHeading("Personal Intelligence", "Hiểu nhịp làm việc của riêng bạn", "Tóm tắt các phiên EyeMate đã ghi nhận, giải thích bằng ngôn ngữ đời thường và không suy đoán thời gian ngoài ứng dụng.", `<button class="btn" id="intelligence-refresh" type="button">Cập nhật dữ liệu</button>`)}<div class="tabs intelligence-range" role="tablist" aria-label="Khoảng thời gian thấu hiểu"><button class="tab ${intelligenceRange === 7 ? "active" : ""}" data-intelligence-range="7" role="tab" aria-selected="${intelligenceRange === 7}" type="button">7 ngày gần nhất</button><button class="tab ${intelligenceRange === 30 ? "active" : ""}" data-intelligence-range="30" role="tab" aria-selected="${intelligenceRange === 30}" type="button">30 ngày gần nhất</button></div>${intelligenceContent(report, rhythm)}`);
+  const [runtime, reports, summaries] = await withOperationTimeout(Promise.all([getRuntimeInfoCached(), window.eyeMate.listM3Reports(), window.eyeMate.listSessionSummaries()]));
+  const demoSnapshot = runtime.dataMode === "SYNTHETIC_DEMO" ? createPersonalDemoSnapshot() : null;
+  const report = (demoSnapshot?.reports ?? reports).at(-1);
+  const rhythm = buildWorkRhythm(demoSnapshot?.sessionSummaries ?? summaries, intelligenceRange);
+  const refreshAction = demoSnapshot ? `<button class="btn" type="button" disabled title="Dữ liệu mẫu được cố định cho phiên demo">Dữ liệu mẫu cố định</button>` : `<button class="btn" id="intelligence-refresh" type="button">Cập nhật dữ liệu</button>`;
+  setView(`${pageHeading("Personal Intelligence", "Hiểu nhịp làm việc của riêng bạn", "Tóm tắt các phiên EyeMate đã ghi nhận, giải thích bằng ngôn ngữ đời thường và không suy đoán thời gian ngoài ứng dụng.", refreshAction)}${demoSnapshot ? personalDemoBanner() : ""}<div class="tabs intelligence-range" role="tablist" aria-label="Khoảng thời gian thấu hiểu"><button class="tab ${intelligenceRange === 7 ? "active" : ""}" data-intelligence-range="7" role="tab" aria-selected="${intelligenceRange === 7}" type="button">7 ngày gần nhất</button><button class="tab ${intelligenceRange === 30 ? "active" : ""}" data-intelligence-range="30" role="tab" aria-selected="${intelligenceRange === 30}" type="button">30 ngày gần nhất</button></div>${intelligenceContent(report, rhythm)}`);
   document.querySelector<HTMLButtonElement>("#intelligence-refresh")?.addEventListener("click", async (event) => {
     const result = await runMutation(event.currentTarget as HTMLButtonElement, window.eyeMate.generateM3Report(), "Đã tạo dữ liệu tổng hợp cục bộ.");
     if (result) await renderIntelligence();
   });
   for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>("[data-intelligence-range]"))) button.addEventListener("click", () => { intelligenceRange = Number(button.dataset.intelligenceRange) === 30 ? 30 : 7; void renderIntelligence(); });
-  document.querySelector("#intelligence-reset")?.addEventListener("click", showResetBaselineDialog);
+  const resetButton = document.querySelector<HTMLButtonElement>("#intelligence-reset");
+  if (demoSnapshot && resetButton) { resetButton.disabled = true; resetButton.title = "Demo không thay đổi baseline cá nhân"; }
+  else resetButton?.addEventListener("click", showResetBaselineDialog);
 }
 
 function intelligenceContent(report: PersonalReport | undefined, rhythm: WorkRhythmSummary): string {
@@ -1094,13 +1235,19 @@ function workRhythmChart(rhythm: WorkRhythmSummary): string {
 }
 
 async function renderReports(): Promise<void> {
-  const [reports, surveyReports, summaries] = await withOperationTimeout(Promise.all([window.eyeMate.listM3Reports(), window.eyeMate.listSurveyOnlyReports(), window.eyeMate.listSessionSummaries()]));
-  const latest = reports.at(-1);
+  const [runtime, reports, surveyReports, summaries] = await withOperationTimeout(Promise.all([getRuntimeInfoCached(), window.eyeMate.listM3Reports(), window.eyeMate.listSurveyOnlyReports(), window.eyeMate.listSessionSummaries()]));
+  const demoSnapshot = runtime.dataMode === "SYNTHETIC_DEMO" ? createPersonalDemoSnapshot() : null;
+  const visibleReports = demoSnapshot?.reports ?? reports;
+  const visibleSurveyReports = demoSnapshot?.checkups ?? surveyReports;
+  const visibleSummaries = demoSnapshot?.sessionSummaries ?? summaries;
+  const latest = visibleReports.at(-1);
   const tabs: readonly [ReportTab, string][] = [["overview", "Tổng quan"], ["week", "7 ngày"], ["month", "30 ngày"], ["history", "Lịch sử"]];
-  setView(`${pageHeading("Reports", "Nhìn lại mà không phán xét", "Daily summary, checkup history và bản tóm tắt local có provenance.", `<button class="btn btn-primary" id="report-generate" type="button">Cập nhật báo cáo</button>`)}
+  const updateAction = demoSnapshot ? `<button class="btn" type="button" disabled title="Dữ liệu mẫu được cố định cho phiên demo">Dữ liệu mẫu cố định</button>` : `<button class="btn btn-primary" id="report-generate" type="button">Cập nhật báo cáo</button>`;
+  setView(`${pageHeading("Reports", "Nhìn lại mà không phán xét", "Daily summary, checkup history và bản tóm tắt local có provenance.", updateAction)}
+    ${demoSnapshot ? personalDemoBanner() : ""}
     <div class="tabs" role="tablist" aria-label="Khoảng thời gian báo cáo">${tabs.map(([id, label]) => `<button class="tab ${reportTab === id ? "active" : ""}" data-report-tab="${id}" role="tab" aria-selected="${reportTab === id}" type="button">${label}</button>`).join("")}</div>
-    <div id="report-content">${reportContent(reportTab, latest, surveyReports, summaries)}</div>`);
-  document.querySelector("#report-export-json")?.insertAdjacentHTML("afterend", `<button class="btn" id="report-export-pdf" type="button">Preview PDF</button>`);
+    <div id="report-content">${reportContent(reportTab, latest, visibleSurveyReports, visibleSummaries, demoSnapshot !== null)}</div>`);
+  document.querySelector("#report-export-json")?.insertAdjacentHTML("afterend", `<button class="btn" id="report-export-pdf" type="button" ${demoSnapshot ? "disabled title=\"Demo không xuất file để tránh nhầm với báo cáo cá nhân\"" : ""}>Preview PDF</button>`);
   document.querySelector<HTMLButtonElement>("#report-generate")?.addEventListener("click", async (event) => { const result = await runMutation(event.currentTarget as HTMLButtonElement, window.eyeMate.generateM3Report(), "Báo cáo local đã được cập nhật."); if (result) await renderReports(); });
   for (const tab of Array.from(document.querySelectorAll<HTMLButtonElement>("[data-report-tab]"))) tab.addEventListener("click", () => { reportTab = tab.dataset.reportTab as ReportTab; void renderReports(); });
   document.querySelector<HTMLButtonElement>("#report-preview")?.addEventListener("click", (event) => void openExportPreview(event.currentTarget as HTMLButtonElement, "MARKDOWN"));
@@ -1109,13 +1256,26 @@ async function renderReports(): Promise<void> {
   document.querySelector("#report-delete")?.addEventListener("click", showDeleteReportsDialog);
 }
 
-function reportContent(tab: ReportTab, report: PersonalReport | undefined, surveys: readonly { readonly status: string; readonly action: string; readonly createdAt: string }[], summaries: readonly { readonly status: string; readonly elapsedActiveMs: number; readonly createdAt: string }[]): string {
-  if (tab === "month") return `<section class="card empty-state"><div><div class="empty-icon" aria-hidden="true">30</div><h2>Chưa đủ dữ liệu 30 ngày</h2><p class="subtle">EyeMate không nội suy dữ liệu còn thiếu.</p><a class="btn btn-primary" href="#/companion">Bắt đầu một phiên</a></div></section>`;
+function reportContent(tab: ReportTab, report: PersonalReport | undefined, surveys: readonly StoredCheckupListItem[], summaries: readonly StoredSessionSummaryListItem[], demoMode = false): string {
+  if (tab === "month") {
+    const rhythm = buildWorkRhythm(summaries, 30);
+    return rhythm.completedSessions > 0 ? `<section class="card intelligence-chart-panel"><div class="intelligence-section-heading"><div><p class="label">Thời gian phiên đã ghi nhận</p><h2>30 ngày gần nhất</h2></div><span>${rhythm.activeDays} ngày có dữ liệu</span></div>${workRhythmChart(rhythm)}<p class="subtle">Ngày trống là chưa có phiên EyeMate, không được hiểu thành 0 giờ làm việc. ${demoMode ? "Toàn bộ cột đang hiển thị là dữ liệu synthetic." : ""}</p></section>` : `<section class="card empty-state"><div><div class="empty-icon" aria-hidden="true">30</div><h2>Chưa đủ dữ liệu 30 ngày</h2><p class="subtle">EyeMate không nội suy dữ liệu còn thiếu.</p><a class="btn btn-primary" href="#/companion">Bắt đầu một phiên</a></div></section>`;
+  }
   if (tab === "history") { const rows = [...surveys.map((item) => ({ title: `Checkup · ${humanLabel(item.status)}`, note: humanLabel(item.action), date: item.createdAt })), ...summaries.map((item) => ({ title: `Work session · ${humanLabel(item.status)}`, note: formatDuration(item.elapsedActiveMs), date: item.createdAt }))].sort((a,b) => b.date.localeCompare(a.date)); return rows.length ? `<div class="grid">${rows.map((item) => `<article class="card"><span class="label">${safeDate(item.date)}</span><h3>${item.title}</h3><p class="subtle">${item.note}</p></article>`).join("")}</div>` : emptyReport(); }
   if (!report) return emptyReport();
   if (tab === "week") return `<div class="grid grid-2"><article class="card"><p class="label">Weekly digest</p><strong class="metric-value">${report.weekly.daysWithData}/7 ngày</strong><p class="subtle">${report.weekly.missingDays} ngày chưa có dữ liệu. EyeMate không gắn nhãn “tốt/xấu” khi evidence chưa đủ.</p></article><article class="card"><p class="label">Nhịp làm việc</p>${heatmap(report.weekly.daysWithData)}</article></div>`;
   const latestSurvey = surveys[0];
-  return `<div class="grid grid-2"><article class="card"><p class="label">Daily summary · ${escapeHtml(report.daily.localDate)}</p><strong class="metric-value">${report.daily.totalSessionMinutes} phút</strong><p class="subtle">Phiên dài nhất ${report.daily.longestSessionMinutes} phút · source ${humanLabel(report.dataSource)}.</p>${lineChart(report.daily.vli.score)}</article><article class="card"><p class="label">Checkup gần nhất</p>${latestSurvey ? `<h2>${humanLabel(latestSurvey.status)}</h2><p class="subtle">${humanLabel(latestSurvey.action)} · ${safeDate(latestSurvey.createdAt)}</p>` : `<h2>Chưa có checkup</h2><p class="subtle">Camera-off survey vẫn khả dụng.</p>`}<a class="text-link" href="#/checkup">Mở checkup</a></article><article class="card"><p class="label">Coverage & missing data</p><h2>${report.weekly.daysWithData} ngày có dữ liệu</h2><p class="subtle">Thiếu: ${report.missingData.map(humanLabel).join(", ") || "không có"}. Không nội suy ngày thiếu.</p><a class="text-link" href="#/intelligence">Xem baseline và pattern</a></article><article class="card"><p class="label">Professional Summary</p><p class="subtle">Preview trước khi chọn destination. EyeMate không tự gửi file.</p><div class="actions"><button class="btn btn-primary" id="report-preview" type="button">Preview Markdown</button><button class="btn" id="report-export-json" type="button">Preview JSON</button><button class="btn btn-danger" id="report-delete" type="button">Xóa report snapshots</button></div></article></div>`;
+  const demoDisabled = demoMode ? `disabled title="Demo không thao tác trên dữ liệu hoặc file cá nhân"` : "";
+  const primaryMetric = demoMode ? `<p class="label">Tổng quan 7 ngày · dữ liệu mẫu</p><strong class="metric-value">${formatMinutesHuman(report.weekly.totalSessionMinutes)}</strong><p class="subtle">${report.weekly.daysWithData}/7 ngày có phiên · 6 lời nhắc nghỉ đã phản hồi.</p>${demoReportTrendChart()}` : `<p class="label">Daily summary · ${escapeHtml(report.daily.localDate)}</p><strong class="metric-value">${report.daily.totalSessionMinutes} phút</strong><p class="subtle">Phiên dài nhất ${report.daily.longestSessionMinutes} phút · nguồn ${humanLabel(report.dataSource)}.</p>${lineChart(report.daily.vli.score)}`;
+  const checkupMetric = latestSurvey ? demoMode ? `<div class="report-demo-checkup"><div><span>Nhịp chớp mắt</span><strong>${latestSurvey.blinkRatePerMinute ?? "—"}/phút</strong></div><div><span>Khoảng cách nhìn</span><strong>${latestSurvey.distanceZone === "COMFORT" ? "Phù hợp" : "Chưa rõ"}</strong></div></div><p class="subtle">96% frame synthetic đủ chất lượng · không phải phép đo người thật.</p>` : `<h2>${humanLabel(latestSurvey.status)}</h2><p class="subtle">${humanLabel(latestSurvey.action)} · ${safeDate(latestSurvey.createdAt)}</p>` : `<h2>Chưa có checkup</h2><p class="subtle">Camera-off survey vẫn khả dụng.</p>`;
+  return `<div class="grid grid-2 report-overview-grid"><article class="card report-primary-metric">${primaryMetric}</article><article class="card"><p class="label">Checkup gần nhất</p>${checkupMetric}<a class="text-link" href="#/checkup">Mở checkup</a></article><article class="card"><p class="label">Coverage & missing data</p><h2>${report.weekly.daysWithData} ngày có dữ liệu</h2><p class="subtle">Thiếu: ${report.missingData.map(humanLabel).join(", ") || "không có"}. Không nội suy ngày thiếu.</p><a class="text-link" href="#/intelligence">Xem baseline và pattern</a></article><article class="card"><p class="label">Professional Summary</p><p class="subtle">${demoMode ? "Các nút xuất bị khóa vì đây là snapshot synthetic dùng để trình bày." : "Preview trước khi chọn destination. EyeMate không tự gửi file."}</p><div class="actions"><button class="btn btn-primary" id="report-preview" type="button" ${demoDisabled}>Preview Markdown</button><button class="btn" id="report-export-json" type="button" ${demoDisabled}>Preview JSON</button><button class="btn btn-danger" id="report-delete" type="button" ${demoDisabled}>Xóa report snapshots</button></div></article></div>`;
+}
+
+function demoReportTrendChart(): string {
+  const values = [38, 32, 44, 36, 48, 31, 26];
+  const labels = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+  const points = values.map((value, index) => `${24 + index * 72},${150 - value * 2}`).join(" ");
+  return `<figure class="report-demo-trend" aria-label="Xu hướng thời lượng phiên synthetic trong 7 ngày"><svg viewBox="0 0 480 170" role="img"><path class="chart-grid" d="M24 42H456M24 92H456M24 142H456"></path><polygon class="report-demo-area" points="24,154 ${points} 456,154"></polygon><polyline class="report-demo-line" points="${points}"></polyline>${values.map((value, index) => `<circle cx="${24 + index * 72}" cy="${150 - value * 2}" r="4"><title>${labels[index]}: ${value} phút</title></circle>`).join("")}</svg><figcaption>${labels.map((label, index) => `<span><b>${label}</b><small>${values[index]} phút</small></span>`).join("")}</figcaption></figure>`;
 }
 
 function lineChart(score: number | null): string { if (score === null) return `<div class="empty-state chart-placeholder"><p class="chart-empty">Chưa đủ dữ liệu để vẽ trend</p></div>`; const y = 170 - Math.min(100, score) * 1.4; return `<svg class="chart" viewBox="0 0 500 190" role="img" aria-label="Eye Load Index gần nhất là ${Math.round(score)}"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".22"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient></defs><path class="chart-grid" d="M20 30H480M20 90H480M20 150H480"/><path class="chart-area" d="M20 170 C160 160 320 ${y + 10} 460 ${y} L460 180H20Z"/><path class="chart-line" d="M20 170 C160 160 320 ${y + 10} 460 ${y}"/><circle class="chart-point" cx="460" cy="${y}" r="5"/></svg>`; }
@@ -1279,6 +1439,96 @@ function renderDesignLab(): void {
   document.querySelector<HTMLInputElement>("#aurora-reduced-motion")?.addEventListener("change", (event) => { designLabReducedMotion = (event.currentTarget as HTMLInputElement).checked; renderDesignLab(); });
 }
 
+async function renderHomePremium(): Promise<void> {
+  const [runtime, reports, summaries, m3Reports, session, privacy, preferences] = await withOperationTimeout(Promise.all([
+    getRuntimeInfoCached(), window.eyeMate.listSurveyOnlyReports(), window.eyeMate.listSessionSummaries(), window.eyeMate.listM3Reports(), window.eyeMate.getWorkSession(), window.eyeMate.getPrivacySummary(), window.eyeMate.getUserPreferences()
+  ]));
+  const demoSnapshot = runtime.dataMode === "SYNTHETIC_DEMO" ? createPersonalDemoSnapshot() : null;
+  const visibleReports = demoSnapshot?.checkups ?? reports;
+  const visibleSummaries = demoSnapshot?.sessionSummaries ?? summaries;
+  const visibleM3Reports = demoSnapshot?.reports ?? m3Reports;
+  const homeProfile = companionProfile(session?.modeId ?? preferences.defaultMode, preferences);
+  const latest = visibleM3Reports.at(-1);
+  const completedSummaries = visibleSummaries.filter((summary) => summary.status === "COMPLETED");
+  const sessionCount = completedSummaries.length;
+  const todaySummary = completedSummaries.find((summary) => {
+    const createdAt = new Date(summary.createdAt);
+    const today = new Date();
+    return !Number.isNaN(createdAt.valueOf()) && createdAt.getFullYear() === today.getFullYear() && createdAt.getMonth() === today.getMonth() && createdAt.getDate() === today.getDate();
+  });
+  const sessionElapsedMs = session?.state === "ACTIVE" ? session.elapsedActiveMs : todaySummary?.elapsedActiveMs ?? null;
+  const visibleCheckupResult = demoSnapshot ? null : checkupResult;
+  const blinkMetric = visibleCheckupResult ? latestCheckupBlinkMetric(visibleCheckupResult) : storedCheckupBlinkMetric(visibleReports[0]);
+  const distanceMetric = visibleCheckupResult ? latestCheckupDistanceMetric(visibleCheckupResult) : storedCheckupDistanceMetric(visibleReports[0]);
+  const currentCameraEvidence = visibleCheckupResult?.cameraEvidence;
+  const blinkCoverage = currentCameraEvidence && currentCameraEvidence.status !== "NOT_MEASURED" && currentCameraEvidence.blinkRatePerMinute !== null ? currentCameraEvidence.validSampleRatio * 100 : visibleReports[0]?.blinkRatePerMinute !== null && visibleReports[0]?.blinkRatePerMinute !== undefined ? (visibleReports[0].validSampleRatio ?? 0) * 100 : null;
+  const distanceCoverage = currentCameraEvidence && currentCameraEvidence.status !== "NOT_MEASURED" && currentCameraEvidence.distanceZone !== "UNKNOWN" ? currentCameraEvidence.validSampleRatio * 100 : visibleReports[0]?.distanceZone && visibleReports[0].distanceZone !== "UNKNOWN" ? (visibleReports[0].validSampleRatio ?? 0) * 100 : null;
+  const evidenceItems: readonly HomeEvidenceItem[] = [
+    { id: "session", label: "Phiên", coverage: sessionCount > 0 || session?.state === "ACTIVE" ? 100 : null, detail: sessionCount > 0 ? `${sessionCount} phiên hoàn tất đã lưu.` : session?.state === "ACTIVE" ? `Phiên ${homeProfile.label} đang hoạt động.` : "Chưa có phiên hoàn tất." },
+    { id: "checkup", label: "Checkup", coverage: visibleReports.length > 0 ? 100 : null, detail: visibleReports.length > 0 ? `${visibleReports.length} checkup tự báo cáo đã lưu.` : "Chưa có checkup tự báo cáo." },
+    { id: "blink", label: "Blink", coverage: blinkCoverage, detail: blinkCoverage === null ? "Không suy đoán khi chưa có measurement hợp lệ." : `Checkup gần nhất có ${Math.round(blinkCoverage)}% frame hợp lệ.` },
+    { id: "distance", label: "Khoảng cách", coverage: distanceCoverage, detail: distanceCoverage === null ? "Chưa có distance zone hợp lệ." : `Checkup gần nhất có distance zone và ${Math.round(distanceCoverage)}% frame hợp lệ.` },
+    { id: "vli", label: "Tải", coverage: latest?.daily.vli.status === "AVAILABLE" ? Math.round(latest.daily.vli.dataConfidence * 100) : null, detail: latest?.daily.vli.status === "AVAILABLE" ? `Tải thị giác tổng hợp có ${Math.round(latest.daily.vli.dataConfidence * 100)}% thành phần dữ liệu.` : "Chưa đủ thành phần để tổng hợp tải thị giác." }
+  ];
+  const homeRhythm = buildWorkRhythm(completedSummaries, 7);
+  const availableEvidenceCount = evidenceItems.filter((item) => item.coverage !== null).length;
+  const evidenceNote = `${availableEvidenceCount}/5 nhóm có dữ liệu trực tiếp. ${homeRhythm.activeDays}/7 ngày gần nhất có phiên hoàn tất.`;
+  const weeklyValue = `${homeRhythm.activeDays}/7 ngày`;
+  const weeklyNote = `${formatMinutesHuman(homeRhythm.totalMinutes)} trong ${homeRhythm.completedSessions} phiên hoàn tất.`;
+  const vli = latest?.daily.vli;
+  const wellnessScore = vli?.status === "AVAILABLE" && vli.score !== null && vli.dataConfidence >= 0.6 ? 100 - vli.score : null;
+  const wellnessLabel = wellnessScore === null ? "Chưa đủ dữ liệu" : wellnessScore >= 76 ? "Nhịp hỗ trợ tốt" : wellnessScore >= 58 ? "Nên cân bằng hơn" : "Ưu tiên nghỉ";
+  const wellnessNote = wellnessScore === null ? "Cần ít nhất 60% thành phần dữ liệu để hiển thị điểm nhịp chăm sóc; dữ liệu thiếu không được tính như trạng thái tốt." : wellnessScore >= 76 ? "Các tín hiệu đã ghi nhận cho thấy nhịp nghỉ và phiên làm việc đang được duy trì khá đều." : "Giảm phiên liên tục và thêm khoảng nghỉ ngắn trước khi tiếp tục.";
+  const trendPoints = homeRhythm.days.map((day) => day.minutes);
+  const trendLabels = homeRhythm.days.map((day) => day.label);
+  const sessionValue = sessionElapsedMs === null ? "Chưa có" : formatDuration(sessionElapsedMs);
+  const companionDurationLabel = session?.state === "ACTIVE" ? sessionValue : "30:00 phút";
+  const visibleWorkMetrics = homeWorkMetrics(homeRhythm, completedSummaries);
+
+  setView(`<section class="clarity-home premium-home" aria-label="Tổng quan Hôm nay">
+    <header class="home-hero page-heading">
+      <div class="home-hero-copy"><span class="home-spark">${homeSparkIcon()}</span><div><p class="eyebrow">Hôm nay</p><h1>Chào bạn, mình bắt đầu nhẹ nhàng nhé.</h1><p>EyeMate ở đây để đồng hành cùng đôi mắt của bạn mỗi ngày.</p></div></div>
+      ${productionHomeArtwork()}
+    </header>
+    ${demoSnapshot ? personalDemoBanner() : ""}
+    <div class="clarity-home-grid">
+      <article class="card clarity-overview-panel">
+        <div class="clarity-panel-heading"><div><span class="clarity-section-mark"></span><p>Tổng quan hôm nay</p></div><small>LOCAL EVIDENCE</small></div>
+        <div class="home-overview-layout">
+          <div class="clarity-session-ring home-score-ring" style="--score-angle:${Math.round((wellnessScore ?? 0) * 3.6)}deg" role="img" aria-label="${wellnessScore === null ? "Chưa đủ dữ liệu để tính điểm nhịp chăm sóc mắt" : `Điểm nhịp chăm sóc mắt ${Math.round(wellnessScore)} trên 100`}"><div class="home-eye-mark" aria-hidden="true">${metricIcon("blink")}</div></div>
+          <div class="home-score-copy"><span>Điểm nhịp chăm sóc mắt</span><strong>${wellnessScore === null ? "—" : Math.round(wellnessScore)}</strong><small>${wellnessScore === null ? "" : "/100"}</small><b>${escapeHtml(wellnessLabel)}</b><p>${escapeHtml(wellnessNote)}</p></div>
+          ${homeTrendSparkline(trendPoints, trendLabels, "Thời lượng phiên EyeMate trong 7 ngày")}
+        </div>
+        <div class="home-stat-strip">
+          <div><span>${metricIcon("load")}</span><p>Thời gian phiên</p><strong>${visibleWorkMetrics.screenValue}</strong><small>${visibleWorkMetrics.screenNote}</small></div>
+          <div><span>${metricIcon("blink")}</span><p>Số lần nghỉ mắt</p><strong>${visibleWorkMetrics.breakValue}</strong><small>${visibleWorkMetrics.breakNote}</small></div>
+          <div><span>${metricIcon("distance")}</span><p>Phiên theo dõi</p><strong>${visibleWorkMetrics.sessionValue}</strong><small>${visibleWorkMetrics.sessionNote}</small></div>
+        </div>
+        <p class="home-vli-note">Tải thị giác: ${latest?.daily.vli.status === "AVAILABLE" ? `đã tổng hợp với ${Math.round(latest.daily.vli.dataConfidence * 100)}% thành phần dữ liệu.` : "chưa đủ dữ liệu để tổng hợp thành điểm."}</p>
+        <div class="actions clarity-quick-actions home-primary-actions" aria-label="Hành động nhanh"><a class="btn btn-primary" href="#/companion">${session?.state === "ACTIVE" ? "Tiếp tục phiên" : "Bắt đầu phiên"}</a><a class="btn" href="#/checkup">Khám mắt</a><a class="text-link" href="#/reports">Xem báo cáo</a><a class="text-link" href="#/privacy">Privacy Center</a></div>
+        <div class="home-evidence-compact">${productionEvidenceTrace(evidenceItems, evidenceNote)}</div>
+      </article>
+      <article class="clarity-focus-card">
+        <div class="clarity-panel-heading"><div><span class="home-eyebrow-icon">${homePeopleIcon()}</span><p>Đồng hành cùng bạn</p></div></div>
+        <div class="home-companion-copy"><p>Phiên đồng hành thư giãn</p><strong>${companionDurationLabel}</strong><span class="home-companion-description">Kết hợp nhắc nghỉ mắt và âm thanh thư giãn</span><span class="home-local-annotation">${metricIcon("load")} Không ghi hình · Chạy cục bộ</span><div class="home-companion-actions"><a class="home-start-button" href="#/companion"><b aria-hidden="true">▶</b>${session?.state === "ACTIVE" ? "Tiếp tục" : "Bắt đầu ngay"}</a><a class="home-settings-button" href="#/settings" aria-label="Tùy chỉnh phiên đồng hành">${homeSettingsIcon()}</a></div></div>
+        ${homeMeditationIllustration()}
+      </article>
+      ${premiumMetricCard("blink", "Nhịp chớp mắt", blinkMetric.value, blinkMetric.note, blinkMetric.progress)}
+      ${premiumMetricCard("distance", "Khoảng cách nhìn", distanceMetric.value, distanceMetric.note, distanceMetric.progress)}
+      <article class="card home-habit-panel"><div><span class="clarity-section-mark"></span><p>Thói quen liên tục</p></div><strong>${homeRhythm.activeDays}</strong><span>ngày trong 7 ngày gần nhất</span>${homeHabitDays(homeRhythm)}</article>
+      <article class="card home-evidence-panel"><div><span class="clarity-section-mark"></span><p>Bằng chứng 7 ngày qua</p></div>${homeEvidenceBarsFromRhythm(homeRhythm, completedSummaries)}${homeEvidenceLegend()}</article>
+      <article class="card clarity-next-panel"><div><span class="clarity-section-mark"></span><p>Việc nên làm tiếp theo</p></div><h2>Nghỉ mắt 20-20-20</h2><p class="subtle">Cứ mỗi 20 phút, nhìn xa khoảng 20 feet trong 20 giây để thư giãn mắt.</p><div class="actions"><a class="btn btn-primary" href="#/companion">Nhắc tôi sau 20 phút</a><a class="btn" href="#/reports">Xem thêm</a></div>${homeNextActionClock()}</article>
+      <article class="card clarity-week-panel"><span class="label">Đang hoạt động cục bộ</span><strong>${weeklyValue}</strong><span>${weeklyNote}</span><a class="text-link" href="#/reports">Đối chiếu báo cáo</a></article>
+    </div>
+  </section>`);
+  void runtime;
+  void privacy;
+}
+
+function premiumMetricCard(kind: "blink" | "distance" | "load", label: string, value: string, note: string, progress: number | null, tone: "default" | "accent" = "default"): string {
+  return `<article class="card metric-card clarity-metric-panel clarity-metric-${kind} ${tone === "accent" ? "accent" : ""}"><div class="clarity-metric-heading"><span class="clarity-metric-icon ${progress === null ? "is-missing" : "is-available"}" aria-hidden="true">${metricIcon(kind)}</span><span class="label">${label}</span><span class="trend ${progress === null ? "unknown" : ""}">${progress === null ? "Chưa đo" : "Local"}</span></div><strong class="metric-value">${value}</strong><span class="metric-note">${note}</span>${homeMetricBars(progress)}<div class="metric-progress ${progress === null ? "is-missing" : ""}" aria-hidden="true"><span style="--progress:${progress === null ? 0 : Math.max(0, Math.min(100, progress))}%"></span></div></article>`;
+}
+
 function addProductionRipple(target: HTMLElement, event: PointerEvent): void {
   const bounds = target.getBoundingClientRect();
   const ripple = document.createElement("span");
@@ -1314,13 +1564,14 @@ async function renderRoute(): Promise<void> {
   document.body.classList.toggle("design-lab-active", route === "design-lab");
   document.body.classList.toggle("taste-design-lab-active", route === "taste-design-lab");
   document.body.classList.toggle("enterprise-demo-active", route === "enterprise-demo");
+  if (productionRoute) applyRuntimePresentation(await getRuntimeInfoCached());
   if (route !== "checkup" && cameraRuntime.active) await stopCameraFlow();
   skeletonPage(route);
   try {
     if (route === "enterprise-demo") renderEnterpriseDemo(setView);
     else if (route === "design-lab") renderDesignLab();
     else if (route === "taste-design-lab") renderTasteDesignLab();
-    else if (route === "home") await renderHome();
+    else if (route === "home") await renderHomePremium();
     else if (route === "checkup") renderCheckup();
     else if (route === "companion") await renderCompanion();
     else if (route === "intelligence") await renderIntelligence();
@@ -1345,6 +1596,6 @@ if (!bootsEnterpriseDemo) {
   bindProductionShell();
   void window.eyeMate.getUserPreferences().then(applyPreferences).catch(() => { /* Route error UI handles unavailable storage. */ });
   startCompanionMonitor();
-  void window.eyeMate.getRuntimeInfo().then(async (runtime) => { if (!runtime.developerPanelEnabled) return; cameraCalibration = await window.eyeMate.getCameraCalibration().then((record) => record?.profile ?? null).catch(() => null); devPanel.enable(); }).catch(() => { /* Production remains without developer controls. */ });
+  void getRuntimeInfoCached().then(async (runtime) => { applyRuntimePresentation(runtime); if (!runtime.developerPanelEnabled) return; cameraCalibration = await window.eyeMate.getCameraCalibration().then((record) => record?.profile ?? null).catch(() => null); devPanel.enable(); }).catch(() => { /* Production remains without developer controls. */ });
 }
 void renderRoute();

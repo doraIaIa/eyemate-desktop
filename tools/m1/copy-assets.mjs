@@ -12,6 +12,8 @@ for (const asset of ["index.html", "styles.css", "taste-design-lab.css", "enterp
   await cp(path.join(sourceDirectory, asset), path.join(destinationDirectory, asset));
 }
 
+await cp(path.join(sourceDirectory, "assets"), path.join(destinationDirectory, "assets"), { recursive: true });
+
 const vendorDirectory = path.join(destinationDirectory, "vendor");
 await mkdir(vendorDirectory, { recursive: true });
 await cp(path.join(repositoryRoot, "node_modules", "@mediapipe", "tasks-vision", "vision_bundle.mjs"), path.join(vendorDirectory, "vision_bundle.mjs"));

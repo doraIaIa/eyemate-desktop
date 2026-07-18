@@ -10,8 +10,8 @@ import { validateCameraCalibrationRecord, type CameraCalibrationRecord } from ".
 import { validateCameraMeasurementAggregate, type CameraMeasurementAggregate } from "../camera/measurement-window.js";
 import type { CheckupSummary, IntegratedCheckupRequest, PrivacySummary, SurveyRequest } from "../shared/m1-contract.js";
 import { createSurveyOnlyExportPreview, resolveDeletionResult } from "../user-data/data-controls.js";
-import type { LocalSqliteStorage, NudgeResponse } from "../platform-electron/sqlite-storage.js";
-import type { M3DataCategory, UserPreferences } from "../shared/preload-contract.js";
+import type { LocalSqliteStorage, NudgeResponse, PersistedSummary } from "../platform-electron/sqlite-storage.js";
+import type { M3DataCategory, StoredSessionSummaryListItem, UserPreferences } from "../shared/preload-contract.js";
 import { WELLNESS_MAXIMUM_SCORE, createWellnessCheckReport, wellnessQuestions, type WellnessQuestionId, type WellnessResponse } from "../symptom-checkup/wellness-check.js";
 import { actionsWithCameraEvidence, buildEyeHealthAssessment, cameraEvidenceFromAggregate, type CheckupCameraEvidence, type EyeHealthAssessment } from "../symptom-checkup/eye-health-assessment.js";
 import { evaluateSafetyGate, internalSafetyCatalogue } from "../safety/safety-gate.js";
@@ -46,6 +46,8 @@ const cameraRuntimeFullTestMode = process.argv.includes("--camera-runtime-full-t
 const devPanelValidationMode = process.argv.includes("--dev-panel-validate");
 const enterpriseDemoMode = isEnterpriseDemoMode();
 const enterpriseDemoValidationMode = isEnterpriseDemoValidationMode();
+const personalDemoValidationMode = process.argv.includes("--personal-demo-validate");
+const personalDemoMode = process.argv.includes("--personal-demo") || personalDemoValidationMode;
 const developerPanelEnabled = !app.isPackaged && process.argv.includes("--enable-dev-panel");
 const uiCaptureArgument = process.argv.find((argument) => argument.startsWith("--ui-screenshot-dir="));
 const uiScreenshotDirectory = uiCaptureArgument?.slice("--ui-screenshot-dir=".length) ?? null;
@@ -55,11 +57,13 @@ const isolatedValidationMode = smokeMode || companionSmokeMode || intelligenceSm
 if (enterpriseDemoMode) {
   const demoProfile = enterpriseDemoValidationMode ? "enterprise-demo-validation" : "enterprise-demo-dev";
   app.setPath("userData", path.join(currentDirectory, `../../.tmp/${demoProfile}-user-data`));
+} else if (personalDemoMode) {
+  app.setPath("userData", path.join(currentDirectory, `../../.tmp/${personalDemoValidationMode ? "personal-demo-validation" : "personal-demo"}-user-data`));
 } else if (isolatedValidationMode) {
   app.setPath("userData", path.join(currentDirectory, "../../.tmp/personal-validation-user-data"));
 }
 
-if (isolatedValidationMode || enterpriseDemoMode || developerPanelEnabled) {
+if (isolatedValidationMode || enterpriseDemoMode || personalDemoMode || developerPanelEnabled) {
   app.disableHardwareAcceleration();
   app.commandLine.appendSwitch("disable-gpu");
   app.commandLine.appendSwitch("disable-gpu-compositing");
@@ -87,7 +91,8 @@ function getRuntimeInfo(): RuntimeInfo {
   return {
     mode: "LOCAL_ONLY",
     applicationVersion: EYEMATE_APPLICATION_VERSION,
-    developerPanelEnabled
+    developerPanelEnabled,
+    dataMode: personalDemoMode ? "SYNTHETIC_DEMO" : "REAL_LOCAL"
   };
 }
 
@@ -298,6 +303,27 @@ function currentM3Report(): PersonalReport {
   return buildPersonalReport(inputs, localDateFor(now, timezone), timezone, now);
 }
 
+function sessionSummaryForRenderer(summary: PersistedSummary): StoredSessionSummaryListItem {
+  let interventionCount = 0;
+  let acceptedBreakCount = 0;
+  if (summary.summaryJson !== undefined) {
+    try {
+      const parsed = JSON.parse(summary.summaryJson) as { interventions?: unknown };
+      const interventions = Array.isArray(parsed.interventions) ? parsed.interventions : [];
+      interventionCount = interventions.length;
+      acceptedBreakCount = interventions.filter((item) => {
+        if (typeof item !== "object" || item === null) return false;
+        const response = (item as Record<string, unknown>).response;
+        return response === "ACCEPTED" || response === "AUTO_CORRECTED";
+      }).length;
+    } catch {
+      interventionCount = 0;
+      acceptedBreakCount = 0;
+    }
+  }
+  return { summaryId: summary.summaryId, sessionId: summary.sessionId, status: summary.status, elapsedActiveMs: summary.elapsedActiveMs, createdAt: summary.createdAt, interventionCount, acceptedBreakCount };
+}
+
 function registerIpcHandlers(): void {
   ipcMain.handle("runtime:get-info", (): RuntimeInfo => getRuntimeInfo());
   ipcMain.handle("privacy:get-summary", (): PrivacySummary => getPrivacySummary());
@@ -323,7 +349,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle("work-session:finish", () => finishWorkSession());
   ipcMain.handle("work-session:cancel", () => updateWorkSession("CANCEL"));
   ipcMain.handle("work-session:get", () => getWorkSessionSnapshot());
-  ipcMain.handle("work-session:list-summaries", () => storage?.listSessionSummaries() ?? []);
+  ipcMain.handle("work-session:list-summaries", () => (storage?.listSessionSummaries() ?? []).map(sessionSummaryForRenderer));
   ipcMain.handle("work-session:request-break-nudge", () => requestBreakNudge());
   ipcMain.handle("work-session:respond-nudge", (_event, nudgeId: string, response: NudgeResponse) => respondToNudge(nudgeId, response));
   ipcMain.handle("m3:generate-report", () => generateM3Report());
@@ -378,6 +404,35 @@ async function createMainWindow(): Promise<BrowserWindow> {
   await window.loadFile(rendererIndexPath, enterpriseDemoMode ? { hash: ENTERPRISE_DEMO_HASH } : undefined);
   window.show();
   return window;
+}
+
+async function runPersonalDemoValidation(window: BrowserWindow): Promise<void> {
+  const evaluate = async <T>(source: string): Promise<T> => await window.webContents.executeJavaScript(source, true) as T;
+  const wait = async (milliseconds = 220): Promise<void> => await new Promise((resolve) => setTimeout(resolve, milliseconds));
+  await wait(500);
+  const runtimeDataMode = await evaluate<string>("window.eyeMate.getRuntimeInfo().then((value) => value.dataMode)");
+  const home = await evaluate<{ readonly dataMode: boolean; readonly banner?: string; readonly score?: string; readonly blink?: string; readonly distance?: string; readonly legendCount: number; readonly horizontalOverflow: boolean }>(`(() => ({
+    dataMode: document.body.classList.contains('personal-demo-active'),
+    banner: document.querySelector('.personal-demo-banner')?.textContent,
+    score: document.querySelector('.home-score-copy strong')?.textContent,
+    blink: document.querySelector('.clarity-metric-blink .metric-value')?.textContent,
+    distance: document.querySelector('.clarity-metric-distance .metric-value')?.textContent,
+    legendCount: document.querySelectorAll('.home-evidence-legend span').length,
+    horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 1
+  }))()`);
+  const resolvedHome = { ...home, runtime: runtimeDataMode };
+  const validHome = resolvedHome.dataMode && resolvedHome.runtime === "SYNTHETIC_DEMO"
+    && resolvedHome.banner === "Dữ liệu mẫuSnapshot synthetic chỉ để trình bày giao diện và báo cáo. Không đọc, ghi hoặc trộn với dữ liệu cá nhân."
+    && resolvedHome.score === "82" && resolvedHome.blink === "20/phút" && resolvedHome.distance === "Phù hợp"
+    && resolvedHome.legendCount === 3 && resolvedHome.horizontalOverflow === false;
+  if (!validHome) throw new Error(`PERSONAL_DEMO_HOME_INVALID:${JSON.stringify(resolvedHome)}`);
+  await evaluate("location.hash = '#/intelligence'; true"); await wait();
+  if (!await evaluate<boolean>("document.body.textContent.includes('4 giờ 15 phút') && document.querySelectorAll('.rhythm-day').length === 7 && document.querySelector('#intelligence-refresh') === null")) throw new Error("PERSONAL_DEMO_INTELLIGENCE_INVALID");
+  await evaluate("location.hash = '#/reports'; true"); await wait();
+  if (!await evaluate<boolean>("document.body.textContent.includes('4 giờ 15 phút') && document.querySelectorAll('.report-demo-trend circle').length === 7 && document.querySelector('#report-preview')?.disabled === true")) throw new Error("PERSONAL_DEMO_REPORT_INVALID");
+  await evaluate("document.querySelector('[data-report-tab=month]').click(); true"); await wait();
+  if (!await evaluate<boolean>("document.querySelectorAll('.work-rhythm-chart.is-month .rhythm-day').length === 30")) throw new Error("PERSONAL_DEMO_MONTH_INVALID");
+  console.log("PERSONAL_DEMO_VALIDATION_PASS isolatedProfile=true syntheticBanner=true homeMetrics=true intelligence7Day=true reportTrend=true report30Day=true exportsDisabled=true horizontalOverflow=false");
 }
 
 function configureEnterpriseDemoBoundary(): void {
@@ -774,6 +829,7 @@ async function runClarityProductionValidation(window: BrowserWindow): Promise<vo
   const wait = async (milliseconds = 240): Promise<void> => await new Promise((resolve) => setTimeout(resolve, milliseconds));
   const capture = async (name: string, width = 1100, height = 760): Promise<void> => {
     await window.setSize(width, height);
+    await evaluate("document.querySelector('#app-main')?.scrollTo({ top: 0, left: 0 }); true");
     await wait(920);
     if (!uiScreenshotDirectory) return;
     await mkdir(uiScreenshotDirectory, { recursive: true });
@@ -783,6 +839,7 @@ async function runClarityProductionValidation(window: BrowserWindow): Promise<vo
   const openRoute = async (route: string, requiredSelector: string): Promise<void> => {
     await evaluate(`location.hash = '#/${route}'; true`);
     await wait();
+    await evaluate("document.querySelector('#app-main')?.scrollTo({ top: 0, left: 0 }); true");
     const state = await evaluate(`(() => ({ route: location.hash, content: Boolean(document.querySelector(${JSON.stringify(requiredSelector)})), active: document.querySelector('[data-route=${route}]')?.getAttribute('aria-current'), production: document.body.classList.contains('production-clarity-active') }))()`);
     if (JSON.stringify(state) !== JSON.stringify({ route: `#/${route}`, content: true, active: "page", production: true })) throw new Error(`CLARITY_PRODUCTION_ROUTE_INVALID:${route}:${JSON.stringify(state)}`);
   };
@@ -795,6 +852,8 @@ async function runClarityProductionValidation(window: BrowserWindow): Promise<vo
   for (const required of ["Phiên", "Nhịp chớp mắt", "Khoảng cách", "Tải thị giác", "NOT_MEASURED", "Bắt đầu phiên", "Khám mắt", "Xem báo cáo", "Privacy Center"]) if (!homeContent.includes(required)) throw new Error(`CLARITY_PRODUCTION_HOME_MISSING:${required}`);
   const homeVisuals = await evaluate("(() => ({ chart: Boolean(document.querySelector('.production-trace-chart')), bars: document.querySelectorAll('.production-evidence-bar').length, tooltips: document.querySelectorAll('.production-evidence-bar title').length, focusableBars: document.querySelectorAll('.production-evidence-bar[tabindex=\"0\"]').length, sessionRing: Boolean(document.querySelector('.clarity-session-ring')), artwork: Boolean(document.querySelector('.clarity-home-artwork svg')), weeklyAnchor: Boolean(document.querySelector('.clarity-week-panel')), subtitle: document.querySelector('.brand small')?.textContent, legacyDecorativeBars: Boolean(document.querySelector('.production-trace-bars')) }))()");
   if (JSON.stringify(homeVisuals) !== JSON.stringify({ chart: true, bars: 5, tooltips: 5, focusableBars: 5, sessionRing: true, artwork: true, weeklyAnchor: true, subtitle: "Visual wellbeing", legacyDecorativeBars: false })) throw new Error(`CLARITY_PRODUCTION_HOME_VISUAL_EVIDENCE_INVALID:${JSON.stringify(homeVisuals)}`);
+  const premiumHomeFit = await evaluate("(() => { const heading = document.querySelector('.clarity-next-panel h2')?.getBoundingClientRect(); const clock = document.querySelector('.home-action-clock')?.getBoundingClientRect(); const hasClockOverlap = Boolean(heading && clock && !(heading.right <= clock.left || heading.left >= clock.right || heading.bottom <= clock.top || heading.top >= clock.bottom)); return { legend: Array.from(document.querySelectorAll('.home-evidence-legend span')).map((item) => item.textContent?.trim()), statLabel: document.querySelector('.home-stat-strip p')?.textContent?.trim(), horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 1 || document.querySelector('.app-shell').getBoundingClientRect().right > window.innerWidth + 1, hasClockOverlap }; })()");
+  if (JSON.stringify(premiumHomeFit) !== JSON.stringify({ legend: ["Nghỉ mắt đã phản hồi", "Phút phiên", "Số phiên"], statLabel: "Thời gian phiên", horizontalOverflow: false, hasClockOverlap: false })) throw new Error(`CLARITY_PRODUCTION_PREMIUM_HOME_FIT_INVALID:${JSON.stringify(premiumHomeFit)}`);
   const chartKeyboard = await evaluate("(() => { const bar = document.querySelector('.production-evidence-bar'); bar.focus(); return document.activeElement === bar && Boolean(bar.getAttribute('aria-label')?.includes('Thiếu dữ liệu')); })()");
   if (!chartKeyboard) throw new Error("CLARITY_PRODUCTION_EVIDENCE_KEYBOARD_INVALID");
   const keyboardFocus = await evaluate("(() => { const links = Array.from(document.querySelectorAll('.production-topbar [data-route]')); links[0].focus(); links[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); return document.activeElement === links[1] && getComputedStyle(links[1]).outlineStyle !== 'none'; })()");
@@ -928,6 +987,17 @@ app.whenReady().then(async () => {
       app.exit(0);
     } catch (error) {
       console.error(error instanceof Error ? error.message : "ENTERPRISE_DEMO_VALIDATION_FAILED");
+      app.exit(1);
+    }
+    return;
+  }
+
+  if (personalDemoValidationMode) {
+    try {
+      await runPersonalDemoValidation(window);
+      app.exit(0);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : "PERSONAL_DEMO_VALIDATION_FAILED");
       app.exit(1);
     }
     return;
