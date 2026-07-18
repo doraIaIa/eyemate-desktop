@@ -1,14 +1,27 @@
 # Project Status
 
-Last updated: 2026-07-15
+Last updated: 2026-07-18
 Current milestone: FINAL_FEATURE_COMPLETION
-Current batch: VietFuture completion — Task 2A–2C, Task 4 và Task 5
-Current task: completion audit, demo verification và external gates
-Task state: ENGINEERING_COMPLETE_WITH_EXTERNAL_CAMERA_GATE_UNCOMMITTED
+Current batch: Functional UX audit — Home evidence, Work Companion và Personal Intelligence
+Current task: hoàn thiện dữ liệu 7/30 ngày, diễn giải nhịp làm việc và persistence dẫn xuất
+Task state: IMPLEMENTED_VERIFIED_WITH_ELECTRON_HOST_LIMITATION_UNCOMMITTED
 
 Latest implementation commit: pending mixed-worktree review
 Task base commit: `26c30d3`
 Working tree expectation: mixed owner-preserved Wellness, Living Aurora và Clarity UI changes; không stage/commit toàn bộ.
+
+## Functional UX audit — Checkup và Work Companion (2026-07-18)
+
+- Status: `IMPLEMENTED_VERIFIED_WITH_ELECTRON_HOST_LIMITATION_UNCOMMITTED`.
+- Work Companion có năm profile thật, bao gồm `CUSTOM` với thời gian tập trung 5–180 phút, nghỉ 1–60 phút và mốc nhắc được validation/lưu cục bộ. Home phản ánh đúng mode/preset thay vì hard-code Timer Only 25 phút.
+- Monitor phiên tiếp tục lấy elapsed snapshot và xét cadence khi người dùng rời route Đồng hành; pause/resume, quiet hours, cooldown, snooze, âm thanh và phản hồi nudge vẫn dùng policy/IPC hiện hữu.
+- Nút tạo dữ liệu tại Personal Intelligence gọi tạo report thật thay vì chỉ chuyển route. Các control Cài đặt chưa hỗ trợ lựa chọn được chuyển thành trạng thái rõ ràng, không còn select disabled gây kỳ vọng sai.
+- Camera selector chuyển thiết bị ngay khi camera đang chạy, giữ đúng camera active và kiểm tra lại calibration theo device binding. Home đọc lại blink rate/distance zone aggregate từ payload đã mã hóa sau restart; không đưa raw frame/video/landmark qua IPC hoặc persistence.
+- Home evidence lấy trực tiếp phiên/checkup/blink/distance mới nhất thay vì phụ thuộc report M3 cũ; lượt checkup camera hợp lệ không còn giữ sai badge 2/5. Weekly anchor đọc trực tiếp 7 ngày Session Summary hoàn tất.
+- Personal Intelligence ưu tiên diễn giải người dùng: biểu đồ 7/30 ngày, tổng thời gian, trung bình ngày có phiên, trung bình/phiên, phiên dài nhất, khung giờ bắt đầu ước tính, ngày thường hoạt động nhiều, xu hướng với 7 ngày trước và tín hiệu phiên dài/khối lượng ghi nhận cao có ngưỡng công khai.
+- Persistence M3 sửa cửa sổ tuần thành đúng 7 ngày kết thúc hôm nay; baseline gộp mọi Work Companion mode; aggregate dẫn xuất upsert theo ID; report cùng ngày được gom khi cập nhật. Inventory đếm thực thể logic, không cộng trùng lifecycle + Session Summary hoặc hàng M3 nội bộ.
+- Verification: typecheck PASS; unit 111/111; integration 21/21; lint/architecture/privacy PASS; `git diff --check` PASS.
+- `npm run acceptance:ui` build PASS nhưng Electron dừng trước assertion do host `GPU process isn't usable`, exit `2147483651`; UI acceptance runtime vẫn là host limitation, không được ghi PASS giả.
 
 ## Handoff checkpoint (2026-07-15)
 

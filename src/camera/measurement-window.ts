@@ -1,7 +1,7 @@
 import { DISTANCE_RATIO_FILTER_CONFIG, RatioZoneFilter } from "../distance/ratio-zone-filter.js";
 
-export const CAMERA_ALGORITHM_VERSION = "mediapipe-face-landmarker/0.10.35+eyemate-window/0.2.0";
-export const CAMERA_CONFIG_VERSION = `camera-quality/0.2.0+${DISTANCE_RATIO_FILTER_CONFIG.version}` as const;
+export const CAMERA_ALGORITHM_VERSION = "mediapipe-face-landmarker/0.10.35+eyemate-window/0.3.0";
+export const CAMERA_CONFIG_VERSION = `camera-quality/0.2.0+blink-hybrid/1.0.0+${DISTANCE_RATIO_FILTER_CONFIG.version}` as const;
 
 export type CameraQualityReason = "NO_FACE" | "MULTIPLE_FACES" | "LOW_VISIBILITY" | "POSE_UNSTABLE" | "LOW_LIGHT" | "INVALID_GEOMETRY";
 export type DistanceZone = "NEAR" | "COMFORT" | "FAR" | "UNKNOWN";
@@ -14,6 +14,8 @@ export interface CameraFrameObservation {
   readonly lightingScore: number;
   readonly leftEar: number | null;
   readonly rightEar: number | null;
+  readonly leftBlinkScore: number | null;
+  readonly rightBlinkScore: number | null;
   readonly interEyeDistancePx: number | null;
 }
 
@@ -71,9 +73,16 @@ export function validateCameraMeasurementAggregate(value: CameraMeasurementAggre
   return Object.freeze({ ...value, reasonCodes: Object.freeze([...value.reasonCodes]) });
 }
 
-interface AcceptedSample { readonly timestampMs: number; readonly ear: number; readonly interEyeDistancePx: number; }
+interface AcceptedSample { readonly timestampMs: number; readonly ear: number; readonly blinkScore: number | null; readonly interEyeDistancePx: number; }
+interface BlinkDetection { readonly count: number; readonly signalResponsive: boolean; }
 
 const QUALITY_REASONS: readonly CameraQualityReason[] = ["NO_FACE", "MULTIPLE_FACES", "LOW_VISIBILITY", "POSE_UNSTABLE", "LOW_LIGHT", "INVALID_GEOMETRY"];
+const MINIMUM_COMPLETED_DURATION_MS = 29_000;
+const MINIMUM_BLINK_DURATION_MS = 10_000;
+const MINIMUM_BLINK_VALID_SAMPLES = 10;
+const MINIMUM_BLINK_VALID_RATIO = 0.35;
+const MINIMUM_DISTANCE_VALID_SAMPLES = 15;
+const MINIMUM_DISTANCE_VALID_RATIO = 0.7;
 
 function qualityReason(frame: CameraFrameObservation): CameraQualityReason | null {
   if (frame.faceCount === 0) return "NO_FACE";
@@ -87,26 +96,54 @@ function qualityReason(frame: CameraFrameObservation): CameraQualityReason | nul
   return null;
 }
 
-function countBlinks(samples: readonly AcceptedSample[]): number {
-  if (samples.length === 0) return 0;
-  const sortedEar = samples.map((sample) => sample.ear).sort((a, b) => a - b);
-  const medianEar = sortedEar[Math.floor(sortedEar.length / 2)] ?? 0.3;
-  const closedThreshold = Math.max(0.12, Math.min(0.24, medianEar * 0.72));
-  const openThreshold = Math.max(closedThreshold + 0.02, medianEar * 0.86);
-  let closedFrames = 0;
+function countTransitions(
+  samples: readonly AcceptedSample[],
+  valueOf: (sample: AcceptedSample) => number | null,
+  closes: (value: number) => boolean,
+  opens: (value: number) => boolean
+): number {
+  let closingStartedAt: number | null = null;
+  let lastBlinkAt = -Infinity;
   let count = 0;
-  let closed = false;
   for (const sample of samples) {
-    if (sample.ear <= closedThreshold) {
-      closedFrames += 1;
-      if (!closed && closedFrames >= 2) closed = true;
-    } else if (sample.ear >= openThreshold) {
-      if (closed) count += 1;
-      closed = false;
-      closedFrames = 0;
+    const value = valueOf(sample);
+    if (value === null) { closingStartedAt = null; continue; }
+    if (closingStartedAt === null) {
+      if (closes(value)) closingStartedAt = sample.timestampMs;
+      continue;
     }
+    if (!opens(value)) continue;
+    const durationMs = sample.timestampMs - closingStartedAt;
+    if (durationMs >= 16 && durationMs <= 800 && sample.timestampMs - lastBlinkAt >= 100) {
+      count += 1;
+      lastBlinkAt = sample.timestampMs;
+    }
+    closingStartedAt = null;
   }
   return count;
+}
+
+function detectBlinks(samples: readonly AcceptedSample[]): BlinkDetection {
+  if (samples.length === 0) return { count: 0, signalResponsive: false };
+  const blinkScores = samples.map((sample) => sample.blinkScore).filter((value): value is number => value !== null && Number.isFinite(value));
+  if (blinkScores.length >= samples.length * 0.7) {
+    const sortedScores = [...blinkScores].sort((left, right) => left - right);
+    const openBaseline = sortedScores[Math.floor(sortedScores.length * 0.25)] ?? 0;
+    const peak = sortedScores[Math.floor(sortedScores.length * 0.95)] ?? openBaseline;
+    const closeThreshold = Math.max(0.42, openBaseline + 0.22);
+    const openThreshold = Math.min(closeThreshold - 0.08, Math.max(0.28, openBaseline + 0.1));
+    const count = countTransitions(samples, (sample) => sample.blinkScore, (value) => value >= closeThreshold, (value) => value <= openThreshold);
+    if (count > 0 || peak - openBaseline >= 0.18) return { count, signalResponsive: true };
+  }
+
+  const sortedEar = samples.map((sample) => sample.ear).sort((left, right) => left - right);
+  const baselineEar = sortedEar[Math.floor(sortedEar.length * 0.75)] ?? sortedEar.at(-1) ?? 0.3;
+  const minimumEar = sortedEar[Math.floor(sortedEar.length * 0.05)] ?? baselineEar;
+  const minimumDrop = Math.max(0.006, baselineEar * 0.04);
+  const closeThreshold = baselineEar - minimumDrop;
+  const openThreshold = baselineEar - minimumDrop * 0.35;
+  const count = countTransitions(samples, (sample) => sample.ear, (value) => value <= closeThreshold, (value) => value >= openThreshold);
+  return { count, signalResponsive: count > 0 || baselineEar - minimumEar >= minimumDrop };
 }
 
 export function validateCalibrationProfile(profile: CameraCalibrationProfile): CameraCalibrationProfile {
@@ -134,28 +171,38 @@ export function aggregateMeasurementWindow(input: {
   for (const frame of input.frames) {
     const reason = qualityReason(frame);
     if (reason !== null) { qualityDistribution[reason] += 1; distanceInputs.push(null); continue; }
-    accepted.push({ timestampMs: frame.timestampMs, ear: (frame.leftEar! + frame.rightEar!) / 2, interEyeDistancePx: frame.interEyeDistancePx! });
+    const blinkScore = frame.leftBlinkScore !== null && frame.rightBlinkScore !== null
+      && Number.isFinite(frame.leftBlinkScore) && Number.isFinite(frame.rightBlinkScore)
+      ? Math.min(frame.leftBlinkScore, frame.rightBlinkScore) : null;
+    accepted.push({ timestampMs: frame.timestampMs, ear: (frame.leftEar! + frame.rightEar!) / 2, blinkScore, interEyeDistancePx: frame.interEyeDistancePx! });
     distanceInputs.push(frame.interEyeDistancePx!);
   }
   const sampleCount = input.frames.length;
   const validSampleCount = accepted.length;
   const validSampleRatio = sampleCount === 0 ? 0 : validSampleCount / sampleCount;
   const durationMs = input.endedAtMs - input.startedAtMs;
-  const enoughEvidence = input.status === "COMPLETED" && durationMs >= 29_000 && validSampleCount >= 15 && validSampleRatio >= 0.7;
+  const completedMeasurement = input.status === "COMPLETED";
+  const enoughBlinkEvidence = completedMeasurement && durationMs >= MINIMUM_BLINK_DURATION_MS && validSampleCount >= MINIMUM_BLINK_VALID_SAMPLES && validSampleRatio >= MINIMUM_BLINK_VALID_RATIO;
+  const enoughDistanceEvidence = completedMeasurement && durationMs >= MINIMUM_COMPLETED_DURATION_MS && validSampleCount >= MINIMUM_DISTANCE_VALID_SAMPLES && validSampleRatio >= MINIMUM_DISTANCE_VALID_RATIO;
   const reasonCodes: string[] = [];
-  if (!enoughEvidence && input.status === "COMPLETED") reasonCodes.push("INSUFFICIENT_VALID_SAMPLES");
+  if ((completedMeasurement || input.status === "CAMERA_FAILED") && sampleCount === 0) reasonCodes.push("CAMERA_FRAME_STREAM_STOPPED");
+  if (completedMeasurement && durationMs < MINIMUM_COMPLETED_DURATION_MS) reasonCodes.push("MEASUREMENT_WINDOW_TOO_SHORT");
+  if (completedMeasurement && !enoughBlinkEvidence) reasonCodes.push("BLINK_INSUFFICIENT_VALID_SAMPLES");
+  if (completedMeasurement && !enoughDistanceEvidence) reasonCodes.push("DISTANCE_INSUFFICIENT_VALID_SAMPLES");
   if (input.status === "CAMERA_FAILED") reasonCodes.push("MEASUREMENT_CAMERA_FAILED");
   if (input.status === "TIMEOUT") reasonCodes.push("MEASUREMENT_TIMEOUT");
   if (input.status === "CANCELLED") reasonCodes.push("MEASUREMENT_CANCELLED");
   if (input.status === "INSUFFICIENT_DATA") reasonCodes.push("MEASUREMENT_INSUFFICIENT_DATA");
-  if (input.calibration === null) reasonCodes.push("CALIBRATION_MISSING");
-  else if (input.currentDeviceBinding !== input.calibration.deviceBinding) reasonCodes.push("CALIBRATION_DEVICE_CHANGED");
-  const blinkCount = enoughEvidence ? countBlinks(accepted) : 0;
-  const blinkSummary: CameraMeasurementAggregate["blinkSummary"] = enoughEvidence
-    ? { status: "OBSERVED", count: blinkCount, ratePerMinute: Math.round((blinkCount * 60_000 / durationMs) * 10) / 10 }
+  if (completedMeasurement && input.calibration === null) reasonCodes.push("CALIBRATION_MISSING");
+  else if (completedMeasurement && input.calibration !== null && input.currentDeviceBinding !== input.calibration.deviceBinding) reasonCodes.push("CALIBRATION_DEVICE_CHANGED");
+  const blinkDetection = enoughBlinkEvidence ? detectBlinks(accepted) : { count: 0, signalResponsive: false };
+  if (enoughBlinkEvidence && !blinkDetection.signalResponsive) reasonCodes.push("BLINK_SIGNAL_NOT_RESPONSIVE");
+  const blinkSummary: CameraMeasurementAggregate["blinkSummary"] = enoughBlinkEvidence
+    && blinkDetection.signalResponsive
+    ? { status: "OBSERVED", count: blinkDetection.count, ratePerMinute: Math.round((blinkDetection.count * 60_000 / durationMs) * 10) / 10 }
     : { status: "UNKNOWN" };
   let distanceSummary: CameraMeasurementAggregate["distanceSummary"] = { status: "UNKNOWN" };
-  if (enoughEvidence && input.calibration !== null && input.currentDeviceBinding === input.calibration.deviceBinding) {
+  if (enoughDistanceEvidence && input.calibration !== null && input.currentDeviceBinding === input.calibration.deviceBinding) {
     const zones = { NEAR: 0, COMFORT: 0, FAR: 0 };
     const filter = new RatioZoneFilter(input.calibration.referenceInterEyePx);
     let rejectedOutliers = 0;
@@ -172,8 +219,9 @@ export function aggregateMeasurementWindow(input: {
       distanceSummary = { status: "OBSERVED", dominantZone, zoneDistribution: zones };
     }
   }
+  const hasCameraObservation = blinkSummary.status === "OBSERVED" || distanceSummary.status === "OBSERVED";
   return Object.freeze({
-    schemaVersion: "camera-measurement-aggregate/0.1.0", status: enoughEvidence ? input.status : input.status === "COMPLETED" ? "INSUFFICIENT_DATA" : input.status,
+    schemaVersion: "camera-measurement-aggregate/0.1.0", status: completedMeasurement && !hasCameraObservation ? "INSUFFICIENT_DATA" : input.status,
     durationMs, sampleCount, validSampleCount, validSampleRatio, qualityDistribution, confidence: Math.round(validSampleRatio * 1000) / 1000,
     blinkSummary, distanceSummary, reasonCodes: Object.freeze(reasonCodes), algorithmVersion: CAMERA_ALGORITHM_VERSION, configVersion: CAMERA_CONFIG_VERSION,
     calibrationProfileVersion: input.calibration?.profileVersion ?? null, rawDataPersisted: false

@@ -20,6 +20,10 @@ test("timer-only can emit bounded break reminder without camera measurement", ()
   assert.equal(decision.action, "EMIT");
   assert.equal(decision.suggestedActionKey, "TAKE_SHORT_BREAK");
 });
+test("deep focus vẫn cho phép break reminder đúng cadence nhưng chặn distance nudge", () => {
+  assert.equal(decideNudge({ ...base, mode: "DEEP_FOCUS", nudgeType: "BREAK_REMINDER" }).action, "EMIT");
+  assert.equal(decideNudge({ ...base, mode: "DEEP_FOCUS", nudgeType: "DISTANCE_NEAR" }).reason, "DEEP_FOCUS");
+});
 test("disabled nudge type abstains explicitly", () => {
   const decision = decideNudge({ ...base, nudgeType: "BREAK_REMINDER", enabledNudgeTypes: ["DISTANCE_NEAR"] });
   assert.equal(decision.reason, "NUDGE_DISABLED");

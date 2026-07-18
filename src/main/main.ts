@@ -16,10 +16,10 @@ import { WELLNESS_MAXIMUM_SCORE, createWellnessCheckReport, wellnessQuestions, t
 import { actionsWithCameraEvidence, buildEyeHealthAssessment, cameraEvidenceFromAggregate, type CheckupCameraEvidence, type EyeHealthAssessment } from "../symptom-checkup/eye-health-assessment.js";
 import { evaluateSafetyGate, internalSafetyCatalogue } from "../safety/safety-gate.js";
 import { applySessionEvent, createSession, recoverSession, tickSession, type WorkSession } from "../work-session/session-state.js";
-import { decideNudge, type NudgeDecision } from "../work-session/companion-policy.js";
+import { COMPANION_POLICY_VERSION, decideNudge, type NudgeDecision } from "../work-session/companion-policy.js";
 import { createSessionSummary } from "../work-session/session-summary.js";
 import { InProcessNudgeAdapter } from "../work-session/nudge-adapter.js";
-import { DEFAULT_TIMER_ONLY_CONFIG } from "../work-session/companion-config.js";
+import { getCompanionModeProfile } from "../work-session/companion-cycle.js";
 import { fromSurveyOnly, fromWorkSession } from "../personal-intelligence/source-adapter.js";
 import { localDateFor, validateAnalyticsInput, type AnalyticsInput } from "../personal-intelligence/analytics.js";
 import { buildPersonalReport, renderProfessionalSummary, type PersonalReport } from "../personal-intelligence/report-service.js";
@@ -105,11 +105,12 @@ function updateWorkSession(event: "START" | "STARTED" | "PAUSE" | "RESUME" | "FI
   storage?.saveSession({ sessionId: workSession.id, modeId: workSession.modeId, state: workSession.state, elapsedActiveMs: workSession.elapsedActiveMs, updatedAt: currentIso() });
   if (workSession.state !== previousState && (workSession.state === "COMPLETED" || workSession.state === "CANCELLED")) {
     const createdAt = currentIso();
-    const summary = createSessionSummary(workSession, "m2-companion-policy/0.1.0");
+    const interventions = (storage?.listNudgeOutcomes(workSession.id) ?? []).map((nudge) => ({ nudgeId: nudge.nudgeId, response: nudge.response ?? "UNKNOWN" }));
+    const summary = createSessionSummary(workSession, COMPANION_POLICY_VERSION, interventions);
     const summaryId = `summary-${randomUUID().slice(0, 8)}`;
     storage?.saveSessionSummary({ summaryId, sessionId: workSession.id, status: summary.timerOutcome, elapsedActiveMs: summary.durationActiveMs, createdAt, summaryJson: JSON.stringify(summary) });
     if (workSession.state === "COMPLETED" && summary.durationActiveMs > 0) {
-      const source = fromWorkSession({ summaryId, sessionId: workSession.id, elapsedActiveMs: summary.durationActiveMs, createdAt, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", schemaVersion: summary.schemaVersion });
+      const source = fromWorkSession({ summaryId, sessionId: workSession.id, modeId: workSession.modeId, elapsedActiveMs: summary.durationActiveMs, createdAt, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", schemaVersion: summary.schemaVersion });
       storage?.saveM3Record({ id: `source-${summaryId}`, kind: "SOURCE", createdAt, payloadJson: JSON.stringify(source) });
     }
   }
@@ -137,14 +138,16 @@ function recoverPersistedSession(): void {
   if (!persisted || !["ACTIVE", "PAUSED", "RECOVERY_REQUIRED"].includes(persisted.state)) return;
   workSession = recoverSession(persisted.sessionId, persisted.modeId as WorkSession["modeId"], persisted.elapsedActiveMs);
   nudgesInSession = storage?.countEmittedNudges(persisted.sessionId) ?? 0;
+  if (nudgesInSession > 0) lastNudgeMonotonicMs = sessionNow();
 }
 
 function requestBreakNudge(): NudgeDecision & { readonly nudgeId: string } {
   if (workSession?.state !== "ACTIVE") throw new Error("SESSION_NOT_ACTIVE");
   const now = sessionNow();
   const preferences = storage?.loadUserPreferences() ?? DEFAULT_USER_PREFERENCES;
+  const modeProfile = getCompanionModeProfile(workSession.modeId, { workDurationMinutes: preferences.customWorkDurationMinutes, breakDurationMinutes: preferences.customBreakDurationMinutes, reminderAtMinutes: preferences.customReminderAtMinutes });
   const localNow = new Date();
-  const decision = decideNudge({ mode: workSession.modeId, minuteOfDay: localNow.getHours() * 60 + localNow.getMinutes(), quietHours: preferences.quietHoursEnabled ? { startMinute: preferences.quietStartMinute, endMinute: preferences.quietEndMinute } : undefined, cooldownMinutes: DEFAULT_TIMER_ONLY_CONFIG.cooldownMinutes, frequencyCap: DEFAULT_TIMER_ONLY_CONFIG.maxNudgesPerSession, nowMonotonicMs: now, lastNudgeMonotonicMs, nudgesInWindow: nudgesInSession, signal: "SUFFICIENT", nudgeType: "BREAK_REMINDER", enabledNudgeTypes: preferences.breakReminderEnabled ? ["BREAK_REMINDER"] : [] });
+  const decision = decideNudge({ mode: workSession.modeId, minuteOfDay: localNow.getHours() * 60 + localNow.getMinutes(), quietHours: preferences.quietHoursEnabled ? { startMinute: preferences.quietStartMinute, endMinute: preferences.quietEndMinute } : undefined, cooldownMinutes: modeProfile.cooldownMinutes, frequencyCap: modeProfile.maxNudgesPerSession, nowMonotonicMs: now, lastNudgeMonotonicMs, nudgesInWindow: nudgesInSession, signal: "SUFFICIENT", nudgeType: "BREAK_REMINDER", enabledNudgeTypes: preferences.breakReminderEnabled ? ["BREAK_REMINDER"] : [] });
   const nudgeId = `nudge-${workSession.id}-break-${nudgesInSession + 1}`;
   if (decision.action === "EMIT") {
     lastNudgeMonotonicMs = now;
@@ -153,6 +156,19 @@ function requestBreakNudge(): NudgeDecision & { readonly nudgeId: string } {
     storage?.recordNudge({ nudgeId, sessionId: workSession.id, decision: decision.action, reason: decision.reason, policyVersion: decision.policyVersion, createdAt: currentIso(), action: decision.suggestedActionKey, deliveryState: delivery.state === "DELIVERED" ? "EMITTED" : "ABSTAINED" });
   }
   return { ...decision, nudgeId };
+}
+
+function getWorkSessionSnapshot(): WorkSession | null {
+  if (workSession?.state !== "ACTIVE") return workSession;
+  return tickSession(workSession, sessionNow());
+}
+
+function respondToNudge(nudgeId: string, response: NudgeResponse): boolean {
+  const handled = storage?.recordNudgeResponse(nudgeId, response, currentIso()) ?? false;
+  if (!handled || response !== "SNOOZED" || workSession === null) return handled;
+  const profile = getCompanionModeProfile(workSession.modeId);
+  lastNudgeMonotonicMs = sessionNow() - Math.max(0, profile.cooldownMinutes - profile.snoozeMinutes) * 60_000;
+  return true;
 }
 
 function getPrivacySummary(): PrivacySummary {
@@ -201,7 +217,8 @@ async function renderWellnessExport(payload: string, format: LocalExportFormat):
   if (format === "JSON") return JSON.stringify(report, null, 2);
   {
     const camera = report.cameraEvidence;
-    const cameraSection = camera ? `\n\n## Camera evidence\n\n- Trạng thái: ${camera.status}\n- Mẫu hợp lệ: ${camera.validSampleCount}/${camera.sampleCount}\n- Blink rate: ${camera.blinkRatePerMinute ?? "UNKNOWN"}\n- Distance zone: ${camera.distanceZone}\n- Raw data persisted: ${camera.rawDataPersisted}\n- Reason codes: ${camera.reasonCodes.join(", ") || "NONE"}\n` : "\n\n## Camera evidence\n\n- Trạng thái: NOT_MEASURED\n";
+    const cameraQuality = camera?.qualityDistribution ? `\n- Quality distribution: ${Object.entries(camera.qualityDistribution).map(([reason, count]) => `${reason}=${count}`).join(", ")}` : "";
+    const cameraSection = camera ? `\n\n## Camera evidence\n\n- Trạng thái: ${camera.status}\n- Mẫu hợp lệ: ${camera.validSampleCount}/${camera.sampleCount}\n- Blink rate: ${camera.blinkRatePerMinute ?? "UNKNOWN"}\n- Distance zone: ${camera.distanceZone}\n- Raw data persisted: ${camera.rawDataPersisted}\n- Reason codes: ${camera.reasonCodes.join(", ") || "NONE"}${cameraQuality}\n` : "\n\n## Camera evidence\n\n- Trạng thái: NOT_MEASURED\n";
     const assessment = report.assessment;
     const assessmentSection = assessment ? `\n\n## Bảng đánh giá wellness tích hợp\n\n- Kết luận sản phẩm: ${assessment.overallLabel}\n- Độ tin cậy dữ liệu: ${Math.round(assessment.dataConfidence * 100)}%\n- Cơ sở giáo dục sức khỏe: ${assessment.sourceBasis.join(", ")}\n- Giới hạn: wellness education, không phải chẩn đoán.\n\n| Thành phần | Quan sát | Evidence | Tín hiệu | Confidence | Hành động |\n|---|---|---|---|---|---|\n${assessment.rows.map((row) => `| ${row.dimension} | ${row.observation} | ${row.evidence} | ${row.signal} | ${row.confidence} | ${row.action} |`).join("\n")}\n` : "";
     const integratedMarkdown = `# EyeMate Symptom Check\n\n> ${report.disclaimer}\n\n- Trạng thái: ${report.status}\n- Tổng điểm tự báo cáo: ${report.discomfortLoad.score ?? "—"}/${report.discomfortLoad.maximumScore}\n- Nhóm hành động: ${report.discomfortLoad.label}\n- Mã nhóm: ${report.discomfortLoad.actionGroup ?? "INSUFFICIENT_DATA"}\n- Nguồn: Self-report wellness + camera observation nếu có đủ dữ liệu\n- Phiên bản questionnaire: ${report.provenance.questionnaireVersion}\n- Thời gian hồi tưởng: ${report.provenance.recallPeriod}\n- Giới hạn: ${report.limitation}${cameraSection}${assessmentSection}\n\n## Câu trả lời\n\n${Object.entries(report.answers).map(([id, value]) => `- ${id}: ${String(value)}`).join("\n")}\n\n> ${report.disclaimer}\n`;
@@ -245,7 +262,8 @@ function generateM3Report(): PersonalReport {
   storage?.saveM3Record({ id: `daily-${report.daily.localDate}-${timezone.replace(/[^a-z0-9]/gi, "-")}`, kind: "DAILY", createdAt: now, payloadJson: JSON.stringify(report.daily) });
   storage?.saveM3Record({ id: `weekly-${report.weekly.startDate}-${timezone.replace(/[^a-z0-9]/gi, "-")}`, kind: "WEEKLY", createdAt: now, payloadJson: JSON.stringify(report.weekly) });
   for (const pattern of report.daily.patterns) storage?.saveM3Record({ id: `pattern-${report.daily.localDate}-${pattern.patternId.toLowerCase().replaceAll("_", "-")}`, kind: "PATTERN", createdAt: now, payloadJson: JSON.stringify(pattern) });
-  storage?.saveM3Record({ id: `report-${randomUUID().slice(0, 12)}`, kind: "REPORT", createdAt: now, payloadJson: JSON.stringify(report) });
+  storage?.saveM3Record({ id: `report-${report.daily.localDate}-${timezone.replace(/[^a-z0-9]/gi, "-")}`, kind: "REPORT", createdAt: now, payloadJson: JSON.stringify(report) });
+  storage?.compactM3ReportSnapshots();
   return report;
 }
 
@@ -286,10 +304,10 @@ function registerIpcHandlers(): void {
   ipcMain.handle("work-session:resume", () => updateWorkSession("RESUME"));
   ipcMain.handle("work-session:finish", () => finishWorkSession());
   ipcMain.handle("work-session:cancel", () => updateWorkSession("CANCEL"));
-  ipcMain.handle("work-session:get", () => workSession);
+  ipcMain.handle("work-session:get", () => getWorkSessionSnapshot());
   ipcMain.handle("work-session:list-summaries", () => storage?.listSessionSummaries() ?? []);
   ipcMain.handle("work-session:request-break-nudge", () => requestBreakNudge());
-  ipcMain.handle("work-session:respond-nudge", (_event, nudgeId: string, response: NudgeResponse) => storage?.recordNudgeResponse(nudgeId, response, currentIso()) ?? false);
+  ipcMain.handle("work-session:respond-nudge", (_event, nudgeId: string, response: NudgeResponse) => respondToNudge(nudgeId, response));
   ipcMain.handle("m3:generate-report", () => generateM3Report());
   ipcMain.handle("m3:list-reports", () => listM3Reports());
   ipcMain.handle("m3:preview-professional-summary", (_event, format: LocalExportFormat = "MARKDOWN") => {
@@ -464,8 +482,13 @@ async function runUiValidation(window: BrowserWindow): Promise<void> {
   requireTrue(await evaluate("location.hash === '#/home'"), "UI_CHECKUP_CANCEL_INVALID");
 
   await evaluate("document.querySelector('[data-route=companion]').click(); true"); await wait();
+  await evaluate("document.querySelector('[data-companion-mode=CUSTOM]').click(); true"); await wait();
+  requireTrue(await evaluate("Boolean(document.querySelector('#custom-timing-save')) && Boolean(document.querySelector('#custom-work-minutes'))"), "UI_CUSTOM_TIMING_CONTROLS_MISSING");
+  await evaluate("document.querySelector('#custom-work-minutes').value = '35'; document.querySelector('#custom-break-minutes').value = '7'; document.querySelector('#custom-reminder-minutes').value = '28'; document.querySelector('#custom-timing-save').click(); true"); await wait(300);
+  requireTrue(await evaluate("window.eyeMate.getUserPreferences().then((value) => value.defaultMode === 'CUSTOM' && value.customWorkDurationMinutes === 35 && value.customBreakDurationMinutes === 7 && value.customReminderAtMinutes === 28)"), "UI_CUSTOM_TIMING_NOT_PERSISTED");
+  await evaluate("document.querySelector('[data-companion-mode=TIMER_ONLY]').click(); true"); await wait();
   await evaluate("document.querySelector('#session-start').click(); true"); await wait(300);
-  requireTrue(await evaluate("Boolean(document.querySelector('#session-toggle')) && Boolean(document.querySelector('#companion-timer-ring[role=timer]')) && Boolean(document.querySelector('#session-ring-progress')) && document.body.textContent.includes('Phiên đang hoạt động') && document.body.textContent.includes('Preset 25 phút')"), "UI_SESSION_START_INVALID");
+  requireTrue(await evaluate("Boolean(document.querySelector('#session-toggle')) && Boolean(document.querySelector('#companion-timer-ring[role=timer]')) && Boolean(document.querySelector('#session-ring-progress')) && document.body.textContent.includes('Đang hoạt động') && document.body.textContent.includes('Mục tiêu 25 phút')"), "UI_SESSION_START_INVALID");
   await wait(1_050);
   requireTrue(await evaluate("document.querySelector('#session-timer').textContent !== '00:00:00'"), "UI_SESSION_TIMER_NOT_COUNTING");
   await evaluate("document.querySelector('#session-timer').textContent = '00:00:01'; true");
@@ -479,7 +502,9 @@ async function runUiValidation(window: BrowserWindow): Promise<void> {
   await evaluate("document.querySelector('#session-toggle').click(); true"); await wait();
   await evaluate("document.querySelector('#session-nudge').click(); true"); await wait();
   requireTrue(await evaluate("Boolean(document.querySelector('[data-nudge=ACCEPTED]'))"), "UI_NUDGE_MISSING");
-  await evaluate("document.querySelector('[data-nudge=ACCEPTED]').click(); document.querySelector('#session-end').click(); true"); await wait();
+  await evaluate("document.querySelector('[data-nudge=ACCEPTED]').click(); true"); await wait();
+  requireTrue(await evaluate("Boolean(document.querySelector('#eye-rest-countdown')) && window.eyeMate.getWorkSession().then((session) => session?.state === 'PAUSED')"), "UI_EYE_REST_BREAK_INVALID");
+  await evaluate("document.querySelector('#modal-close').click(); document.querySelector('#session-end').click(); true"); await wait();
   await evaluate("document.querySelector('#confirm-session-end').click(); true"); await wait(300);
   requireTrue(await evaluate("document.body.textContent.includes('Phiên đã hoàn thành')"), "UI_SESSION_SUMMARY_INVALID");
   await evaluate("document.querySelector('#modal-close').click(); true");
@@ -516,7 +541,9 @@ async function runUiValidation(window: BrowserWindow): Promise<void> {
   await evaluate("document.querySelector('[data-report-tab=history]').click(); true"); await wait();
   requireTrue(await evaluate("document.querySelector('#report-content').textContent.includes('Work session')"), "UI_HISTORY_INVALID");
   await evaluate("location.hash = '#/intelligence'; true"); await wait();
-  requireTrue(await evaluate("Boolean(document.querySelector('#intelligence-reset')) && document.body.textContent.includes('Visual Load Index')"), "UI_INTELLIGENCE_INVALID");
+  requireTrue(await evaluate("Boolean(document.querySelector('#intelligence-reset')) && document.querySelectorAll('.rhythm-day').length === 7 && document.body.textContent.includes('Tải thị giác tổng hợp')"), "UI_INTELLIGENCE_INVALID");
+  await evaluate("document.querySelector('[data-intelligence-range=30]').click(); true"); await wait();
+  requireTrue(await evaluate("document.querySelectorAll('.rhythm-day').length === 30 && document.querySelector('[data-intelligence-range=30]').getAttribute('aria-selected') === 'true'"), "UI_INTELLIGENCE_MONTH_RANGE_INVALID");
   await capture("intelligence");
   await capture("intelligence", 1024, 768);
   await evaluate("document.querySelector('#intelligence-reset').click(); true"); await wait();
@@ -529,6 +556,10 @@ async function runUiValidation(window: BrowserWindow): Promise<void> {
   requireTrue(await evaluate("Boolean(document.querySelector('#confirm-report-delete'))"), "UI_REPORT_DELETE_CONFIRM_MISSING");
   await evaluate("document.querySelector('#confirm-report-delete').click(); true"); await wait();
   requireTrue(await evaluate("window.eyeMate.listM3Reports().then((items) => items.length === 0)"), "UI_REPORT_DELETE_INVALID");
+  await evaluate("location.hash = '#/intelligence'; true"); await wait();
+  requireTrue(await evaluate("Boolean(document.querySelector('#intelligence-refresh'))"), "UI_INTELLIGENCE_REFRESH_MISSING");
+  await evaluate("document.querySelector('#intelligence-refresh').click(); true"); await wait(350);
+  requireTrue(await evaluate("window.eyeMate.listM3Reports().then((items) => items.length === 1) && document.body.textContent.includes('Tải thị giác tổng hợp')"), "UI_INTELLIGENCE_REFRESH_INVALID");
 
   await evaluate("document.querySelector('[data-route=privacy]').click(); true"); await wait();
   requireTrue(await evaluate("document.querySelectorAll('.inventory-card').length === 6 && document.body.textContent.toLowerCase().includes('calibration') && Boolean(document.querySelector('#privacy-reset-calibration'))"), "UI_DATA_INVENTORY_INVALID");
@@ -720,7 +751,7 @@ async function runClarityProductionValidation(window: BrowserWindow): Promise<vo
   await capture("checkup-entry");
 
   await openRoute("companion", "#session-panel");
-  const companionHooks = await evaluate("Boolean(document.querySelector('#session-start, #session-toggle, #session-recover')) && document.body.textContent.includes('Timer Only') && document.body.textContent.includes('Camera + Timer')");
+  const companionHooks = await evaluate("Boolean(document.querySelector('#session-start, #session-toggle, #session-recover')) && document.body.textContent.includes('Timer Only') && document.body.textContent.includes('Cân bằng') && document.body.textContent.includes('Tập trung sâu')");
   if (!companionHooks) throw new Error("CLARITY_PRODUCTION_COMPANION_HOOKS_MISSING");
   await capture("companion-ready");
 

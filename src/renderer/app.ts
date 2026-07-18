@@ -1,5 +1,5 @@
 import type { CheckupSummary, SafetyResponse, SurveyResponse } from "../shared/m1-contract.js";
-import type { DataInventoryItem, LocalExportFormat, NudgeResponse, UserPreferences } from "../shared/preload-contract.js";
+import type { DataInventoryItem, LocalExportFormat, NudgeResponse, StoredCheckupListItem, UserPreferences } from "../shared/preload-contract.js";
 import type { PersonalReport } from "../personal-intelligence/report-service.js";
 import type { WorkSession } from "../work-session/session-state.js";
 import { LOCAL_OPERATION_TIMEOUT, withOperationTimeout } from "./async-operation.js";
@@ -10,6 +10,8 @@ import { renderTasteDesignLab } from "./taste-design-lab.js";
 import { CAMERA_CALIBRATION_CONFIG, createCameraCalibrationRecord, type CameraCalibrationRecord } from "../camera/calibration-service.js";
 import { applyDevObservationOverrides, EMPTY_DEV_OVERRIDES, type DevOverrides } from "../camera/dev-overrides.js";
 import { DevPanelController } from "./dev-panel.js";
+import { evaluateCompanionCycle, getCompanionModeProfile } from "../work-session/companion-cycle.js";
+import { buildWorkRhythm, type WorkRhythmSummary } from "../personal-intelligence/work-rhythm.js";
 
 type RouteId = "home" | "checkup" | "companion" | "intelligence" | "reports" | "privacy" | "settings" | "design-lab" | "taste-design-lab";
 type ReportTab = "overview" | "week" | "month" | "history";
@@ -22,8 +24,15 @@ const toastRegion = document.querySelector<HTMLElement>("#toast-region");
 let checkupStep = 1;
 let checkupResult: CheckupSummary | null = null;
 let reportTab: ReportTab = "overview";
+let intelligenceRange: 7 | 30 = 7;
 let currentNudgeId: string | null = null;
+let selectedCompanionMode: WorkSession["modeId"] = "TIMER_ONLY";
+let scheduledCompanionSessionId: string | null = null;
+let nextAutomaticNudgeAtElapsedMs: number | null = null;
+let companionNudgeRequestInFlight = false;
+let latestCompanionElapsedMs = 0;
 let sessionTicker: number | null = null;
+let companionMonitor: number | null = null;
 let activeStartedAt: number | null = null;
 let activeElapsedBase = 0;
 let preferencesSaveTimer: number | null = null;
@@ -152,10 +161,10 @@ function productionHomeArtwork(): string {
   </svg></div>`;
 }
 
-function sessionProgressRing(value: string, progress: number | null, note: string): string {
+function sessionProgressRing(value: string, progress: number | null, note: string, targetMinutes: number): string {
   const angle = progress === null ? 0 : Math.round(Math.max(0, Math.min(100, progress)) * 3.6);
-  const progressLabel = progress === null ? "Chưa có phiên hôm nay" : `${Math.round(Math.max(0, Math.min(100, progress)))}% của preset 25 phút`;
-  return `<div class="clarity-session-ring ${progress === null ? "is-missing" : ""}" style="--session-angle:${angle}deg" role="img" aria-label="${escapeHtml(progressLabel)}"><div><small>Phiên hôm nay</small><strong>${value}</strong><span>Preset 25 phút</span></div></div><p>${escapeHtml(note)}</p>`;
+  const progressLabel = progress === null ? "Chưa có phiên hôm nay" : `${Math.round(Math.max(0, Math.min(100, progress)))}% của preset ${targetMinutes} phút`;
+  return `<div class="clarity-session-ring ${progress === null ? "is-missing" : ""}" style="--session-angle:${angle}deg" role="img" aria-label="${escapeHtml(progressLabel)}"><div><small>Phiên hôm nay</small><strong>${value}</strong><span>Preset ${targetMinutes} phút</span></div></div><p>${escapeHtml(note)}</p>`;
 }
 
 function metricIcon(kind: "blink" | "distance" | "load"): string {
@@ -247,6 +256,16 @@ function humanLabel(value: string): string {
     SAFETY_GATE_STOP: "Safety Gate yêu cầu ưu tiên hướng dẫn an toàn",
     SEEK_PROFESSIONAL_HELP: "Dừng checkup và tìm tư vấn chuyên môn phù hợp",
     INSUFFICIENT_DATA: "Chưa đủ dữ liệu",
+    COMPLETED: "Hoàn tất",
+    CANCELLED: "Đã hủy",
+    CAMERA_FAILED: "Camera lỗi",
+    TIMEOUT: "Hết thời gian đo",
+    NOT_MEASURED: "Chưa đo",
+    NEAR: "Gần",
+    COMFORT: "Phù hợp",
+    FAR: "Xa",
+    UNKNOWN: "Chưa rõ",
+    SELF_REPORTED_WELLNESS_NOT_CLINICAL_INSTRUMENT: "Wellness self-report, không phải công cụ lâm sàng",
     SELF_REPORTED_COMFORT: "Tự ghi nhận cảm giác mắt",
     BLINK_BEHAVIOR: "Hành vi chớp mắt",
     VIEWING_DISTANCE: "Khoảng cách nhìn",
@@ -281,40 +300,48 @@ function humanLabel(value: string): string {
 }
 
 async function renderHome(): Promise<void> {
-  const [runtime, reports, summaries, m3Reports, session, privacy] = await withOperationTimeout(Promise.all([
-    window.eyeMate.getRuntimeInfo(), window.eyeMate.listSurveyOnlyReports(), window.eyeMate.listSessionSummaries(), window.eyeMate.listM3Reports(), window.eyeMate.getWorkSession(), window.eyeMate.getPrivacySummary()
+  const [runtime, reports, summaries, m3Reports, session, privacy, preferences] = await withOperationTimeout(Promise.all([
+    window.eyeMate.getRuntimeInfo(), window.eyeMate.listSurveyOnlyReports(), window.eyeMate.listSessionSummaries(), window.eyeMate.listM3Reports(), window.eyeMate.getWorkSession(), window.eyeMate.getPrivacySummary(), window.eyeMate.getUserPreferences()
   ]));
+  const homeProfile = companionProfile(session?.modeId ?? preferences.defaultMode, preferences);
   const latest = m3Reports.at(-1);
   const vli = latest?.daily.vli.score;
-  const sessionCount = summaries.length;
-  const latestSummary = summaries[0];
-  const todaySummary = summaries.find((summary) => {
+  const completedSummaries = summaries.filter((summary) => summary.status === "COMPLETED");
+  const sessionCount = completedSummaries.length;
+  const latestSummary = completedSummaries[0];
+  const todaySummary = completedSummaries.find((summary) => {
     const createdAt = new Date(summary.createdAt);
     const today = new Date();
     return !Number.isNaN(createdAt.valueOf()) && createdAt.getFullYear() === today.getFullYear() && createdAt.getMonth() === today.getMonth() && createdAt.getDate() === today.getDate();
   });
   const sessionElapsedMs = session?.state === "ACTIVE" ? session.elapsedActiveMs : todaySummary?.elapsedActiveMs ?? null;
   const sessionValue = sessionElapsedMs === null ? "Chưa có" : formatDuration(sessionElapsedMs);
-  const sessionProgress = sessionElapsedMs === null ? null : sessionElapsedMs / (25 * 60_000) * 100;
-  const sessionNote = session?.state === "ACTIVE" ? "Phiên Timer Only đang hoạt động." : todaySummary ? `${humanLabel(todaySummary.status)}. ${safeDate(todaySummary.createdAt)}.` : latestSummary ? `Chưa có phiên hôm nay. Phiên gần nhất: ${safeDate(latestSummary.createdAt)}.` : "Bắt đầu Timer Only để tạo Session Summary đầu tiên.";
-  const missing = new Set(latest?.missingData ?? []);
+  const sessionProgress = sessionElapsedMs === null ? null : sessionElapsedMs / (homeProfile.workDurationMinutes * 60_000) * 100;
+  const sessionNote = session?.state === "ACTIVE" ? `Phiên ${homeProfile.label} đang hoạt động.` : todaySummary ? `${humanLabel(todaySummary.status)}. ${safeDate(todaySummary.createdAt)}.` : latestSummary ? `Chưa có phiên hôm nay. Phiên gần nhất: ${safeDate(latestSummary.createdAt)}.` : `Bắt đầu ${homeProfile.label} để tạo Session Summary đầu tiên.`;
+  const blinkMetric = checkupResult ? latestCheckupBlinkMetric(checkupResult) : storedCheckupBlinkMetric(reports[0]);
+  const distanceMetric = checkupResult ? latestCheckupDistanceMetric(checkupResult) : storedCheckupDistanceMetric(reports[0]);
+  const currentCameraEvidence = checkupResult?.cameraEvidence;
+  const blinkCoverage = currentCameraEvidence && currentCameraEvidence.status !== "NOT_MEASURED" && currentCameraEvidence.blinkRatePerMinute !== null ? currentCameraEvidence.validSampleRatio * 100 : reports[0]?.blinkRatePerMinute !== null && reports[0]?.blinkRatePerMinute !== undefined ? (reports[0].validSampleRatio ?? 0) * 100 : null;
+  const distanceCoverage = currentCameraEvidence && currentCameraEvidence.status !== "NOT_MEASURED" && currentCameraEvidence.distanceZone !== "UNKNOWN" ? currentCameraEvidence.validSampleRatio * 100 : reports[0]?.distanceZone && reports[0].distanceZone !== "UNKNOWN" ? (reports[0].validSampleRatio ?? 0) * 100 : null;
   const evidenceItems: readonly HomeEvidenceItem[] = [
-    { id: "session", label: "Phiên", coverage: sessionCount > 0 || session?.state === "ACTIVE" ? 100 : null, detail: sessionCount > 0 ? `${sessionCount} Session Summary đã lưu.` : session?.state === "ACTIVE" ? "Phiên Timer Only đang hoạt động." : "Chưa có Session Summary." },
+    { id: "session", label: "Phiên", coverage: sessionCount > 0 || session?.state === "ACTIVE" ? 100 : null, detail: sessionCount > 0 ? `${sessionCount} phiên hoàn tất đã lưu.` : session?.state === "ACTIVE" ? `Phiên ${homeProfile.label} đang hoạt động.` : "Chưa có phiên hoàn tất." },
     { id: "checkup", label: "Checkup", coverage: reports.length > 0 ? 100 : null, detail: reports.length > 0 ? `${reports.length} checkup tự báo cáo đã lưu.` : "Chưa có checkup tự báo cáo." },
-    { id: "blink", label: "Blink", coverage: latest && !missing.has("blinkDeviation") ? Math.round(latest.daily.vli.dataConfidence * 100) : null, detail: latest && !missing.has("blinkDeviation") ? "Có provenance blink trong report mới nhất." : "Không suy đoán khi chưa có measurement hợp lệ." },
-    { id: "distance", label: "Khoảng cách", coverage: latest && !missing.has("distanceDeviation") ? Math.round(latest.daily.vli.dataConfidence * 100) : null, detail: latest && !missing.has("distanceDeviation") ? "Có provenance khoảng cách trong report mới nhất." : "Không suy đoán khi chưa có measurement hợp lệ." },
-    { id: "vli", label: "VLI", coverage: latest?.daily.vli.status === "AVAILABLE" ? Math.round(latest.daily.vli.dataConfidence * 100) : null, detail: latest?.daily.vli.status === "AVAILABLE" ? `Confidence ${Math.round(latest.daily.vli.dataConfidence * 100)}%.` : "Chưa đủ component để tính VLI." }
+    { id: "blink", label: "Blink", coverage: blinkCoverage, detail: blinkCoverage === null ? "Không suy đoán khi chưa có measurement hợp lệ." : `Checkup gần nhất có ${Math.round(blinkCoverage)}% frame hợp lệ.` },
+    { id: "distance", label: "Khoảng cách", coverage: distanceCoverage, detail: distanceCoverage === null ? "Chưa có distance zone hợp lệ." : `Checkup gần nhất có distance zone và ${Math.round(distanceCoverage)}% frame hợp lệ.` },
+    { id: "vli", label: "Tải", coverage: latest?.daily.vli.status === "AVAILABLE" ? Math.round(latest.daily.vli.dataConfidence * 100) : null, detail: latest?.daily.vli.status === "AVAILABLE" ? `Tải thị giác tổng hợp có ${Math.round(latest.daily.vli.dataConfidence * 100)}% thành phần dữ liệu.` : "Chưa đủ thành phần để tổng hợp tải thị giác." }
   ];
-  const evidenceNote = latest ? `${latest.weekly.daysWithData}/7 ngày có dữ liệu. ${latest.missingData.length} nhóm evidence còn thiếu trong report mới nhất.` : "Chưa có report snapshot để mô tả pattern theo thời gian.";
-  const weeklyValue = latest ? `${latest.weekly.daysWithData}/7 ngày` : "Chưa đủ";
-  const weeklyNote = latest ? `${Math.round(latest.weekly.totalSessionMinutes)} phút được tổng hợp. ${latest.weekly.status === "AVAILABLE" ? "Đủ độ phủ tuần." : "Chưa đủ độ phủ tuần."}` : "Chưa có report tuần để đối chiếu.";
+  const homeRhythm = buildWorkRhythm(completedSummaries, 7);
+  const availableEvidenceCount = evidenceItems.filter((item) => item.coverage !== null).length;
+  const evidenceNote = `${availableEvidenceCount}/5 nhóm có dữ liệu trực tiếp. ${homeRhythm.activeDays}/7 ngày gần nhất có phiên hoàn tất.`;
+  const weeklyValue = `${homeRhythm.activeDays}/7 ngày`;
+  const weeklyNote = `${formatMinutesHuman(homeRhythm.totalMinutes)} trong ${homeRhythm.completedSessions} phiên hoàn tất.`;
   setView(`<section class="clarity-home" aria-label="Tổng quan Hôm nay">${pageHeading("Hôm nay", "Chào bạn, mình bắt đầu nhẹ nhàng nhé.", `EyeMate ${escapeHtml(runtime.applicationVersion)} giữ rõ điều đã ghi nhận, điều chưa đo và bước tiếp theo.`, productionHomeArtwork())}
     <div class="clarity-home-grid">
-      <article class="card clarity-overview-panel"><div class="clarity-panel-heading"><div><span class="clarity-section-mark"></span><p>Tổng quan hôm nay</p></div><small>LOCAL EVIDENCE</small></div><div class="clarity-overview-main"><div class="clarity-session-stat">${sessionProgressRing(sessionValue, sessionProgress, sessionNote)}</div>${productionEvidenceTrace(evidenceItems, evidenceNote)}</div><div class="actions clarity-quick-actions" aria-label="Hành động nhanh"><a class="btn btn-primary" href="#/companion">${session?.state === "ACTIVE" ? "Tiếp tục phiên" : "Bắt đầu phiên"}</a><a class="btn" href="#/checkup">Khám mắt</a><a class="text-link" href="#/reports">Xem báo cáo</a></div></article>
-      <article class="clarity-focus-card"><div class="clarity-panel-heading"><div><span class="clarity-section-mark"></span><p>Đồng hành</p></div><small>QUIET MODE</small></div><p>${session?.state === "ACTIVE" ? "Phiên đang chạy" : "Phiên đề xuất"}</p><strong>${session?.state === "ACTIVE" ? formatDuration(session.elapsedActiveMs) : "25:00"}</strong><span>Timer Only · Camera đang tắt</span><a href="#/companion">${session?.state === "ACTIVE" ? "Tiếp tục" : "Mở phiên"}<b aria-hidden="true">→</b></a></article>
-      ${metricCard("blink", "Nhịp chớp mắt", "Chưa đo", "NOT_MEASURED. Camera đang tắt.", null)}
-      ${metricCard("distance", "Khoảng cách", "Chưa đo", "NOT_MEASURED. Không suy đoán.", null)}
-      ${metricCard("load", "Tải thị giác", vli === null || vli === undefined ? "Chưa đủ" : String(Math.round(vli)), latest ? `Confidence ${Math.round(latest.daily.vli.dataConfidence * 100)}%.` : "INSUFFICIENT_DATA.", vli ?? null, "accent")}
+      <article class="card clarity-overview-panel"><div class="clarity-panel-heading"><div><span class="clarity-section-mark"></span><p>Tổng quan hôm nay</p></div><small>LOCAL EVIDENCE</small></div><div class="clarity-overview-main"><div class="clarity-session-stat">${sessionProgressRing(sessionValue, sessionProgress, sessionNote, homeProfile.workDurationMinutes)}</div>${productionEvidenceTrace(evidenceItems, evidenceNote)}</div><div class="actions clarity-quick-actions" aria-label="Hành động nhanh"><a class="btn btn-primary" href="#/companion">${session?.state === "ACTIVE" ? "Tiếp tục phiên" : "Bắt đầu phiên"}</a><a class="btn" href="#/checkup">Khám mắt</a><a class="text-link" href="#/reports">Xem báo cáo</a></div></article>
+      <article class="clarity-focus-card"><div class="clarity-panel-heading"><div><span class="clarity-section-mark"></span><p>Đồng hành</p></div><small>QUIET MODE</small></div><p>${session?.state === "ACTIVE" ? "Phiên đang chạy" : "Phiên đề xuất"}</p><strong>${session?.state === "ACTIVE" ? formatDuration(session.elapsedActiveMs) : `${String(homeProfile.workDurationMinutes).padStart(2, "0")}:00`}</strong><span>${escapeHtml(homeProfile.label)} · Camera đang tắt</span><a href="#/companion">${session?.state === "ACTIVE" ? "Tiếp tục" : "Mở phiên"}<b aria-hidden="true">→</b></a></article>
+      ${metricCard("blink", "Nhịp chớp mắt", blinkMetric.value, blinkMetric.note, blinkMetric.progress)}
+      ${metricCard("distance", "Khoảng cách", distanceMetric.value, distanceMetric.note, distanceMetric.progress)}
+      ${metricCard("load", "Tải thị giác", vli === null || vli === undefined ? "Chưa đủ" : String(Math.round(vli)), vli === null || vli === undefined ? "Cần thêm dữ liệu về phiên, nghỉ và cảm nhận mắt." : `Đã có ${Math.round((latest?.daily.vli.dataConfidence ?? 0) * 100)}% thành phần dữ liệu.`, vli ?? null, "accent")}
       <article class="card clarity-next-panel"><div><span class="clarity-section-mark"></span><p>Bước tiếp theo</p></div><h2>Một việc nhỏ là đủ.</h2><p class="subtle">${sessionCount} phiên đã lưu. ${reports.length} lần checkup. Consent camera: ${humanLabel(privacy.cameraConsentDecision)}.</p><div class="actions"><a class="text-link" href="#/privacy">Privacy Center</a><a class="clarity-round-action" href="#/reports" aria-label="Xem báo cáo">↗</a></div></article>
       <article class="card clarity-week-panel"><span class="label">Dấu vết tuần này</span><strong>${weeklyValue}</strong><span>${weeklyNote}</span><a class="text-link" href="#/reports">Đối chiếu báo cáo</a></article>
     </div>
@@ -325,12 +352,48 @@ function metricCard(kind: "blink" | "distance" | "load", label: string, value: s
   return `<article class="card metric-card clarity-metric-panel clarity-metric-${kind} ${tone === "accent" ? "accent" : ""}"><div class="clarity-metric-heading"><span class="clarity-metric-icon ${progress === null ? "is-missing" : "is-available"}" aria-hidden="true">${metricIcon(kind)}</span><span class="label">${label}</span><span class="trend ${progress === null ? "unknown" : ""}">${progress === null ? "Chưa đo" : "Local"}</span></div><strong class="metric-value">${value}</strong><span class="metric-note">${note}</span><div class="metric-progress ${progress === null ? "is-missing" : ""}" aria-hidden="true"><span style="--progress:${progress === null ? 0 : Math.max(0, Math.min(100, progress))}%"></span></div></article>`;
 }
 
+function latestCheckupBlinkMetric(summary: CheckupSummary | null): { readonly value: string; readonly note: string; readonly progress: number | null } {
+  const evidence = summary?.cameraEvidence;
+  if (!evidence || evidence.status === "NOT_MEASURED") return { value: "Chưa đo", note: "NOT_MEASURED. Camera đang tắt.", progress: null };
+  if (evidence.blinkRatePerMinute === null) return { value: "Chưa đủ", note: `${humanLabel(evidence.status)}. ${cameraReasonSummary(evidence.reasonCodes)}`, progress: evidence.validSampleRatio * 100 };
+  if (evidence.blinkRatePerMinute === 0) return { value: "Chưa rõ", note: "Checkup gần nhất chưa bắt được blink event rõ; nên đo lại nếu bạn có chớp mắt.", progress: evidence.validSampleRatio * 100 };
+  return { value: `${evidence.blinkRatePerMinute}/phút`, note: `Từ checkup gần nhất · ${formatPercent(evidence.validSampleRatio)} frame đủ chất lượng.`, progress: evidence.validSampleRatio * 100 };
+}
+
+function latestCheckupDistanceMetric(summary: CheckupSummary | null): { readonly value: string; readonly note: string; readonly progress: number | null } {
+  const evidence = summary?.cameraEvidence;
+  if (!evidence || evidence.status === "NOT_MEASURED") return { value: "Chưa đo", note: "NOT_MEASURED. Không suy đoán.", progress: null };
+  if (evidence.distanceZone === "UNKNOWN") return { value: "Chưa đủ", note: `${humanLabel(evidence.status)}. ${cameraReasonSummary(evidence.reasonCodes)}`, progress: evidence.validSampleRatio * 100 };
+  return { value: humanLabel(evidence.distanceZone), note: `Từ checkup gần nhất · ${formatPercent(evidence.validSampleRatio)} frame đủ chất lượng.`, progress: evidence.validSampleRatio * 100 };
+}
+
+function storedCheckupBlinkMetric(report: StoredCheckupListItem | undefined): { readonly value: string; readonly note: string; readonly progress: number | null } {
+  if (!report || report.cameraStatus === "NOT_MEASURED") return { value: "Chưa đo", note: "NOT_MEASURED. Camera đang tắt.", progress: null };
+  const progress = typeof report.validSampleRatio === "number" ? report.validSampleRatio * 100 : null;
+  if (report.blinkRatePerMinute === null || report.blinkRatePerMinute === undefined) return { value: "Chưa đủ", note: `${humanLabel(report.cameraStatus ?? "INSUFFICIENT_DATA")}. ${cameraReasonSummary(report.cameraReasonCodes ?? [])}`, progress };
+  if (report.blinkRatePerMinute === 0) return { value: "Chưa rõ", note: "Checkup gần nhất chưa bắt được blink event rõ; nên đo lại nếu bạn có chớp mắt.", progress };
+  return { value: `${report.blinkRatePerMinute}/phút`, note: `Từ checkup đã lưu · ${formatPercent(report.validSampleRatio ?? 0)} frame đủ chất lượng.`, progress };
+}
+
+function storedCheckupDistanceMetric(report: StoredCheckupListItem | undefined): { readonly value: string; readonly note: string; readonly progress: number | null } {
+  if (!report || report.cameraStatus === "NOT_MEASURED") return { value: "Chưa đo", note: "NOT_MEASURED. Không suy đoán.", progress: null };
+  const progress = typeof report.validSampleRatio === "number" ? report.validSampleRatio * 100 : null;
+  if (!report.distanceZone || report.distanceZone === "UNKNOWN") return { value: "Chưa đủ", note: `${humanLabel(report.cameraStatus ?? "INSUFFICIENT_DATA")}. ${cameraReasonSummary(report.cameraReasonCodes ?? [])}`, progress };
+  return { value: humanLabel(report.distanceZone), note: `Từ checkup đã lưu · ${formatPercent(report.validSampleRatio ?? 0)} frame đủ chất lượng.`, progress };
+}
+
+function cameraReasonSummary(reasonCodes: readonly string[]): string {
+  const relevant = reasonCodes.filter((reason) => !["CALIBRATION_MISSING", "DISTANCE_INSUFFICIENT_VALID_SAMPLES"].includes(reason));
+  return relevant.length ? relevant.map(cameraReasonLabel).slice(0, 2).join("; ") : "Chưa đủ bằng chứng camera rõ.";
+}
+
 function cameraStatusMessage(): string {
   const messages: Readonly<Record<string, string>> = {
     CAMERA_NOT_STARTED: "Camera chỉ mở sau thao tác rõ ràng của bạn.", CAMERA_STARTING: "Đang khởi tạo model cục bộ…", CAMERA_ACTIVE: "Camera đang xử lý cục bộ; không lưu hình ảnh.",
     CAMERA_PERMISSION_DENIED: "Quyền camera bị từ chối. Hãy cấp lại trong Windows Settings > Privacy & security > Camera.", CAMERA_UNAVAILABLE: "Không tìm thấy camera phù hợp.",
     CAMERA_API_UNAVAILABLE: "Thiết bị này không cung cấp camera API.", CAMERA_BUSY: "Camera đang được ứng dụng khác sử dụng.", CAMERA_DISCONNECTED: "Camera đã ngắt kết nối.",
     CAMERA_DEVICE_CHANGED: "Danh sách camera đã thay đổi; cần hiệu chỉnh lại.", CAMERA_RUNTIME_FAILED: "Không thể khởi tạo camera.", CAMERA_INFERENCE_FAILED: "Model camera cục bộ gặp lỗi.",
+    CAMERA_PREVIEW_REATTACH_FAILED: "Không thể nối lại luồng camera vào màn hình đo.",
     CAMERA_INTERRUPTED_BY_VISIBILITY: "Camera đã dừng khi cửa sổ bị ẩn. Hãy mở lại và hiệu chỉnh trước khi đo."
   };
   return messages[cameraReason] ?? cameraReason;
@@ -350,8 +413,12 @@ function cameraGuidance(): string {
   const quality = observationQuality(latestCameraObservation);
   if (cameraState !== "ACTIVE") return "Bước 1: chọn camera (nếu có nhiều thiết bị), rồi nhấn “Mở camera”.";
   if (!quality.acceptable) return "Bước 2: giữ một khuôn mặt trong khung, nhìn thẳng và tăng ánh sáng nếu cần. Nút hiệu chỉnh sẽ mở khi chất lượng phù hợp.";
-  if (cameraCalibration === null) return "Bước 3: dùng thước đo khoảng cách thật từ mắt đến camera/webcam, nhập số đo rồi nhấn “Hiệu chỉnh 5 giây”.";
-  return "Hiệu chỉnh đã sẵn sàng. Bước 4: nhấn “Tiếp tục đo”, sau đó bắt đầu cửa sổ 30 giây.";
+  if (cameraCalibration === null) return "Có thể đo blink ngay. Nếu muốn phân loại khoảng cách NEAR/COMFORT/FAR, hãy nhập khoảng cách thật rồi hiệu chỉnh 5 giây.";
+  return "Hiệu chỉnh khoảng cách đã sẵn sàng. Bước 4: nhấn “Tiếp tục đo”, sau đó bắt đầu cửa sổ 30 giây.";
+}
+
+function cameraLiveReadingsMarkup(): string {
+  return `<div class="camera-reading camera-live-readings"><span><small>Khuôn mặt</small><strong id="camera-live-face">—</strong></span><span><small>Ánh sáng</small><strong id="camera-live-light">—</strong></span><span><small>Pose</small><strong id="camera-live-pose">—</strong></span><span><small>IOD</small><strong id="camera-live-iod">—</strong></span><span><small>EAR</small><strong id="camera-live-ear">—</strong></span><span><small>Blink L/R</small><strong id="camera-live-blink">—</strong></span></div>`;
 }
 
 function updateCameraLiveUi(): void {
@@ -366,10 +433,25 @@ function updateCameraLiveUi(): void {
   const averageEar = latestCameraObservation?.leftEar !== null && latestCameraObservation?.leftEar !== undefined && latestCameraObservation.rightEar !== null
     ? (latestCameraObservation.leftEar + latestCameraObservation.rightEar) / 2 : null;
   if (earElement) earElement.textContent = averageEar === null ? "—" : averageEar.toFixed(3);
+  const faceElement = document.querySelector<HTMLElement>("#camera-live-face");
+  if (faceElement) faceElement.textContent = latestCameraObservation === null ? "—" : String(latestCameraObservation.faceCount);
+  const lightElement = document.querySelector<HTMLElement>("#camera-live-light");
+  if (lightElement) lightElement.textContent = latestCameraObservation === null ? "—" : formatPercent(latestCameraObservation.lightingScore);
+  const poseElement = document.querySelector<HTMLElement>("#camera-live-pose");
+  if (poseElement) poseElement.textContent = latestCameraObservation === null ? "—" : formatPercent(latestCameraObservation.poseScore);
+  const iodElement = document.querySelector<HTMLElement>("#camera-live-iod");
+  if (iodElement) iodElement.textContent = latestCameraObservation?.interEyeDistancePx === null || latestCameraObservation?.interEyeDistancePx === undefined ? "—" : `${latestCameraObservation.interEyeDistancePx.toFixed(1)} px`;
+  const blinkElement = document.querySelector<HTMLElement>("#camera-live-blink");
+  if (blinkElement) {
+    const leftBlink = latestCameraObservation?.leftBlinkScore;
+    const rightBlink = latestCameraObservation?.rightBlinkScore;
+    if (leftBlink === null || leftBlink === undefined || rightBlink === null || rightBlink === undefined) blinkElement.textContent = "EAR dự phòng";
+    else blinkElement.textContent = `${Math.min(leftBlink, rightBlink) >= 0.42 ? "Đang chớp" : "Mắt mở"} · ${leftBlink.toFixed(2)} / ${rightBlink.toFixed(2)}`;
+  }
   const calibrateButton = document.querySelector<HTMLButtonElement>("#checkup-calibrate");
   if (calibrateButton) calibrateButton.disabled = cameraState !== "ACTIVE" || !quality.acceptable;
   const measureButton = document.querySelector<HTMLButtonElement>("#checkup-measure-next");
-  if (measureButton) measureButton.disabled = cameraState !== "ACTIVE" || cameraCalibration === null;
+  if (measureButton) measureButton.disabled = cameraState !== "ACTIVE" || !quality.acceptable;
 }
 
 async function populateCameraDevices(): Promise<void> {
@@ -380,6 +462,11 @@ async function populateCameraDevices(): Promise<void> {
     select.replaceChildren(...devices.map((device) => {
       const option = document.createElement("option"); option.value = device.deviceId; option.textContent = device.label; return option;
     }));
+    const activeLabel = cameraRuntime.context?.label;
+    if (activeLabel) {
+      const activeOption = Array.from(select.options).find((option) => option.textContent === activeLabel);
+      if (activeOption) select.value = activeOption.value;
+    }
     if (devices.length === 0) { const option = document.createElement("option"); option.textContent = "Camera mặc định"; select.append(option); }
   } catch { showToast("Không thể đọc danh sách camera. Bạn vẫn có thể thử camera mặc định.", "warning"); }
 }
@@ -477,17 +564,65 @@ function evidenceSourceLabel(source: string): string {
   return "Tự báo cáo";
 }
 
+function cameraReasonLabel(reasonCode: string): string {
+  const labels: Record<string, string> = {
+    CAMERA_NOT_MEASURED: "Camera không được dùng trong lần checkup này",
+    MEASUREMENT_WINDOW_TOO_SHORT: "Cửa sổ đo ngắn hơn 30 giây",
+    BLINK_INSUFFICIENT_VALID_SAMPLES: "Blink chưa đủ frame hợp lệ để ước tính chắc chắn",
+    BLINK_SIGNAL_NOT_RESPONSIVE: "Tín hiệu mí mắt không thay đổi đủ rõ khi chớp; không xuất kết quả 0 giả",
+    CAMERA_FRAME_STREAM_STOPPED: "Luồng frame camera đã dừng trước hoặc trong cửa sổ đo",
+    DISTANCE_INSUFFICIENT_VALID_SAMPLES: "Distance chưa đủ frame ổn định để phân loại zone",
+    CALIBRATION_MISSING: "Chưa có calibration nên distance giữ UNKNOWN",
+    CALIBRATION_DEVICE_CHANGED: "Calibration không khớp camera/resolution hiện tại",
+    DISTANCE_OUTLIERS_REJECTED: "Một số frame distance bị loại vì lệch quá lớn",
+    DISTANCE_FILTER_INSUFFICIENT_DATA: "Bộ lọc distance chưa đủ dữ liệu sau khi loại nhiễu",
+    MEASUREMENT_CAMERA_FAILED: "Camera bị lỗi trong lúc đo",
+    MEASUREMENT_TIMEOUT: "Cửa sổ đo bị timeout",
+    MEASUREMENT_CANCELLED: "Người dùng đã hủy đo",
+    MEASUREMENT_INSUFFICIENT_DATA: "Measurement được đánh dấu thiếu dữ liệu"
+  };
+  return labels[reasonCode] ?? humanLabel(reasonCode);
+}
+
+function qualityReasonLabel(reasonCode: string): string {
+  const labels: Record<string, string> = {
+    NO_FACE: "không thấy mặt",
+    MULTIPLE_FACES: "nhiều mặt",
+    LOW_VISIBILITY: "mắt/landmark chưa rõ",
+    POSE_UNSTABLE: "pose chưa ổn định",
+    LOW_LIGHT: "thiếu sáng",
+    INVALID_GEOMETRY: "hình học khuôn mặt chưa đủ"
+  };
+  return labels[reasonCode] ?? humanLabel(reasonCode);
+}
+
+function cameraDiagnostics(summary: CheckupSummary): string {
+  const evidence = summary.cameraEvidence;
+  const items: string[] = [];
+  for (const reasonCode of evidence.reasonCodes) items.push(cameraReasonLabel(reasonCode));
+  if (evidence.qualityDistribution !== null) {
+    const topQualityReasons = Object.entries(evidence.qualityDistribution)
+      .filter(([, count]) => count > 0)
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 3)
+      .map(([reason, count]) => `${qualityReasonLabel(reason)}: ${count} frame`);
+    items.push(...topQualityReasons);
+  }
+  if (items.length === 0) return "<p class=\"subtle\">Không có lý do thiếu dữ liệu đáng kể.</p>";
+  return `<ul class="camera-diagnostics">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+}
+
 function cameraEvidenceLabel(summary: CheckupSummary | null): string {
   const evidence = summary?.cameraEvidence;
   if (!evidence || evidence.status === "NOT_MEASURED") return "Không dùng camera trong lần checkup này.";
-  if (evidence.status !== "COMPLETED") return `Camera chưa tạo đủ dữ liệu ổn định (${humanLabel(evidence.status)}).`;
   const blink = evidence.blinkRatePerMinute === null
     ? "Chưa ước tính được nhịp chớp"
     : evidence.blinkRatePerMinute === 0
-      ? "Chưa nhận diện lần chớp rõ trong 30 giây"
+      ? "Chưa ghi nhận blink event rõ"
       : `Ước tính ${evidence.blinkRatePerMinute}/phút`;
   const distance = evidence.distanceZone === "UNKNOWN" ? "Khoảng cách chưa rõ" : `Khoảng cách: ${humanLabel(evidence.distanceZone)}`;
-  return `${blink} · ${distance}`;
+  const status = evidence.status === "COMPLETED" ? "" : ` · ${humanLabel(evidence.status)}`;
+  return `${blink} · ${distance}${status}`;
 }
 
 function renderSymptomResultCard(summary: CheckupSummary): string {
@@ -503,7 +638,7 @@ function renderSymptomResultCard(summary: CheckupSummary): string {
 function renderCameraResultCard(summary: CheckupSummary): string {
   const evidence = summary.cameraEvidence;
   const quality = evidence.sampleCount > 0 ? `${formatPercent(evidence.validSampleRatio)} khung hình đủ chất lượng` : "Không có dữ liệu camera";
-  return `<article class="result-metric-card"><p class="label">Quan sát camera cục bộ</p><h3>${escapeHtml(cameraEvidenceLabel(summary))}</h3><p>${quality}. Raw frame, video và landmark không được lưu.</p><small>Camera chỉ bổ sung bằng chứng hành vi; không xác nhận bệnh và không thay thế khám lâm sàng.</small></article>`;
+  return `<article class="result-metric-card"><p class="label">Quan sát camera cục bộ</p><h3>${escapeHtml(cameraEvidenceLabel(summary))}</h3><p>${quality}. Raw frame, video và landmark không được lưu.</p>${cameraDiagnostics(summary)}<small>Camera chỉ bổ sung bằng chứng hành vi; không xác nhận bệnh và không thay thế khám lâm sàng.</small></article>`;
 }
 
 function assessmentMarkup(summary: CheckupSummary): string {
@@ -515,7 +650,7 @@ function renderCheckupResultContent(summary: CheckupSummary): string {
   const missing = summary.missingData.map(wellnessQuestionLabel);
   const actions = summary.actions.map((action) => `<li><strong>${actionLabel(action.id)}</strong><span>${evidenceSourceLabel(action.evidenceSource)} · ${actionReasonLabel(action.reasonCode)}</span></li>`).join("");
   const missingText = missing.length ? `Chưa đủ ở: ${missing.map(escapeHtml).join(", ")}.` : "Không có câu tự báo cáo bị thiếu.";
-  return `<div><p class="eyebrow">Bước 5 / 5</p><h2>Kết quả checkup hôm nay</h2><span class="status-pill ${summary.status === "SAFETY_STOP" ? "warning" : ""}">${humanLabel(summary.status)}</span>${assessmentMarkup(summary)}<h3 class="section-heading">Gợi ý wellness có thể làm ngay</h3><ul class="wellness-action-list">${actions}</ul><h3 class="section-heading">Dữ liệu thiếu và giới hạn</h3><div class="clinical-note"><strong>Giới hạn cần đọc</strong><p>${missingText} ${summary.limitation}. EyeMate không hợp nhất survey và camera thành kết luận bệnh.</p><p>${escapeHtml(WELLNESS_DISCLAIMER)}</p></div></div><div class="actions result-actions"><button class="btn btn-primary" id="checkup-done" type="button">Về tổng quan</button><button class="btn" data-checkup-export="PDF" type="button">Export PDF</button><button class="btn" data-checkup-export="MARKDOWN" type="button">Export Markdown</button><button class="btn" data-checkup-export="JSON" type="button">Export JSON</button><button class="btn btn-ghost" id="checkup-repeat" type="button">Làm lại</button></div>`;
+  return `<div><p class="eyebrow">Bước 5 / 5</p><h2>Kết quả checkup hôm nay</h2><span class="status-pill ${summary.status === "SAFETY_STOP" ? "warning" : ""}">${humanLabel(summary.status)}</span>${assessmentMarkup(summary)}<h3 class="section-heading">Gợi ý wellness có thể làm ngay</h3><ul class="wellness-action-list">${actions}</ul><h3 class="section-heading">Dữ liệu thiếu và giới hạn</h3><div class="clinical-note"><strong>Giới hạn cần đọc</strong><p>${missingText} ${humanLabel(summary.limitation)}. EyeMate không hợp nhất survey và camera thành kết luận bệnh.</p><p>${escapeHtml(WELLNESS_DISCLAIMER)}</p></div></div><div class="actions result-actions"><button class="btn btn-primary" id="checkup-done" type="button">Về tổng quan</button><button class="btn" data-checkup-export="PDF" type="button">Export PDF</button><button class="btn" data-checkup-export="MARKDOWN" type="button">Export Markdown</button><button class="btn" data-checkup-export="JSON" type="button">Export JSON</button><button class="btn btn-ghost" id="checkup-repeat" type="button">Làm lại</button></div>`;
 }
 
 function renderCheckup(): void {
@@ -524,11 +659,25 @@ function renderCheckup(): void {
   let content = "";
   if (checkupStep === 1) content = `<div><p class="eyebrow">Bước 1 / 5</p><h2>${titles[0]}</h2><div class="callout disclaimer" role="note"><strong>Lưu ý quan trọng</strong><br>${escapeHtml(WELLNESS_DISCLAIMER)}</div><p class="subtle">Questionnaire này do EyeMate tự phát triển cho mục đích wellness. Camera chỉ mở sau lựa chọn rõ ràng của bạn.</p><div class="callout success"><strong>Local Only</strong><br>Model và xử lý chạy trên máy. Không upload, không lưu raw frame, video hoặc landmark.</div></div><div class="actions"><button class="btn btn-primary" id="checkup-camera-consent" type="button">Cho phép dùng camera</button><button class="btn" id="checkup-consent" type="button">Tiếp tục không camera</button><button class="btn btn-ghost" data-checkup-cancel type="button">Hủy</button></div>`;
   if (checkupStep === 2) content = `<div><p class="eyebrow">Bước 2 / 5</p><h2>${titles[1]}</h2><p class="subtle">Trong 7 ngày gần đây, hãy ghi lại trải nghiệm của bạn. EyeMate Symptom Check gồm 5 câu tự phát triển, không phải công cụ lâm sàng đã được validation.</p>${surveyValidationMessage ? `<div class="callout warning survey-validation" role="alert">${escapeHtml(surveyValidationMessage)}</div>` : ""}${wellnessSurveyFields()}<label class="label" for="safety-response">Tín hiệu cần dừng</label><select class="field" id="safety-response"><option value="NEGATIVE">Không có tín hiệu cần dừng</option><option value="CONFIRMED">Có tín hiệu cần dừng</option><option value="UNSURE">Chưa chắc</option><option value="PREFER_NOT_TO_ANSWER">Không muốn trả lời</option></select></div><div class="actions"><button class="btn" id="checkup-back" type="button">Quay lại</button><button class="btn btn-primary" id="checkup-survey-next" type="button">Tiếp tục</button><button class="btn btn-ghost" data-checkup-cancel type="button">Hủy</button></div>`;
-  if (checkupStep === 3) content = cameraRequested ? `<div><p class="eyebrow">Bước 3 / 5</p><h2>${titles[2]}</h2><p class="subtle">Chỉ cần làm lần lượt bốn bước bên dưới. Bạn có thể bỏ qua camera bất cứ lúc nào.</p><ol class="camera-steps" aria-label="Các bước hiệu chỉnh camera"><li class="${cameraState === "ACTIVE" ? "done" : "active"}">Mở camera</li><li class="${observationQuality(latestCameraObservation).acceptable ? "done" : ""}">Đưa khuôn mặt vào khung hình</li><li class="${cameraCalibration !== null ? "done" : ""}">Hiệu chỉnh 5 giây hoặc dùng profile đã lưu</li><li class="${cameraCalibration !== null ? "active" : ""}">Bắt đầu đo 30 giây</li></ol><div class="camera-calibration"><video id="camera-preview" aria-label="Xem trước camera cục bộ"></video><div><label class="label" for="camera-device">Camera đang dùng</label><select class="field" id="camera-device"><option>Camera mặc định</option></select><p class="callout" id="camera-runtime-state" aria-live="polite">${cameraStatusMessage()}</p><p class="callout" id="camera-quality-state" aria-live="polite">${observationQuality(latestCameraObservation).label}</p><p class="camera-guidance" id="camera-guidance" aria-live="polite">${cameraGuidance()}</p><div class="camera-reading"><span><small>EAR trực tiếp</small><strong id="camera-live-ear">—</strong></span></div><label class="label" for="calibration-distance">Khoảng cách thật từ mắt đến camera/webcam (cm)</label><input class="field" id="calibration-distance" type="number" min="20" max="150" value="60" inputmode="decimal" aria-describedby="calibration-help"><p class="subtle" id="calibration-help">Đo từ vùng giữa hai mắt đến ống kính webcam. Số này chỉ dùng để hiệu chỉnh cục bộ, không phải chẩn đoán.</p></div></div></div><div class="actions"><button class="btn" id="checkup-back" type="button">Quay lại</button><button class="btn btn-primary" id="checkup-open-camera" type="button">1. Mở camera</button><button class="btn" id="checkup-calibrate" type="button" disabled title="Hoàn tất bước 1 và 2 trước">3. Hiệu chỉnh 5 giây</button><button class="btn btn-primary" id="checkup-measure-next" type="button" disabled title="Hoàn tất hiệu chỉnh trước">4. Tiếp tục đo</button><button class="btn btn-ghost" id="checkup-camera-next" type="button">Bỏ qua camera</button></div>` : `<div><p class="eyebrow">Bước 3 / 5</p><h2>${titles[2]}</h2><div class="callout warning"><strong>Camera đang tắt</strong><br>Bạn chưa cấp consent camera. EyeMate sẽ tiếp tục survey-only và không suy đoán chỉ số camera.</div></div><div class="actions"><button class="btn" id="checkup-back" type="button">Quay lại</button><button class="btn btn-primary" id="checkup-camera-next" type="button">Dùng survey-only</button><button class="btn btn-ghost" data-checkup-cancel type="button">Hủy</button></div>`;
-  if (checkupStep === 4) content = cameraRequested && cameraCalibration !== null && cameraRuntime.active ? `<div><p class="eyebrow">Bước 4 / 5</p><h2>${titles[3]}</h2><div class="measurement-countdown" aria-live="polite"><strong id="camera-countdown">00:30</strong><span>giữ tư thế tự nhiên</span></div><div class="camera-reading"><span><small>EAR</small><strong id="camera-live-ear">—</strong></span><span><small>Chất lượng</small><strong id="camera-quality-state">Đang chờ</strong></span></div><p class="subtle">Quan sát per-frame chỉ tồn tại trong RAM trong cửa sổ 30 giây và bị xóa ngay sau khi tổng hợp.</p></div><div class="actions"><button class="btn btn-primary" id="checkup-measure-start" type="button">Bắt đầu 30 giây</button><button class="btn btn-danger" data-checkup-cancel type="button">Hủy đo</button></div>` : `<div><p class="eyebrow">Bước 4 / 5</p><h2>${titles[3]}</h2><div class="empty-state"><div><div class="empty-icon" aria-hidden="true">◉</div><h3>Đo camera đã được bỏ qua an toàn</h3><p class="subtle">EAR, khoảng cách và blink counter không được suy đoán khi camera tắt.</p></div></div></div><div class="actions"><button class="btn" id="checkup-back" type="button">Quay lại</button><button class="btn btn-primary" id="checkup-finish" type="button">Xem kết quả</button><button class="btn btn-ghost" data-checkup-cancel type="button">Hủy</button></div>`;
+  if (checkupStep === 3) content = cameraRequested ? `<div><p class="eyebrow">Bước 3 / 5</p><h2>${titles[2]}</h2><p class="subtle">Chỉ cần làm lần lượt bốn bước bên dưới. Blink có thể đo trước; khoảng cách chỉ được phân loại khi có calibration phù hợp.</p><ol class="camera-steps" aria-label="Các bước hiệu chỉnh camera"><li class="${cameraState === "ACTIVE" ? "done" : "active"}">Mở camera</li><li class="${observationQuality(latestCameraObservation).acceptable ? "done" : ""}">Đưa khuôn mặt vào khung hình</li><li class="${cameraCalibration !== null ? "done" : ""}">Hiệu chỉnh distance nếu cần</li><li class="${observationQuality(latestCameraObservation).acceptable ? "active" : ""}">Bắt đầu đo 30 giây</li></ol><div class="camera-calibration"><video id="camera-preview" aria-label="Xem trước camera cục bộ"></video><div><label class="label" for="camera-device">Camera đang dùng</label><select class="field" id="camera-device"><option>Camera mặc định</option></select><p class="callout" id="camera-runtime-state" aria-live="polite">${cameraStatusMessage()}</p><p class="callout" id="camera-quality-state" aria-live="polite">${observationQuality(latestCameraObservation).label}</p><p class="camera-guidance" id="camera-guidance" aria-live="polite">${cameraGuidance()}</p>${cameraLiveReadingsMarkup()}<label class="label" for="calibration-distance">Khoảng cách thật từ mắt đến camera/webcam (cm)</label><input class="field" id="calibration-distance" type="number" min="20" max="150" value="60" inputmode="decimal" aria-describedby="calibration-help"><p class="subtle" id="calibration-help">Giá trị này chỉ dùng để phân loại distance zone cục bộ. Nếu bỏ qua calibration, EyeMate vẫn đo blink và giữ khoảng cách là UNKNOWN.</p></div></div></div><div class="actions"><button class="btn" id="checkup-back" type="button">Quay lại</button><button class="btn btn-primary" id="checkup-open-camera" type="button">1. Mở camera</button><button class="btn" id="checkup-calibrate" type="button" disabled title="Hoàn tất bước 1 và 2 trước">3. Hiệu chỉnh distance 5 giây</button><button class="btn btn-primary" id="checkup-measure-next" type="button" disabled title="Cần camera và khuôn mặt đủ chất lượng">4. Tiếp tục đo</button><button class="btn btn-ghost" id="checkup-camera-next" type="button">Bỏ qua camera</button></div>` : `<div><p class="eyebrow">Bước 3 / 5</p><h2>${titles[2]}</h2><div class="callout warning"><strong>Camera đang tắt</strong><br>Bạn chưa cấp consent camera. EyeMate sẽ tiếp tục survey-only và không suy đoán chỉ số camera.</div></div><div class="actions"><button class="btn" id="checkup-back" type="button">Quay lại</button><button class="btn btn-primary" id="checkup-camera-next" type="button">Dùng survey-only</button><button class="btn btn-ghost" data-checkup-cancel type="button">Hủy</button></div>`;
+  if (checkupStep === 4) content = cameraRequested && cameraRuntime.active ? `<div><p class="eyebrow">Bước 4 / 5</p><h2>${titles[3]}</h2><div class="camera-calibration camera-measurement"><video id="camera-preview" aria-label="Camera đang đo cục bộ"></video><div><div class="measurement-countdown" aria-live="polite"><strong id="camera-countdown">00:30</strong><span>giữ tư thế tự nhiên</span></div>${cameraLiveReadingsMarkup()}<p class="subtle">${cameraCalibration === null ? "Chưa có calibration: EyeMate sẽ chỉ dùng blink nếu đủ dữ liệu và giữ distance là UNKNOWN." : "Calibration đã sẵn sàng: EyeMate sẽ tổng hợp blink và distance zone nếu đủ chất lượng."} Quan sát per-frame chỉ tồn tại trong RAM trong cửa sổ 30 giây và bị xóa ngay sau khi tổng hợp.</p></div></div></div><div class="actions"><button class="btn btn-primary" id="checkup-measure-start" type="button" disabled>Đang nối camera…</button><button class="btn btn-danger" data-checkup-cancel type="button">Hủy đo</button></div>` : `<div><p class="eyebrow">Bước 4 / 5</p><h2>${titles[3]}</h2><div class="empty-state"><div><div class="empty-icon" aria-hidden="true">◉</div><h3>Đo camera đã được bỏ qua an toàn</h3><p class="subtle">EAR, khoảng cách và blink counter không được suy đoán khi camera tắt.</p></div></div></div><div class="actions"><button class="btn" id="checkup-back" type="button">Quay lại</button><button class="btn btn-primary" id="checkup-finish" type="button">Xem kết quả</button><button class="btn btn-ghost" data-checkup-cancel type="button">Hủy</button></div>`;
   if (checkupStep === 5) content = checkupResult ? renderCheckupResultContent(checkupResult) : `<div class="empty-state"><div><div class="empty-icon">!</div><h2>Chưa có kết quả</h2><button class="btn" id="checkup-repeat" type="button">Bắt đầu lại</button></div></div>`;
   setView(`${pageHeading("Checkup", "Một phút để lắng nghe đôi mắt", "Flow từng bước, camera-off an toàn và không đưa ra chẩn đoán.")}<section class="wizard"><div class="stepper" aria-label="Tiến trình checkup">${stepBars}</div><article class="card wizard-card">${content}</article></section>`);
   bindCheckupControls();
+  const preview = document.querySelector<HTMLVideoElement>("#camera-preview");
+  if (preview && cameraRuntime.active && checkupStep === 4) {
+    void cameraRuntime.attachPreview(preview).then((attached) => {
+      const startButton = document.querySelector<HTMLButtonElement>("#checkup-measure-start");
+      if (!startButton) return;
+      startButton.disabled = !attached;
+      startButton.textContent = attached ? "Bắt đầu 30 giây" : "Không thể nối camera";
+    }).catch(() => {
+      cameraState = "FAILED";
+      cameraReason = "CAMERA_PREVIEW_REATTACH_FAILED";
+      void cameraRuntime.stop();
+      updateCameraLiveUi();
+    });
+  }
 }
 
 function wellnessSurveyFields(): string {
@@ -626,15 +775,22 @@ function bindCheckupControls(): void {
       await populateCameraDevices(); updateCameraLiveUi();
     }
   });
+  document.querySelector<HTMLSelectElement>("#camera-device")?.addEventListener("change", () => {
+    if (!cameraRuntime.active) return;
+    showToast("Đang chuyển camera và kiểm tra lại calibration…");
+    document.querySelector<HTMLButtonElement>("#checkup-open-camera")?.click();
+  });
   document.querySelector<HTMLButtonElement>("#checkup-calibrate")?.addEventListener("click", (event) => void startCheckupCalibration(event.currentTarget as HTMLButtonElement));
   document.querySelector("#checkup-measure-next")?.addEventListener("click", () => { checkupStep = 4; renderCheckup(); });
   document.querySelector<HTMLButtonElement>("#checkup-measure-start")?.addEventListener("click", (event) => {
-    if (!cameraRuntime.active || cameraCalibration === null || cameraMeasurementStartedAt !== null) return;
+    if (!cameraRuntime.active || cameraMeasurementStartedAt !== null) return;
     const button = event.currentTarget as HTMLButtonElement; button.disabled = true; button.textContent = "Đang đo…";
     cameraFrames.length = 0; cameraMeasurement = null; cameraMeasurementStartedAt = performance.now();
     cameraMeasurementTicker = window.setInterval(() => {
       if (cameraMeasurementStartedAt === null) return;
-      const remaining = Math.max(0, 30_000 - (performance.now() - cameraMeasurementStartedAt));
+      const elapsed = performance.now() - cameraMeasurementStartedAt;
+      if (elapsed >= 3_000 && cameraFrames.length === 0) { void finishCameraMeasurement("CAMERA_FAILED"); return; }
+      const remaining = Math.max(0, 30_000 - elapsed);
       const element = document.querySelector<HTMLElement>("#camera-countdown"); if (element) element.textContent = `00:${String(Math.ceil(remaining / 1000)).padStart(2, "0")}`;
       if (remaining <= 0) void finishCameraMeasurement("COMPLETED");
     }, 100);
@@ -656,45 +812,102 @@ function bindCheckupControls(): void {
 async function renderCompanion(): Promise<void> {
   const [session, preferences] = await withOperationTimeout(Promise.all([window.eyeMate.getWorkSession(), window.eyeMate.getUserPreferences()]));
   currentPreferences = preferences;
-  setView(`${pageHeading("Work Companion", "Ở đây khi bạn cần tập trung", "Timer Only hoạt động local. Các mode camera được giữ tắt đến khi runtime được xác minh.")}
-    <section class="mode-selector" aria-label="Chọn chế độ"><div class="mode active" role="status"><strong>Timer Only</strong><small>Khả dụng · không camera</small></div><button class="mode" type="button" disabled title="Tính năng này cần camera runtime đã xác minh"><strong>Camera + Timer</strong><small>Chưa khả dụng</small></button><button class="mode" type="button" disabled title="Tính năng này cần camera runtime đã xác minh"><strong>Camera Full</strong><small>Chưa khả dụng</small></button></section>
+  if (session && !["COMPLETED", "CANCELLED", "FAILED"].includes(session.state)) selectedCompanionMode = session.modeId;
+  else selectedCompanionMode = preferences.defaultMode;
+  setView(`${pageHeading("Work Companion", "Ở đây khi bạn cần tập trung", "Nhịp làm việc local, tự nhắc đúng mốc và không phụ thuộc camera.")}
+    ${companionModeSelector(session, preferences)}
     <div class="callout companion-policy"><strong>Chính sách nhắc</strong> · ${preferences.breakReminderEnabled ? "Break reminder bật" : "Break reminder tắt"} · ${preferences.quietHoursEnabled ? `Quiet hours ${minutesToTime(preferences.quietStartMinute)}–${minutesToTime(preferences.quietEndMinute)}` : "Quiet hours tắt"}</div>
     <section class="card session-panel" id="session-panel">${sessionMarkup(session, preferences)}</section>`);
   bindSessionControls(session, preferences);
 }
 
+function customTiming(preferences: UserPreferences): Pick<UserPreferences, "customWorkDurationMinutes" | "customBreakDurationMinutes" | "customReminderAtMinutes"> {
+  return { customWorkDurationMinutes: preferences.customWorkDurationMinutes, customBreakDurationMinutes: preferences.customBreakDurationMinutes, customReminderAtMinutes: preferences.customReminderAtMinutes };
+}
+
+function companionProfile(mode: WorkSession["modeId"], preferences: UserPreferences = currentPreferences ?? { defaultMode: "TIMER_ONLY", customWorkDurationMinutes: 30, customBreakDurationMinutes: 5, customReminderAtMinutes: 25, soundEnabled: false, breakReminderEnabled: true, quietHoursEnabled: false, quietStartMinute: 1320, quietEndMinute: 420, reducedMotion: false }) {
+  const timing = customTiming(preferences);
+  return getCompanionModeProfile(mode, { workDurationMinutes: timing.customWorkDurationMinutes, breakDurationMinutes: timing.customBreakDurationMinutes, reminderAtMinutes: timing.customReminderAtMinutes });
+}
+
+function companionModeSelector(session: WorkSession | null, preferences: UserPreferences): string {
+  const locked = session !== null && !["COMPLETED", "CANCELLED", "FAILED"].includes(session.state);
+  const modes: readonly WorkSession["modeId"][] = ["BALANCED", "DEEP_FOCUS", "HIGH_SUPPORT", "TIMER_ONLY", "CUSTOM"];
+  const items = modes.map((mode) => {
+    const profile = companionProfile(mode, preferences);
+    const active = mode === selectedCompanionMode;
+    return `<button class="mode ${active ? "active" : ""}" data-companion-mode="${mode}" type="button" ${locked ? "disabled" : ""} aria-pressed="${active}"><strong>${escapeHtml(profile.label)}</strong><small>${profile.workDurationMinutes} phút · nhắc ở phút ${profile.reminderAtMinutes}</small></button>`;
+  }).join("");
+  const editor = selectedCompanionMode === "CUSTOM" ? `<section class="card custom-companion-editor" aria-label="Tùy chỉnh thời gian Work Companion"><label>Thời gian tập trung (phút)<input class="field" id="custom-work-minutes" type="number" min="5" max="180" value="${preferences.customWorkDurationMinutes}" ${locked ? "disabled" : ""}></label><label>Nghỉ gợi ý (phút)<input class="field" id="custom-break-minutes" type="number" min="1" max="60" value="${preferences.customBreakDurationMinutes}" ${locked ? "disabled" : ""}></label><label>Nhắc ở phút<input class="field" id="custom-reminder-minutes" type="number" min="1" max="${preferences.customWorkDurationMinutes}" value="${preferences.customReminderAtMinutes}" ${locked ? "disabled" : ""}></label>${locked ? `<span class="status-pill">Khóa khi phiên đang chạy</span>` : `<button class="btn btn-primary" id="custom-timing-save" type="button">Lưu nhịp tùy chỉnh</button>`}<p class="subtle" id="custom-timing-status" aria-live="polite">Tập trung 5–180 phút; thời điểm nhắc không được vượt quá thời gian tập trung.</p></section>` : "";
+  return `<section class="mode-selector" aria-label="Chọn nhịp Work Companion">${items}</section>${editor}`;
+}
+
 function sessionMarkup(session: WorkSession | null, preferences: UserPreferences): string {
-  if (session === null || ["COMPLETED", "CANCELLED", "FAILED"].includes(session.state)) return `<div><p class="label">Sẵn sàng</p><div class="session-timer">00:00:00</div><p class="subtle">Một phiên yên tĩnh, nhắc nghỉ vừa đủ.</p><button class="btn btn-primary" id="session-start" type="button">Bắt đầu phiên</button></div>`;
+  const profile = companionProfile(session && !["COMPLETED", "CANCELLED", "FAILED"].includes(session.state) ? session.modeId : selectedCompanionMode, preferences);
+  if (session === null || ["COMPLETED", "CANCELLED", "FAILED"].includes(session.state)) return `<div><p class="label">Sẵn sàng · ${escapeHtml(profile.label)}</p><div class="session-timer">${String(profile.workDurationMinutes).padStart(2, "0")}:00</div><p class="subtle">${escapeHtml(profile.description)} Nghỉ gợi ý ${profile.breakDurationMinutes} phút; camera không bắt buộc.</p><button class="btn btn-primary" id="session-start" type="button">Bắt đầu phiên</button></div>`;
   if (session.state === "RECOVERY_REQUIRED") return `<div><p class="label">Khôi phục phiên</p><div class="session-timer">${formatDuration(session.elapsedActiveMs)}</div><p class="callout warning">EyeMate đã lưu phiên đang dở. Thời gian trong lúc ứng dụng đóng không được suy thành thời gian làm việc hoặc nghỉ.</p><div class="actions"><button class="btn btn-primary" id="session-recover" type="button">Tiếp tục phiên</button><button class="btn btn-danger" id="session-cancel" type="button">Hủy phiên cũ</button></div></div>`;
   const active = session.state === "ACTIVE";
   activeElapsedBase = session.elapsedActiveMs;
   if (active && activeStartedAt === null) activeStartedAt = performance.now();
   if (!active) activeStartedAt = null;
-  return `<div class="${session.state === "PAUSED" ? "session-paused" : ""}"><p class="label">${session.state === "PAUSED" ? "Đang tạm dừng" : "Phiên đang hoạt động"}</p>${sessionTimerRing(session.elapsedActiveMs)}<p class="subtle">Preset 25 phút · nhắc nghỉ theo cooldown policy · Camera tắt</p><div class="actions"><button class="btn" id="session-toggle" type="button">${active ? "Tạm dừng" : "Tiếp tục"}</button><button class="btn" id="session-nudge" type="button" ${active && preferences.breakReminderEnabled ? "" : `disabled title=\"${preferences.breakReminderEnabled ? "Chỉ khả dụng khi phiên đang chạy" : "Break reminder đang tắt trong Cài đặt"}\"`}>Nhắc tôi nghỉ</button><button class="btn btn-primary" id="session-end" type="button">Hoàn thành</button><button class="btn btn-danger" id="session-cancel" type="button">Hủy phiên</button></div></div>`;
+  const cycle = evaluateCompanionCycle(session.modeId, session.elapsedActiveMs, { workDurationMinutes: preferences.customWorkDurationMinutes, breakDurationMinutes: preferences.customBreakDurationMinutes, reminderAtMinutes: preferences.customReminderAtMinutes });
+  return `<div class="${session.state === "PAUSED" ? "session-paused" : ""}"><p class="label">${session.state === "PAUSED" ? "Đang tạm dừng" : `Đang hoạt động · ${escapeHtml(profile.label)}`}</p>${sessionTimerRing(session.elapsedActiveMs, cycle.targetMs)}<p class="subtle">Mục tiêu ${profile.workDurationMinutes} phút · tự nhắc ở phút ${profile.reminderAtMinutes} · nghỉ gợi ý ${profile.breakDurationMinutes} phút · Camera không bắt buộc</p><div class="actions"><button class="btn" id="session-toggle" type="button">${active ? "Tạm dừng" : "Tiếp tục"}</button><button class="btn" id="session-nudge" type="button" ${active && preferences.breakReminderEnabled ? "" : `disabled title=\"${preferences.breakReminderEnabled ? "Chỉ khả dụng khi phiên đang chạy" : "Break reminder đang tắt trong Cài đặt"}\"`}>Nghỉ mắt ngay</button><button class="btn btn-primary" id="session-end" type="button">Hoàn thành</button><button class="btn btn-danger" id="session-cancel" type="button">Hủy phiên</button></div></div>`;
 }
 
-const SESSION_PRESET_MS = 25 * 60_000;
 const SESSION_RING_CIRCUMFERENCE = 2 * Math.PI * 48;
-function sessionTimerRing(elapsedMs: number): string {
-  const progress = Math.min(1, Math.max(0, elapsedMs / SESSION_PRESET_MS));
+function sessionTimerRing(elapsedMs: number, targetMs: number): string {
+  const progress = Math.min(1, Math.max(0, elapsedMs / targetMs));
   const offset = SESSION_RING_CIRCUMFERENCE * (1 - progress);
-  return `<div class="companion-timer-ring" id="companion-timer-ring" role="timer" aria-label="Đã làm việc ${formatDuration(elapsedMs)} trên preset 25 phút"><svg viewBox="0 0 120 120" aria-hidden="true"><circle class="companion-ring-track" cx="60" cy="60" r="48"></circle><circle class="companion-ring-progress" id="session-ring-progress" cx="60" cy="60" r="48" stroke-dasharray="${SESSION_RING_CIRCUMFERENCE}" stroke-dashoffset="${offset}"></circle></svg><div><strong class="session-timer" id="session-timer">${formatDuration(elapsedMs)}</strong><small>PHIÊN LÀM VIỆC</small></div></div>`;
+  return `<div class="companion-timer-ring" id="companion-timer-ring" role="timer" data-target-ms="${targetMs}" aria-label="Đã làm việc ${formatDuration(elapsedMs)} trên mục tiêu ${formatDuration(targetMs)}"><svg viewBox="0 0 120 120" aria-hidden="true"><circle class="companion-ring-track" cx="60" cy="60" r="48"></circle><circle class="companion-ring-progress" id="session-ring-progress" cx="60" cy="60" r="48" stroke-dasharray="${SESSION_RING_CIRCUMFERENCE}" stroke-dashoffset="${offset}"></circle></svg><div><strong class="session-timer" id="session-timer">${formatDuration(elapsedMs)}</strong><small>ĐÃ TẬP TRUNG</small></div></div>`;
 }
 
 function updateSessionTimerVisual(elapsedMs: number): void {
   const timer = document.querySelector<HTMLElement>("#session-timer"); if (timer) timer.textContent = formatDuration(elapsedMs);
-  const progress = Math.min(1, Math.max(0, elapsedMs / SESSION_PRESET_MS));
+  const ring = document.querySelector<HTMLElement>("#companion-timer-ring");
+  const targetMs = Number(ring?.dataset.targetMs ?? 25 * 60_000);
+  const progress = Math.min(1, Math.max(0, elapsedMs / targetMs));
   document.querySelector<SVGCircleElement>("#session-ring-progress")?.setAttribute("stroke-dashoffset", String(SESSION_RING_CIRCUMFERENCE * (1 - progress)));
-  document.querySelector<HTMLElement>("#companion-timer-ring")?.setAttribute("aria-label", `Đã làm việc ${formatDuration(elapsedMs)} trên preset 25 phút`);
+  ring?.setAttribute("aria-label", `Đã làm việc ${formatDuration(elapsedMs)} trên mục tiêu ${formatDuration(targetMs)}`);
 }
 
-function bindSessionControls(session: WorkSession | null, _preferences: UserPreferences): void {
+function bindSessionControls(session: WorkSession | null, preferences: UserPreferences): void {
   if (sessionTicker !== null) window.clearInterval(sessionTicker);
-  if (session?.state === "ACTIVE") sessionTicker = window.setInterval(() => { if (activeStartedAt !== null) updateSessionTimerVisual(activeElapsedBase + performance.now() - activeStartedAt); }, 250);
-  document.querySelector<HTMLButtonElement>("#session-start")?.addEventListener("click", async (event) => { const result = await runMutation(event.currentTarget as HTMLButtonElement, window.eyeMate.startWorkSession("TIMER_ONLY")); if (result) { activeStartedAt = performance.now(); await renderCompanion(); } });
+  for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>("[data-companion-mode]"))) button.addEventListener("click", async () => {
+    selectedCompanionMode = button.dataset.companionMode as WorkSession["modeId"];
+    if (currentPreferences) currentPreferences = await runMutation(button, window.eyeMate.updateUserPreferences({ ...currentPreferences, defaultMode: selectedCompanionMode }));
+    await renderCompanion();
+  });
+  document.querySelector<HTMLButtonElement>("#custom-timing-save")?.addEventListener("click", async (event) => {
+    const workDurationMinutes = Number(document.querySelector<HTMLInputElement>("#custom-work-minutes")?.value);
+    const breakDurationMinutes = Number(document.querySelector<HTMLInputElement>("#custom-break-minutes")?.value);
+    const reminderAtMinutes = Number(document.querySelector<HTMLInputElement>("#custom-reminder-minutes")?.value);
+    const status = document.querySelector<HTMLElement>("#custom-timing-status");
+    if (!Number.isInteger(workDurationMinutes) || workDurationMinutes < 5 || workDurationMinutes > 180 || !Number.isInteger(breakDurationMinutes) || breakDurationMinutes < 1 || breakDurationMinutes > 60 || !Number.isInteger(reminderAtMinutes) || reminderAtMinutes < 1 || reminderAtMinutes > workDurationMinutes) {
+      if (status) status.textContent = "Giá trị chưa hợp lệ: mốc nhắc phải nằm trong thời gian tập trung.";
+      return;
+    }
+    const saved = await runMutation(event.currentTarget as HTMLButtonElement, window.eyeMate.updateUserPreferences({ ...preferences, defaultMode: "CUSTOM", customWorkDurationMinutes: workDurationMinutes, customBreakDurationMinutes: breakDurationMinutes, customReminderAtMinutes: reminderAtMinutes }), "Đã lưu nhịp tùy chỉnh cục bộ.");
+    if (saved) { currentPreferences = saved; selectedCompanionMode = "CUSTOM"; await renderCompanion(); }
+  });
+  if (session?.state === "ACTIVE") {
+    const profile = companionProfile(session.modeId, preferences);
+    if (scheduledCompanionSessionId !== session.id) {
+      scheduledCompanionSessionId = session.id;
+      nextAutomaticNudgeAtElapsedMs = profile.reminderAtMinutes * 60_000;
+    }
+    latestCompanionElapsedMs = session.elapsedActiveMs;
+    sessionTicker = window.setInterval(() => {
+      if (activeStartedAt === null) return;
+      const elapsedMs = activeElapsedBase + performance.now() - activeStartedAt;
+      latestCompanionElapsedMs = elapsedMs;
+      updateSessionTimerVisual(elapsedMs);
+      void maybeRequestAutomaticNudge(session, elapsedMs);
+    }, 250);
+  }
+  document.querySelector<HTMLButtonElement>("#session-start")?.addEventListener("click", async (event) => { const result = await runMutation(event.currentTarget as HTMLButtonElement, window.eyeMate.startWorkSession(selectedCompanionMode)); if (result) { activeStartedAt = performance.now(); scheduledCompanionSessionId = null; await renderCompanion(); } });
   document.querySelector<HTMLButtonElement>("#session-toggle")?.addEventListener("click", async (event) => { if (!session) return; const result = await runMutation(event.currentTarget as HTMLButtonElement, session.state === "ACTIVE" ? window.eyeMate.pauseWorkSession() : window.eyeMate.resumeWorkSession()); if (result) { activeElapsedBase = result.elapsedActiveMs; activeStartedAt = null; await renderCompanion(); } });
   document.querySelector<HTMLButtonElement>("#session-recover")?.addEventListener("click", async (event) => { const result = await runMutation(event.currentTarget as HTMLButtonElement, window.eyeMate.resumeWorkSession(), "Phiên đã được khôi phục."); if (result) await renderCompanion(); });
-  document.querySelector<HTMLButtonElement>("#session-nudge")?.addEventListener("click", async (event) => { const decision = await runMutation(event.currentTarget as HTMLButtonElement, window.eyeMate.requestBreakNudge()); if (!decision) return; if (decision.action === "EMIT") { currentNudgeId = decision.nudgeId; showNudge(); } else showToast(`Chưa nhắc lúc này: ${humanLabel(decision.reason)}${decision.cooldownRemainingMs > 0 ? ` (${Math.ceil(decision.cooldownRemainingMs / 60_000)} phút)` : ""}.`); });
+  document.querySelector<HTMLButtonElement>("#session-nudge")?.addEventListener("click", async (event) => { await requestCompanionNudge(event.currentTarget as HTMLButtonElement, false); });
   document.querySelector("#session-end")?.addEventListener("click", () => {
     showModal("Kết thúc phiên?", "<p class=\"subtle\">EyeMate sẽ lưu Session Summary cục bộ. Dữ liệu camera không tồn tại trong phiên Timer Only.</p>", "<button class=\"btn btn-primary\" id=\"confirm-session-end\" type=\"button\">Lưu và kết thúc</button>");
     document.querySelector<HTMLButtonElement>("#confirm-session-end")?.addEventListener("click", async (event) => { const finished = await runMutation(event.currentTarget as HTMLButtonElement, window.eyeMate.finishWorkSession()); if (!finished) return; closeModal(); activeStartedAt = null; showSessionSummary(finished); });
@@ -705,9 +918,68 @@ function bindSessionControls(session: WorkSession | null, _preferences: UserPref
   });
 }
 
+async function maybeRequestAutomaticNudge(session: WorkSession, elapsedMs: number): Promise<void> {
+  if (session.state !== "ACTIVE" || nextAutomaticNudgeAtElapsedMs === null || elapsedMs < nextAutomaticNudgeAtElapsedMs || companionNudgeRequestInFlight) return;
+  nextAutomaticNudgeAtElapsedMs = null;
+  await requestCompanionNudge(null, true);
+}
+
+async function monitorCompanionSession(): Promise<void> {
+  try {
+    const session = await window.eyeMate.getWorkSession();
+    if (!session || session.state !== "ACTIVE") {
+      if (!session || ["COMPLETED", "CANCELLED", "FAILED"].includes(session.state)) {
+        scheduledCompanionSessionId = null;
+        nextAutomaticNudgeAtElapsedMs = null;
+      }
+      return;
+    }
+    const preferences = currentPreferences ?? await window.eyeMate.getUserPreferences();
+    currentPreferences = preferences;
+    selectedCompanionMode = session.modeId;
+    if (scheduledCompanionSessionId !== session.id) {
+      const profile = companionProfile(session.modeId, preferences);
+      scheduledCompanionSessionId = session.id;
+      nextAutomaticNudgeAtElapsedMs = profile.reminderAtMinutes * 60_000;
+    }
+    latestCompanionElapsedMs = session.elapsedActiveMs;
+    if (routeFromHash() === "companion") updateSessionTimerVisual(session.elapsedActiveMs);
+    await maybeRequestAutomaticNudge(session, session.elapsedActiveMs);
+  } catch {
+    // Route-level error handling remains authoritative; background monitoring retries.
+  }
+}
+
+function startCompanionMonitor(): void {
+  if (companionMonitor !== null) return;
+  companionMonitor = window.setInterval(() => void monitorCompanionSession(), 1_000);
+  void monitorCompanionSession();
+}
+
+async function requestCompanionNudge(button: HTMLButtonElement | null, automatic: boolean): Promise<void> {
+  if (companionNudgeRequestInFlight) return;
+  companionNudgeRequestInFlight = true;
+  try {
+    const decision = await runMutation(button, window.eyeMate.requestBreakNudge());
+    if (!decision) return;
+    if (decision.action === "EMIT") {
+      currentNudgeId = decision.nudgeId;
+      showNudge();
+      return;
+    }
+    if (automatic) {
+      if (decision.reason === "COOLDOWN" && decision.cooldownRemainingMs > 0) nextAutomaticNudgeAtElapsedMs = latestCompanionElapsedMs + decision.cooldownRemainingMs;
+      else if (!["NUDGE_DISABLED", "FREQUENCY_CAP"].includes(decision.reason)) nextAutomaticNudgeAtElapsedMs = latestCompanionElapsedMs + 60_000;
+    } else showToast(`Chưa nhắc lúc này: ${humanLabel(decision.reason)}${decision.cooldownRemainingMs > 0 ? ` (${Math.ceil(decision.cooldownRemainingMs / 60_000)} phút)` : ""}.`);
+  } finally {
+    companionNudgeRequestInFlight = false;
+  }
+}
+
 function showNudge(): void {
   if (toastRegion === null || currentNudgeId === null) return;
-  toastRegion.innerHTML = `<aside class="toast" aria-label="Nhắc nghỉ"><p class="label">Một chút cho đôi mắt</p><strong>Nhìn xa và thả lỏng trong chốc lát?</strong><div class="actions" style="margin-top:12px"><button class="btn btn-primary" data-nudge="ACCEPTED" type="button">Nghỉ ngay</button><button class="btn" data-nudge="SNOOZED" type="button">Nhắc sau 5 phút</button><button class="btn btn-ghost" data-nudge="DISMISSED" type="button">Bỏ qua</button></div></aside>`;
+  const profile = companionProfile(selectedCompanionMode);
+  toastRegion.innerHTML = `<aside class="toast" aria-label="Nhắc nghỉ"><p class="label">Một chút cho đôi mắt · ${escapeHtml(profile.label)}</p><strong>Nhìn xa và thả lỏng trong 20 giây?</strong><div class="actions" style="margin-top:12px"><button class="btn btn-primary" data-nudge="ACCEPTED" type="button">Nghỉ ngay</button><button class="btn" data-nudge="SNOOZED" type="button">Nhắc sau ${profile.snoozeMinutes} phút</button><button class="btn btn-ghost" data-nudge="DISMISSED" type="button">Bỏ qua</button></div></aside>`;
   for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>("[data-nudge]"))) button.addEventListener("click", () => void respondNudge(button.dataset.nudge as NudgeResponse));
   document.addEventListener("click", dismissNudgeOutside, { once: true, capture: true });
   if (currentPreferences?.soundEnabled === true) playNudgeTone();
@@ -731,21 +1003,92 @@ function playNudgeTone(): void {
 }
 
 function dismissNudgeOutside(event: Event): void { if (!(event.target as Element | null)?.closest(".toast")) void respondNudge("DISMISSED"); }
-async function respondNudge(response: NudgeResponse): Promise<void> { if (currentNudgeId === null) return; const handled = await runMutation(null, window.eyeMate.respondToNudge(currentNudgeId, response)); currentNudgeId = null; toastRegion?.replaceChildren(); if (handled === true) showToast(response === "ACCEPTED" ? "Đã ghi nhận: nghỉ ngay." : response === "SNOOZED" ? "Đã ghi nhận: nhắc lại sau." : "Đã bỏ qua lời nhắc."); }
+async function respondNudge(response: NudgeResponse): Promise<void> {
+  if (currentNudgeId === null) return;
+  const handled = await runMutation(null, window.eyeMate.respondToNudge(currentNudgeId, response));
+  currentNudgeId = null;
+  toastRegion?.replaceChildren();
+  if (handled !== true) return;
+  const profile = companionProfile(selectedCompanionMode);
+  if (response === "SNOOZED") {
+    nextAutomaticNudgeAtElapsedMs = latestCompanionElapsedMs + profile.snoozeMinutes * 60_000;
+    showToast(`Sẽ nhắc lại sau ${profile.snoozeMinutes} phút làm việc.`);
+    return;
+  }
+  if (response === "DISMISSED") {
+    nextAutomaticNudgeAtElapsedMs = latestCompanionElapsedMs + profile.cooldownMinutes * 60_000;
+    showToast("Đã bỏ qua lời nhắc; cooldown vẫn được tôn trọng.");
+    return;
+  }
+  if (response === "ACCEPTED") {
+    const paused = await runMutation(null, window.eyeMate.pauseWorkSession());
+    if (paused) { activeStartedAt = null; showEyeRestBreak(profile.breakDurationMinutes); }
+  }
+}
+
+function showEyeRestBreak(suggestedBreakMinutes: number): void {
+  let remainingSeconds = 20;
+  showModal("Nghỉ mắt 20 giây", `<div class="eye-rest-break"><strong id="eye-rest-countdown">00:20</strong><p>Nhìn ra xa, thả lỏng vai và chớp mắt tự nhiên.</p><small>Phiên đang tạm dừng. Sau nhịp ngắn này, bạn có thể nghỉ tiếp đến ${suggestedBreakMinutes} phút.</small></div>`, `<button class="btn btn-primary" id="eye-rest-resume" type="button" disabled>Tiếp tục sau 20 giây</button>`);
+  const countdown = window.setInterval(() => {
+    remainingSeconds -= 1;
+    const output = document.querySelector<HTMLElement>("#eye-rest-countdown");
+    if (output) output.textContent = `00:${String(Math.max(0, remainingSeconds)).padStart(2, "0")}`;
+    if (remainingSeconds > 0) return;
+    window.clearInterval(countdown);
+    const resume = document.querySelector<HTMLButtonElement>("#eye-rest-resume");
+    if (resume) { resume.disabled = false; resume.textContent = "Tiếp tục phiên"; }
+  }, 1_000);
+  document.querySelector<HTMLButtonElement>("#eye-rest-resume")?.addEventListener("click", async (event) => {
+    const resumed = await runMutation(event.currentTarget as HTMLButtonElement, window.eyeMate.resumeWorkSession());
+    if (!resumed) return;
+    closeModal();
+    activeStartedAt = performance.now();
+    activeElapsedBase = resumed.elapsedActiveMs;
+    await renderCompanion();
+  });
+}
 function showSessionSummary(session: WorkSession): void { showModal("Phiên đã hoàn thành", `<div class="grid grid-2"><div class="callout success"><span class="label">Tổng thời gian</span><strong class="metric-value">${formatDuration(session.elapsedActiveMs)}</strong></div><div class="callout"><span class="label">Dữ liệu camera</span><strong>Không đo</strong></div></div><p class="subtle" style="margin-top:16px">Session Summary đã lưu cục bộ. So sánh baseline cần thêm dữ liệu hợp lệ.</p>`, "<a class=\"btn btn-primary\" href=\"#/reports\">Xem báo cáo</a>"); document.querySelector(".modal a")?.addEventListener("click", closeModal); }
 
 async function renderIntelligence(): Promise<void> {
-  const reports = await withOperationTimeout(window.eyeMate.listM3Reports());
+  const [reports, summaries] = await withOperationTimeout(Promise.all([window.eyeMate.listM3Reports(), window.eyeMate.listSessionSummaries()]));
   const report = reports.at(-1);
-  setView(`${pageHeading("Personal Intelligence", "Hiểu nhịp làm việc của riêng bạn", "Baseline, pattern và VLI chỉ xuất hiện khi evidence đủ; đây không phải chẩn đoán.", `<a class="btn" href="#/reports">Mở báo cáo</a>`)}${intelligenceContent(report)}`);
-  document.querySelector("#intelligence-refresh")?.addEventListener("click", () => { location.hash = "#/reports"; });
+  const rhythm = buildWorkRhythm(summaries, intelligenceRange);
+  setView(`${pageHeading("Personal Intelligence", "Hiểu nhịp làm việc của riêng bạn", "Tóm tắt các phiên EyeMate đã ghi nhận, giải thích bằng ngôn ngữ đời thường và không suy đoán thời gian ngoài ứng dụng.", `<button class="btn" id="intelligence-refresh" type="button">Cập nhật dữ liệu</button>`)}<div class="tabs intelligence-range" role="tablist" aria-label="Khoảng thời gian thấu hiểu"><button class="tab ${intelligenceRange === 7 ? "active" : ""}" data-intelligence-range="7" role="tab" aria-selected="${intelligenceRange === 7}" type="button">7 ngày gần nhất</button><button class="tab ${intelligenceRange === 30 ? "active" : ""}" data-intelligence-range="30" role="tab" aria-selected="${intelligenceRange === 30}" type="button">30 ngày gần nhất</button></div>${intelligenceContent(report, rhythm)}`);
+  document.querySelector<HTMLButtonElement>("#intelligence-refresh")?.addEventListener("click", async (event) => {
+    const result = await runMutation(event.currentTarget as HTMLButtonElement, window.eyeMate.generateM3Report(), "Đã tạo dữ liệu tổng hợp cục bộ.");
+    if (result) await renderIntelligence();
+  });
+  for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>("[data-intelligence-range]"))) button.addEventListener("click", () => { intelligenceRange = Number(button.dataset.intelligenceRange) === 30 ? 30 : 7; void renderIntelligence(); });
   document.querySelector("#intelligence-reset")?.addEventListener("click", showResetBaselineDialog);
 }
 
-function intelligenceContent(report: PersonalReport | undefined): string {
-  if (!report) return `<section class="card empty-state"><div><div class="empty-icon" aria-hidden="true">⌁</div><h2>Baseline chưa bắt đầu</h2><p class="subtle">Tạo report từ dữ liệu checkup hoặc session để bắt đầu trạng thái learning.</p><button class="btn btn-primary" id="intelligence-refresh" type="button">Tạo dữ liệu tổng hợp</button></div></section>`;
-  const pattern = report.daily.patterns[0];
-  return `<div class="grid grid-2"><article class="card"><p class="label">Baseline cá nhân</p><strong class="metric-value">${humanLabel(report.baseline.state)}</strong><p class="subtle">${report.baseline.sampleCount} mẫu hợp lệ · coverage ${Math.round(report.baseline.coverage * 100)}%</p><div class="session-progress"><span style="--progress:${Math.round(report.baseline.coverage * 100)}%"></span></div><button class="btn btn-ghost" id="intelligence-reset" type="button">Reset baseline</button></article><article class="card"><p class="label">Visual Load Index</p><strong class="metric-value">${report.daily.vli.score === null ? "—" : Math.round(report.daily.vli.score)}</strong><p class="subtle">Data confidence ${Math.round(report.daily.vli.dataConfidence * 100)}%. Missing không được tính như 0 hoặc trạng thái tốt.</p></article><article class="card"><p class="label">Pattern hiện tại</p><h2>${pattern ? humanLabel(pattern.status) : "chưa đủ dữ liệu"}</h2><p class="subtle">Evidence: ${pattern?.evidence.map(humanLabel).join(", ") || "không có"}. Thiếu: ${pattern?.missingData.map(humanLabel).join(", ") || "không có"}.</p></article><article class="card"><p class="label">Limitation</p><h2>Camera metrics chưa xác minh</h2><p class="subtle">Blink và distance không đóng góp vào baseline/VLI hiện tại. Không có disease score hoặc clinical severity.</p></article></div>`;
+function intelligenceContent(report: PersonalReport | undefined, rhythm: WorkRhythmSummary): string {
+  const load = trackedLoadCopy(rhythm);
+  const baselineReady = report?.baseline.state === "READY";
+  const baselineText = baselineReady ? `Đã có ${report.baseline.sampleCount} phiên hợp lệ để hình thành nhịp tham chiếu; thời lượng thường thấy khoảng ${Math.round(report.baseline.meanSessionDurationMinutes ?? 0)} phút.` : `Baseline vẫn đang học${report ? ` từ ${report.baseline.sampleCount} phiên hợp lệ` : ""}. Cần ít nhất 3 phiên hoàn tất để bắt đầu so sánh.`;
+  const vliText = report?.daily.vli.score === null || report?.daily.vli.score === undefined ? "Chưa đủ thành phần để tính tải thị giác tổng hợp; EyeMate không biến dữ liệu thiếu thành điểm 0." : `Chỉ số tải thị giác tổng hợp gần nhất là ${Math.round(report.daily.vli.score)}/100 với độ phủ ${Math.round(report.daily.vli.dataConfidence * 100)}%.`;
+  const scheduleText = rhythm.preferredPeriod && rhythm.mostActiveWeekday ? `Các phiên thường bắt đầu vào buổi ${rhythm.preferredPeriod.toLocaleLowerCase("vi-VN")}; ${rhythm.mostActiveWeekday} là ngày có nhiều phút được ghi nhận nhất.` : "Chưa đủ ngày có phiên để nhận ra khung giờ hoặc ngày làm việc thường gặp.";
+  const longSessionText = rhythm.longSessionCount > 0 ? `${rhythm.longSessionCount} phiên kéo dài từ 90 phút trở lên; phiên dài nhất ${formatMinutesHuman(rhythm.longestSessionMinutes)}.` : rhythm.completedSessions > 0 ? `Phiên dài nhất ${formatMinutesHuman(rhythm.longestSessionMinutes)}; chưa thấy phiên nào từ 90 phút trở lên trong khoảng này.` : "Chưa có phiên hoàn tất trong khoảng đã chọn.";
+  return `<section class="intelligence-summary-band ${load.tone}"><div><p class="eyebrow">Nhận định từ dữ liệu đã ghi nhận</p><h2>${load.title}</h2><p>${load.detail}</p></div><span class="result-stamp">${rhythm.activeDays}/${rhythm.dayCount} ngày có phiên</span></section>
+    <div class="intelligence-stats"><article class="card"><span class="label">Tổng thời gian</span><strong>${formatMinutesHuman(rhythm.totalMinutes)}</strong><small>${rhythm.completedSessions} phiên hoàn tất</small></article><article class="card"><span class="label">Mỗi ngày có phiên</span><strong>${formatMinutesHuman(rhythm.averageActiveDayMinutes)}</strong><small>Không tính ngày không mở phiên</small></article><article class="card"><span class="label">Một phiên trung bình</span><strong>${formatMinutesHuman(rhythm.averageSessionMinutes)}</strong><small>Phiên dài nhất ${formatMinutesHuman(rhythm.longestSessionMinutes)}</small></article><article class="card"><span class="label">So với 7 ngày trước</span><strong>${trendLabel(rhythm)}</strong><small>Chỉ so thời gian EyeMate ghi nhận</small></article></div>
+    <section class="card intelligence-chart-panel"><div class="intelligence-section-heading"><div><p class="label">Thời gian làm việc đã ghi nhận</p><h2>${rhythm.dayCount} ngày gần nhất</h2></div><span>${rhythm.activeDays} ngày có dữ liệu</span></div>${workRhythmChart(rhythm)}<p class="subtle">Mỗi cột là tổng phút của các phiên hoàn tất trong ngày. Ngày trống có thể là không dùng EyeMate, không có nghĩa là bạn không làm việc.</p></section>
+    <div class="grid grid-2 intelligence-story"><article class="card"><p class="label">Lịch thường thấy</p><h2>${rhythm.preferredPeriod ? `Nghiêng về buổi ${rhythm.preferredPeriod.toLocaleLowerCase("vi-VN")}` : "Chưa hình thành lịch rõ"}</h2><p>${scheduleText}</p></article><article class="card"><p class="label">Phiên liên tục</p><h2>${rhythm.longSessionCount > 0 ? "Nên chia nhỏ một số phiên" : rhythm.completedSessions ? "Chưa thấy phiên quá dài" : "Chưa đủ dữ liệu"}</h2><p>${longSessionText}</p></article></div>
+    <details class="card intelligence-method"><summary>Dữ liệu này được hiểu như thế nào?</summary><div class="grid grid-2"><div><h3>Nhịp tham chiếu cá nhân</h3><p>${baselineText}</p></div><div><h3>Tải thị giác tổng hợp</h3><p>${vliText}</p></div></div><p>Biểu đồ chỉ đọc Session Summary của phiên hoàn tất. Phiên hủy bị loại; giờ bắt đầu được ước tính từ thời điểm kết thúc và thời lượng phiên. Checkup camera vẫn được lưu trong payload checkup nhưng chưa được dùng để suy lịch làm việc.</p><p class="callout warning">“Khối lượng cao” chỉ được gắn khi trung bình ngày có phiên đạt 4 giờ hoặc một ngày đạt 6 giờ trong dữ liệu EyeMate. Đây không phải kết luận y tế hay khẳng định bạn làm việc quá sức.</p>${report ? `<div class="actions"><button class="btn btn-ghost" id="intelligence-reset" type="button">Reset nhịp tham chiếu</button><a class="text-link" href="#/reports">Xem report kỹ thuật</a></div>` : ""}</details>`;
+}
+
+function trackedLoadCopy(rhythm: WorkRhythmSummary): { readonly title: string; readonly detail: string; readonly tone: string } {
+  if (rhythm.loadSignal === "HIGH_TRACKED_LOAD") return { title: "Khối lượng EyeMate ghi nhận đang cao", detail: "Ưu tiên chia thời gian thành các phiên ngắn hơn và tạo khoảng nghỉ thật giữa các phiên. Đây chỉ là phần thời gian bạn đã bật EyeMate.", tone: "is-high" };
+  if (rhythm.loadSignal === "LONG_SESSIONS") return { title: "Có phiên liên tục khá dài", detail: "Tổng thời gian chưa nhất thiết cao, nhưng phiên từ 90 phút trở lên nên được chia nhỏ để có nhịp nghỉ rõ hơn.", tone: "is-watch" };
+  if (rhythm.loadSignal === "STEADY") return { title: "Nhịp ghi nhận tương đối đều", detail: "Chưa thấy tín hiệu phiên quá dài hoặc khối lượng cao theo ngưỡng của EyeMate trong khoảng đã chọn.", tone: "is-steady" };
+  return { title: "Cần thêm ngày để hiểu nhịp của bạn", detail: "EyeMate cần ít nhất 3 ngày có phiên hoàn tất trong khoảng đã chọn trước khi nhận xét về khối lượng hoặc sự ổn định.", tone: "is-learning" };
+}
+
+function formatMinutesHuman(minutes: number): string { const safe = Math.max(0, Math.round(minutes)); return safe >= 60 ? `${Math.floor(safe / 60)} giờ ${safe % 60 ? `${safe % 60} phút` : ""}`.trim() : `${safe} phút`; }
+function trendLabel(rhythm: WorkRhythmSummary): string { if (rhythm.trend === "NO_COMPARISON" || rhythm.trendPercent === null) return "Chưa đủ để so"; if (rhythm.trend === "STABLE") return "Gần như ổn định"; return `${rhythm.trend === "UP" ? "Tăng" : "Giảm"} ${Math.abs(rhythm.trendPercent)}%`; }
+function workRhythmChart(rhythm: WorkRhythmSummary): string {
+  const maximum = Math.max(1, ...rhythm.days.map((day) => day.minutes));
+  const bars = rhythm.days.map((day, index) => { const height = day.minutes === 0 ? 2 : Math.max(6, Math.round(day.minutes / maximum * 100)); const showLabel = rhythm.dayCount === 7 || index === 0 || index === rhythm.days.length - 1 || index % 5 === 0; return `<span class="rhythm-day" tabindex="0" role="img" aria-label="${escapeHtml(day.label)}: ${day.minutes} phút, ${day.sessionCount} phiên"><i style="--bar-height:${height}%"></i><small>${showLabel ? escapeHtml(day.label) : ""}</small><title>${escapeHtml(day.label)} · ${day.minutes} phút · ${day.sessionCount} phiên</title></span>`; }).join("");
+  return `<div class="work-rhythm-chart ${rhythm.dayCount === 30 ? "is-month" : ""}" style="--rhythm-days:${rhythm.dayCount}" role="group" aria-label="Biểu đồ thời gian làm việc ${rhythm.dayCount} ngày">${bars}</div>`;
 }
 
 async function renderReports(): Promise<void> {
@@ -792,7 +1135,7 @@ async function renderPrivacy(): Promise<void> {
   const canWithdraw = summary.cameraConsentDecision === "GRANTED";
   setView(`${pageHeading("Privacy Center", "Dữ liệu của bạn, ở thiết bị của bạn", "Không account, không cloud và không lưu raw camera data.")}
     <div class="grid grid-2"><section class="card setting-group"><div class="setting-row"><div><label>Camera consent</label><small>${humanLabel(summary.cameraConsentDecision)} · ${humanLabel(summary.cameraState)}</small></div><button class="toggle" id="camera-consent-toggle" type="button" aria-label="Rút consent camera" aria-pressed="${canWithdraw}" ${canWithdraw ? "" : "disabled title=\"Không có camera consent đang hoạt động\""}></button></div><div class="setting-row"><div><label>Dữ liệu local</label><small>Thư mục dữ liệu ứng dụng · đường dẫn đầy đủ được ẩn</small></div><span class="status-pill">Local</span></div><div class="setting-row"><div><label>Network verification</label><small>Static inspection PASS; dynamic WPR UNKNOWN</small></div><span class="status-pill warning">UNKNOWN</span></div></section><section class="card"><p class="label">Cam kết dữ liệu</p><h2>Raw frame không được lưu</h2><p class="subtle">Video, landmark và raw per-frame series không đi vào database, log hoặc evidence. Dynamic egress chưa được chứng minh do giới hạn host policy.</p></section></div>
-    <section class="inventory-section"><p class="label">Dữ liệu đang lưu</p><div class="grid grid-4">${inventory.map(inventoryCard).join("")}</div><p class="subtle">Sensitive payload được mã hóa local bằng AES-256-GCM; khóa được Windows bảo vệ. Pilot vẫn chờ Security/Privacy phê duyệt theo ADR-005.</p></section>
+    <section class="inventory-section"><p class="label">Dữ liệu đang lưu</p><div class="grid grid-4">${inventory.map(inventoryCard).join("")}</div><p class="subtle">Các con số là số thực thể người dùng nhìn thấy: một phiên chỉ được đếm một lần, không cộng lại Session Summary hoặc aggregate kỹ thuật đi kèm. Sensitive payload được mã hóa local bằng AES-256-GCM; khóa được Windows bảo vệ.</p></section>
     <section class="card data-actions"><p class="label">Quản lý dữ liệu</p><div class="actions"><button class="btn" id="privacy-export" type="button">Preview & export</button><select class="field" id="privacy-export-format" aria-label="Định dạng export"><option value="MARKDOWN">Markdown</option><option value="JSON">JSON</option></select><button class="btn" id="privacy-reset-baseline" type="button">Reset baseline</button><button class="btn" id="privacy-reset-calibration" type="button">Reset calibration</button><button class="btn btn-danger" id="privacy-delete" type="button">Xóa toàn bộ dữ liệu</button></div><p class="subtle section-note">File export bên ngoài ứng dụng không được xóa tự động. Reset và delete là các action độc lập.</p></section>`);
   const pdfOption = document.createElement("option"); pdfOption.value = "PDF"; pdfOption.textContent = "PDF"; document.querySelector<HTMLSelectElement>("#privacy-export-format")?.append(pdfOption);
   document.querySelector<HTMLButtonElement>("#camera-consent-toggle")?.addEventListener("click", async (event) => { const result = await runMutation(event.currentTarget as HTMLButtonElement, window.eyeMate.withdrawCameraConsent()); if (result !== null) { showToast("Consent camera đã được rút. History cũ chưa bị xóa."); await renderPrivacy(); } });
@@ -802,7 +1145,10 @@ async function renderPrivacy(): Promise<void> {
   document.querySelector("#privacy-delete")?.addEventListener("click", showDeleteStepOne);
 }
 
-function inventoryCard(item: DataInventoryItem): string { return `<article class="card inventory-card"><span class="label">${humanLabel(item.category)}</span><strong class="metric-value">${item.recordCount}</strong><p class="subtle">${escapeHtml(item.purpose)}<br>Local · đến khi bạn xóa</p></article>`; }
+function inventoryCard(item: DataInventoryItem): string {
+  const units: Readonly<Record<DataInventoryItem["category"], string>> = { CHECKUP: "lần checkup", SESSION: "phiên", NUDGE: "lời nhắc", REPORT: "ngày có report", PREFERENCE: "bộ cài đặt", CALIBRATION: "profile" };
+  return `<article class="card inventory-card"><span class="label">${humanLabel(item.category)}</span><strong class="metric-value">${item.recordCount}</strong><span>${units[item.category]}</span><p class="subtle">${escapeHtml(item.purpose)}<br>Local · đến khi bạn xóa</p></article>`;
+}
 
 function showDeleteStepOne(): void { showModal("Xóa toàn bộ dữ liệu cục bộ?", "<p class=\"subtle\">Hành động này xóa onboarding, consent, session, report và aggregate do EyeMate quản lý. File export ngoài ứng dụng không bị xóa.</p><p class=\"callout warning\">Bước 1/2 · Không thể hoàn tác trong ứng dụng.</p>", "<button class=\"btn btn-danger\" id=\"delete-next\" type=\"button\">Tôi hiểu, tiếp tục</button>"); document.querySelector("#delete-next")?.addEventListener("click", showDeleteStepTwo); }
 function showDeleteStepTwo(): void { showModal("Xác nhận lần cuối", "<p class=\"subtle\">Chọn “Xóa dữ liệu” để thực hiện ngay trên storage cục bộ.</p><p class=\"callout error\">Bước 2/2 · EyeMate sẽ báo kết quả thật.</p>", "<button class=\"btn btn-danger\" id=\"delete-confirm\" type=\"button\">Xóa dữ liệu</button>"); document.querySelector<HTMLButtonElement>("#delete-confirm")?.addEventListener("click", async (event) => { const result = await runMutation(event.currentTarget as HTMLButtonElement, window.eyeMate.deleteAllLocalData()); if (!result) return; closeModal(); showToast(`Kết quả xóa: ${result}.`, result === "DELETED" ? "default" : "warning"); await renderPrivacy(); }); }
@@ -812,12 +1158,12 @@ async function renderSettings(): Promise<void> {
   currentPreferences = preferences;
   applyPreferences(preferences);
   setView(`${pageHeading("Settings", "Điều chỉnh theo nhịp của bạn", "Mọi preference được tự lưu vào SQLite cục bộ sau 500ms.")}
-    <div class="grid grid-2"><section class="card setting-group"><p class="label">Appearance & accessibility</p><div class="setting-row"><div><label for="appearance">Giao diện</label><small>Clarity Grid light đang là giao diện production</small></div><select class="field" id="appearance" disabled><option>Clarity light</option></select></div><div class="setting-row"><div><label>Giảm chuyển động</label><small>Tắt reveal, ripple và chuyển động không thiết yếu</small></div><button class="toggle" id="reduced-motion-toggle" type="button" aria-label="Bật giảm chuyển động" aria-pressed="${preferences.reducedMotion}"></button></div></section>
+    <div class="grid grid-2"><section class="card setting-group"><p class="label">Appearance & accessibility</p><div class="setting-row"><div><strong>Giao diện</strong><small>Clarity Grid light đang là giao diện production</small></div><span class="status-pill">Clarity light</span></div><div class="setting-row"><div><label>Giảm chuyển động</label><small>Tắt reveal, ripple và chuyển động không thiết yếu</small></div><button class="toggle" id="reduced-motion-toggle" type="button" aria-label="Bật giảm chuyển động" aria-pressed="${preferences.reducedMotion}"></button></div></section>
     <section class="card setting-group"><p class="label">Notifications</p><div class="setting-row"><div><label>Break reminder</label><small>Nối trực tiếp vào nudge policy</small></div><button class="toggle" id="break-reminder-toggle" type="button" aria-label="Bật nhắc nghỉ" aria-pressed="${preferences.breakReminderEnabled}"></button></div><div class="setting-row"><div><label>Âm thanh nudge</label><small>Âm báo ngắn được tạo cục bộ; tắt mặc định</small></div><button class="toggle" id="sound-toggle" type="button" aria-label="Bật âm thanh nudge" aria-pressed="${preferences.soundEnabled}"></button></div></section>
     <section class="card setting-group"><p class="label">Quiet hours</p><div class="setting-row"><div><label>Không làm phiền</label><small>Nudge không khẩn sẽ bị policy abstain</small></div><button class="toggle" id="quiet-toggle" type="button" aria-label="Bật quiet hours" aria-pressed="${preferences.quietHoursEnabled}"></button></div><div class="setting-row"><label for="quiet-start">Bắt đầu</label><input class="field" id="quiet-start" type="time" value="${minutesToTime(preferences.quietStartMinute)}" ${preferences.quietHoursEnabled ? "" : "disabled"}></div><div class="setting-row"><label for="quiet-end">Kết thúc</label><input class="field" id="quiet-end" type="time" value="${minutesToTime(preferences.quietEndMinute)}" ${preferences.quietHoursEnabled ? "" : "disabled"}></div></section>
-    <section class="card setting-group"><p class="label">Work session</p><div class="setting-row"><div><label for="default-mode">Mode mặc định</label><small>Camera modes bị khóa bởi ADR-004</small></div><select class="field" id="default-mode" disabled><option>Timer Only</option></select></div><div class="callout success">Timer Only luôn hoạt động khi camera off.</div></section>
+    <section class="card setting-group"><p class="label">Work session</p><div class="setting-row"><div><strong>Mode mặc định</strong><small>Chọn trực tiếp tại màn hình Đồng hành</small></div><a class="text-link" href="#/companion">${escapeHtml(companionProfile(preferences.defaultMode, preferences).label)}</a></div><div class="callout success">Mọi mode Work Companion hoạt động không cần camera.</div></section>
     <section class="card setting-group" id="settings-camera-calibration"><p class="label">Hiệu chỉnh camera</p><div class="setting-row"><div><strong>${calibration === null ? "Chưa hiệu chỉnh" : `Đã hiệu chỉnh · ${humanLabel(calibration.confidence)}`}</strong><small>${calibration === null ? "Profile gắn với camera giúp phân loại zone; không xuất centimet." : `${calibration.validSampleCount} mẫu hợp lệ · ${safeDate(calibration.profile.calibratedAt)}`}</small></div><span class="status-pill ${calibration === null ? "warning" : ""}">${calibration === null ? "UNKNOWN" : "LOCAL"}</span></div><div class="actions"><button class="btn btn-primary" id="settings-calibrate-camera" type="button">${calibration === null ? "Hiệu chỉnh camera" : "Hiệu chỉnh lại"}</button>${calibration === null ? "" : `<button class="btn" id="settings-reset-calibration" type="button">Reset</button>`}</div><p class="subtle">Camera chỉ mở sau hành động này và consent rõ ràng. Raw frame/landmark không được lưu; chỉ aggregate profile được mã hóa cục bộ.</p></section>
-    <section class="card setting-group"><p class="label">Data & reset</p><div class="setting-row"><div><label for="retention">Retention</label><small>Giữ local đến khi người dùng xóa; D-013 chưa final</small></div><select class="field" id="retention" disabled><option>Đến khi tôi xóa</option></select></div><div class="actions"><button class="btn" id="settings-reset-baseline" type="button">Reset baseline</button><a class="btn btn-danger" href="#/privacy">Quản lý/xóa dữ liệu</a></div></section>
+    <section class="card setting-group"><p class="label">Data & reset</p><div class="setting-row"><div><strong>Retention</strong><small>Giữ local đến khi người dùng xóa; D-013 chưa final</small></div><span class="status-pill">Đến khi tôi xóa</span></div><div class="actions"><button class="btn" id="settings-reset-baseline" type="button">Reset baseline</button><a class="btn btn-danger" href="#/privacy">Quản lý/xóa dữ liệu</a></div></section>
     <section class="card"><p class="label">About</p><h2>EyeMate ${escapeHtml(runtime.applicationVersion)}</h2><p class="subtle">Channel: internal unsigned engineering · ${runtime.mode.replaceAll("_", " ")}<br>Không phải thiết bị y tế hoặc công cụ chẩn đoán.</p></section></div><p id="settings-save-status" class="save-status" aria-live="polite">Cài đặt đã đồng bộ từ storage cục bộ.</p>`);
   bindPreferenceToggle("sound-toggle"); bindPreferenceToggle("break-reminder-toggle"); bindPreferenceToggle("reduced-motion-toggle"); bindPreferenceToggle("quiet-toggle", true);
   document.querySelector("#quiet-start")?.addEventListener("change", schedulePreferencesSave);
@@ -896,7 +1242,7 @@ function bindPreferenceToggle(id: string, controlsQuietInputs = false): void {
 }
 
 function readPreferencesFromControls(): UserPreferences {
-  return { defaultMode: "TIMER_ONLY", soundEnabled: document.querySelector("#sound-toggle")?.getAttribute("aria-pressed") === "true", breakReminderEnabled: document.querySelector("#break-reminder-toggle")?.getAttribute("aria-pressed") === "true", quietHoursEnabled: document.querySelector("#quiet-toggle")?.getAttribute("aria-pressed") === "true", quietStartMinute: timeToMinutes(document.querySelector<HTMLInputElement>("#quiet-start")?.value ?? "22:00"), quietEndMinute: timeToMinutes(document.querySelector<HTMLInputElement>("#quiet-end")?.value ?? "07:00"), reducedMotion: document.querySelector("#reduced-motion-toggle")?.getAttribute("aria-pressed") === "true" };
+  return { defaultMode: currentPreferences?.defaultMode ?? "TIMER_ONLY", customWorkDurationMinutes: currentPreferences?.customWorkDurationMinutes ?? 30, customBreakDurationMinutes: currentPreferences?.customBreakDurationMinutes ?? 5, customReminderAtMinutes: currentPreferences?.customReminderAtMinutes ?? 25, soundEnabled: document.querySelector("#sound-toggle")?.getAttribute("aria-pressed") === "true", breakReminderEnabled: document.querySelector("#break-reminder-toggle")?.getAttribute("aria-pressed") === "true", quietHoursEnabled: document.querySelector("#quiet-toggle")?.getAttribute("aria-pressed") === "true", quietStartMinute: timeToMinutes(document.querySelector<HTMLInputElement>("#quiet-start")?.value ?? "22:00"), quietEndMinute: timeToMinutes(document.querySelector<HTMLInputElement>("#quiet-end")?.value ?? "07:00"), reducedMotion: document.querySelector("#reduced-motion-toggle")?.getAttribute("aria-pressed") === "true" };
 }
 
 function schedulePreferencesSave(): void {
@@ -923,6 +1269,8 @@ function renderDesignLab(): void {
   setView(`<section class="aurora-lab ${designLabReducedMotion ? "aurora-lab-reduced" : ""}" aria-label="Living Aurora Design Lab"><div class="aurora-field aurora-field-one"></div><div class="aurora-field aurora-field-two"></div><div class="aurora-topnav"><button class="aurora-wordmark" type="button" aria-label="EyeMate Living Aurora reference">EyeMate <span>Living Aurora · Reference</span></button><nav aria-label="Điều hướng mẫu">${destinations.map((destination) => `<button class="aurora-nav ${destination === designLabDestination ? "active" : ""}" data-aurora-destination="${destination}" type="button">${destination}</button>`).join("")}</nav><div class="aurora-utilities"><button class="aurora-utility" data-aurora-utility="PRIVACY" type="button">Local Only · Privacy</button><button class="aurora-icon-button" data-aurora-utility="SETTINGS" type="button" aria-label="Mở preview Cài đặt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm8 3.5-2.1-.7a6 6 0 0 0-.5-1.2l1-2-2.1-2.1-2 1.1a6 6 0 0 0-1.2-.5L12 4H9l-.7 2.1a6 6 0 0 0-1.2.5l-2-1L3 7.7l1 2a6 6 0 0 0-.5 1.2L1.5 12v3l2.1.7a6 6 0 0 0 .5 1.2l-1 2L5.2 21l2-1a6 6 0 0 0 1.2.5L9 22.5h3l.7-2.1a6 6 0 0 0 1.2-.5l2 1 2.1-2.1-1-2a6 6 0 0 0 .5-1.2l2.1-.7v-3Z"/></svg><span>Cài đặt</span></button></div></div><div class="aurora-demo-label">DEMO/REFERENCE · KHÔNG GỌI IPC/CAMERA/DB/NETWORK</div><header class="aurora-hero"><div><p class="eyebrow">Visual reference · 1100 × 760</p><h1>Một nhịp dịu lại<br>cho thời gian trước màn hình.</h1><p>Trạng thái được mô phỏng rõ ràng; không suy luận sức khỏe hoặc dùng dữ liệu thật.</p><div class="actions"><button class="aurora-primary" id="aurora-demo-cta" type="button">Xem preview phiên tập trung</button><button class="aurora-secondary" id="aurora-demo-status" type="button">Xem cách EyeMate bảo vệ dữ liệu</button></div></div><div class="aurora-companion"><span class="aurora-state">Lumi · ${designLabMascotState}</span>${lumiPrototype(designLabMascotState)}<p>${stateNote[designLabMascotState]}</p></div></header><section class="aurora-bento"><article class="aurora-card aurora-session"><p class="eyebrow">Preset phiên tập trung</p><strong>25:00</strong><span>Thời lượng dự kiến · Timer Only · Camera đang tắt</span><div class="aurora-progress"><span></span></div><button class="aurora-link" type="button">Preview phiên <span aria-hidden="true">→</span></button></article><article class="aurora-card aurora-insight"><p class="eyebrow">Theo dõi</p><h2>Chưa đủ dữ liệu để nhận xét.</h2><p>EyeMate giữ rõ dữ liệu thiếu thay vì suy đoán.</p><span class="aurora-chip">INSUFFICIENT DATA</span></article><article class="aurora-card aurora-metric"><p>Nhịp chớp mắt</p><strong>—</strong><small>Camera đang tắt</small></article><article class="aurora-card aurora-metric violet"><p>Tải thị giác</p><strong>—</strong><small>Chưa có baseline</small></article></section><section class="aurora-controls"><div><span class="eyebrow">Mascot state</span><div class="aurora-state-list">${states.map((state) => `<button type="button" data-lumi-state="${state}" class="${state === designLabMascotState ? "selected" : ""}">${state}</button>`).join("")}</div></div><label class="aurora-toggle"><input id="aurora-reduced-motion" type="checkbox" ${designLabReducedMotion ? "checked" : ""}> <span>Reduced motion preview</span></label></section></section>`);
   document.querySelector("#aurora-demo-cta")?.addEventListener("click", () => { designLabMascotState = "FOCUS"; renderDesignLab(); });
   document.querySelector("#aurora-demo-status")?.addEventListener("click", () => { designLabMascotState = "PRIVACY"; renderDesignLab(); });
+  document.querySelector(".aurora-wordmark")?.addEventListener("click", () => { designLabDestination = "Hôm nay"; designLabMascotState = "WELCOME"; renderDesignLab(); });
+  document.querySelector(".aurora-link")?.addEventListener("click", () => { designLabDestination = "Đồng hành"; designLabMascotState = "FOCUS"; renderDesignLab(); });
   for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>("[data-aurora-destination]"))) button.addEventListener("click", () => { designLabDestination = button.dataset.auroraDestination ?? "Hôm nay"; designLabMascotState = designLabDestination === "Đồng hành" ? "FOCUS" : "WELCOME"; renderDesignLab(); });
   for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>("[data-aurora-utility]"))) button.addEventListener("click", () => { designLabMascotState = button.dataset.auroraUtility === "PRIVACY" ? "PRIVACY" : "IDLE"; renderDesignLab(); });
   for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>("[data-lumi-state]"))) button.addEventListener("click", () => { designLabMascotState = button.dataset.lumiState ?? "IDLE"; renderDesignLab(); });
@@ -990,5 +1338,6 @@ document.addEventListener("visibilitychange", () => {
 if (!location.hash) location.replace("#/home");
 bindProductionShell();
 void window.eyeMate.getUserPreferences().then(applyPreferences).catch(() => { /* Route error UI handles unavailable storage. */ });
+startCompanionMonitor();
 void window.eyeMate.getRuntimeInfo().then(async (runtime) => { if (!runtime.developerPanelEnabled) return; cameraCalibration = await window.eyeMate.getCameraCalibration().then((record) => record?.profile ?? null).catch(() => null); devPanel.enable(); }).catch(() => { /* Production remains without developer controls. */ });
 void renderRoute();

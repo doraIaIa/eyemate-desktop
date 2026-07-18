@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, 
 import { dirname, join, normalize, parse, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { CameraConsentRecord, CameraConsentRepository, OnboardingProgress, OnboardingProgressRepository, OnboardingStage } from "../user-data/ports.js";
-import type { DataInventoryItem, UserPreferences } from "../shared/preload-contract.js";
+import type { DataInventoryItem, StoredCheckupListItem, UserPreferences } from "../shared/preload-contract.js";
 import type { SensitiveDataCodec } from "./storage-crypto.js";
 import { validateCameraCalibrationRecord, type CameraCalibrationRecord } from "../camera/calibration-service.js";
 
@@ -21,18 +21,27 @@ export interface OpenStorageOptions {
 
 export interface PersistedSession { readonly sessionId: string; readonly modeId: string; readonly state: string; readonly elapsedActiveMs: number; readonly updatedAt: string; }
 export interface PersistedNudge { readonly nudgeId: string; readonly sessionId: string; readonly decision: string; readonly reason: string; readonly policyVersion: string; readonly createdAt: string; readonly action?: string | null; readonly deliveryState?: "EMITTED" | "ABSTAINED"; }
+export interface PersistedNudgeOutcome { readonly nudgeId: string; readonly response: NudgeResponse | null; }
 export type NudgeResponse = "AUTO_CORRECTED" | "ACCEPTED" | "SNOOZED" | "DISMISSED" | "IGNORED" | "UNKNOWN";
 export interface PersistedSummary { readonly summaryId: string; readonly sessionId: string; readonly status: string; readonly elapsedActiveMs: number; readonly createdAt: string; readonly summaryJson?: string; }
 export interface M3StoredRecord { readonly id: string; readonly kind: "SOURCE" | "BASELINE" | "PATTERN" | "DAILY" | "WEEKLY" | "REPORT"; readonly createdAt: string; readonly payloadJson: string; }
-export const DEFAULT_USER_PREFERENCES: UserPreferences = Object.freeze({ defaultMode: "TIMER_ONLY", soundEnabled: false, breakReminderEnabled: true, quietHoursEnabled: false, quietStartMinute: 1320, quietEndMinute: 420, reducedMotion: false });
+export const DEFAULT_USER_PREFERENCES: UserPreferences = Object.freeze({ defaultMode: "TIMER_ONLY", customWorkDurationMinutes: 30, customBreakDurationMinutes: 5, customReminderAtMinutes: 25, soundEnabled: false, breakReminderEnabled: true, quietHoursEnabled: false, quietStartMinute: 1320, quietEndMinute: 420, reducedMotion: false });
 
 function validateUserPreferences(value: UserPreferences): UserPreferences {
-  if (value.defaultMode !== "TIMER_ONLY" || typeof value.soundEnabled !== "boolean" || typeof value.breakReminderEnabled !== "boolean"
+  if (!["BALANCED", "DEEP_FOCUS", "HIGH_SUPPORT", "TIMER_ONLY", "CUSTOM"].includes(value.defaultMode) || typeof value.soundEnabled !== "boolean" || typeof value.breakReminderEnabled !== "boolean"
     || typeof value.quietHoursEnabled !== "boolean" || typeof value.reducedMotion !== "boolean"
+    || !Number.isInteger(value.customWorkDurationMinutes) || value.customWorkDurationMinutes < 5 || value.customWorkDurationMinutes > 180
+    || !Number.isInteger(value.customBreakDurationMinutes) || value.customBreakDurationMinutes < 1 || value.customBreakDurationMinutes > 60
+    || !Number.isInteger(value.customReminderAtMinutes) || value.customReminderAtMinutes < 1 || value.customReminderAtMinutes > value.customWorkDurationMinutes
     || !Number.isInteger(value.quietStartMinute) || value.quietStartMinute < 0 || value.quietStartMinute >= 1440
     || !Number.isInteger(value.quietEndMinute) || value.quietEndMinute < 0 || value.quietEndMinute >= 1440
     || value.quietStartMinute === value.quietEndMinute) throw new Error("INVALID_USER_PREFERENCES");
   return Object.freeze({ ...value });
+}
+
+export function normalizeUserPreferences(value: unknown): UserPreferences {
+  if (typeof value !== "object" || value === null) throw new Error("INVALID_USER_PREFERENCES");
+  return validateUserPreferences({ ...DEFAULT_USER_PREFERENCES, ...value } as UserPreferences);
 }
 
 function ensureDatabasePath(databasePath: string): string {
@@ -307,6 +316,14 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
     return Number(row.count);
   }
 
+  listNudgeOutcomes(sessionId: string): readonly PersistedNudgeOutcome[] {
+    if (!/^[a-z0-9-]{8,64}$/i.test(sessionId)) throw new Error("INVALID_SESSION_ID");
+    return this.#database.prepare("SELECT nudge_id, response FROM companion_nudge WHERE session_id = ? AND delivery_state = 'EMITTED' ORDER BY created_at, nudge_id").all(sessionId).map((row) => {
+      const value = row as Record<string, unknown>;
+      return { nudgeId: String(value.nudge_id), response: value.response === null ? null : String(value.response) as NudgeResponse };
+    });
+  }
+
   saveSessionSummary(summary: PersistedSummary): boolean {
     if (!/^[a-z0-9-]{8,64}$/i.test(summary.summaryId) || !/^[a-z0-9-]{8,64}$/i.test(summary.sessionId) || !Number.isSafeInteger(summary.elapsedActiveMs) || summary.elapsedActiveMs < 0 || Number.isNaN(Date.parse(summary.createdAt))) throw new Error("INVALID_SESSION_SUMMARY");
     const protectedSummary = summary.summaryJson === undefined ? null : encryptedValue(this.#codec, summary.summaryJson, `summary:${summary.summaryId}:json`);
@@ -320,7 +337,10 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
   saveM3Record(record: M3StoredRecord): boolean {
     if (!/^[a-z0-9-]{4,100}$/i.test(record.id) || !["SOURCE", "BASELINE", "PATTERN", "DAILY", "WEEKLY", "REPORT"].includes(record.kind) || Number.isNaN(Date.parse(record.createdAt)) || record.payloadJson.length === 0 || record.payloadJson.length > 100_000) throw new Error("INVALID_M3_RECORD");
     try { JSON.parse(record.payloadJson); } catch { throw new Error("INVALID_M3_RECORD"); }
-    const result = this.#database.prepare("INSERT OR IGNORE INTO m3_record VALUES (?, ?, ?, ?)").run(record.id, record.kind, record.createdAt, encryptedValue(this.#codec, record.payloadJson, `m3:${record.id}:payload`));
+    const protectedPayload = encryptedValue(this.#codec, record.payloadJson, `m3:${record.id}:payload`);
+    const result = record.kind === "SOURCE"
+      ? this.#database.prepare("INSERT OR IGNORE INTO m3_record VALUES (?, ?, ?, ?)").run(record.id, record.kind, record.createdAt, protectedPayload)
+      : this.#database.prepare("INSERT INTO m3_record VALUES (?, ?, ?, ?) ON CONFLICT(record_id) DO UPDATE SET kind=excluded.kind, created_at=excluded.created_at, payload_json=excluded.payload_json").run(record.id, record.kind, record.createdAt, protectedPayload);
     return Number(result.changes) === 1;
   }
 
@@ -328,10 +348,31 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
     return this.#database.prepare("SELECT record_id, kind, created_at, payload_json FROM m3_record WHERE kind = ? ORDER BY created_at ASC").all(kind).map((row) => { const value = row as Record<string, unknown>; const id = String(value.record_id); return { id, kind: value.kind as M3StoredRecord["kind"], createdAt: String(value.created_at), payloadJson: decryptedValue(this.#codec, String(value.payload_json), `m3:${id}:payload`) }; });
   }
 
+  compactM3ReportSnapshots(): number {
+    const reports = this.listM3Records("REPORT");
+    const keepByDate = new Map<string, M3StoredRecord>();
+    for (const report of reports) {
+      try {
+        const localDate = (JSON.parse(report.payloadJson) as { daily?: { localDate?: unknown } }).daily?.localDate;
+        if (typeof localDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(localDate)) continue;
+        const current = keepByDate.get(localDate);
+        const canonical = report.id.startsWith(`report-${localDate}-`);
+        const currentCanonical = current?.id.startsWith(`report-${localDate}-`) ?? false;
+        if (!current || current.createdAt < report.createdAt || current.createdAt === report.createdAt && canonical && !currentCanonical || current.createdAt === report.createdAt && canonical === currentCanonical && current.id < report.id) keepByDate.set(localDate, report);
+      } catch { /* Invalid legacy rows remain available for explicit deletion. */ }
+    }
+    const keepIds = new Set([...keepByDate.values()].map((report) => report.id));
+    const duplicateIds = reports.filter((report) => {
+      try { const localDate = (JSON.parse(report.payloadJson) as { daily?: { localDate?: unknown } }).daily?.localDate; return typeof localDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(localDate) && !keepIds.has(report.id); } catch { return false; }
+    }).map((report) => report.id);
+    for (const id of duplicateIds) this.#database.prepare("DELETE FROM m3_record WHERE record_id = ? AND kind = 'REPORT'").run(id);
+    return duplicateIds.length;
+  }
+
   loadUserPreferences(): UserPreferences {
     const row = this.#database.prepare("SELECT value_json FROM app_preferences WHERE singleton = 1").get() as { value_json: string } | undefined;
     if (row === undefined) return DEFAULT_USER_PREFERENCES;
-    try { return validateUserPreferences(JSON.parse(decryptedValue(this.#codec, row.value_json, "preferences:singleton:value")) as UserPreferences); } catch { throw new Error("INVALID_USER_PREFERENCES_RECORD"); }
+    try { return normalizeUserPreferences(JSON.parse(decryptedValue(this.#codec, row.value_json, "preferences:singleton:value"))); } catch { throw new Error("INVALID_USER_PREFERENCES_RECORD"); }
   }
 
   saveUserPreferences(preferences: UserPreferences): UserPreferences {
@@ -362,11 +403,12 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
 
   getDataInventory(): readonly DataInventoryItem[] {
     const count = (table: string): number => Number((this.#database.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count);
+    const reportDates = new Set(this.listM3Records("REPORT").flatMap((record) => { try { const date = (JSON.parse(record.payloadJson) as { daily?: { localDate?: unknown } }).daily?.localDate; return typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date) ? [date] : []; } catch { return []; } }));
     return [
       { category: "CHECKUP", purpose: "Lưu snapshot checkup và assessment wellness tích hợp", recordCount: count("checkup_report_snapshot"), retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" },
-      { category: "SESSION", purpose: "Khôi phục phiên và tạo Session Summary", recordCount: count("work_session") + count("session_summary"), retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" },
+      { category: "SESSION", purpose: "Mỗi phiên là một thực thể; Session Summary được lưu kèm", recordCount: count("work_session"), retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" },
       { category: "NUDGE", purpose: "Giữ response và chống nudge trùng", recordCount: count("companion_nudge"), retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" },
-      { category: "REPORT", purpose: "Giữ baseline, pattern và report dẫn xuất", recordCount: count("m3_record"), retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" },
+      { category: "REPORT", purpose: "Số ngày có report; aggregate kỹ thuật được lưu kèm", recordCount: reportDates.size, retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" },
       { category: "PREFERENCE", purpose: "Giữ cài đặt trải nghiệm", recordCount: count("app_preferences"), retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" }
       ,{ category: "CALIBRATION", purpose: "Giữ aggregate hiệu chỉnh gắn với camera", recordCount: count("camera_calibration"), retention: "UNTIL_USER_DELETES", location: "LOCAL_ONLY" }
     ];
@@ -408,10 +450,17 @@ export class LocalSqliteStorage implements OnboardingProgressRepository, CameraC
     return "DELETED";
   }
 
-  listSurveyOnlyReports(): readonly { readonly status: string; readonly action: string; readonly createdAt: string; readonly cameraStatus: string; readonly source: string }[] {
-    return this.#database.prepare("SELECT report_id, status, source, camera_status, action, created_at FROM checkup_report_snapshot ORDER BY created_at DESC").all().map((row) => {
-      const value = row as { report_id: string; status: string; source: string; camera_status: string; action: string; created_at: string };
-      return { status: value.status, source: value.source, cameraStatus: value.camera_status, action: decryptedValue(this.#codec, value.action, `checkup:${value.report_id}:action`), createdAt: value.created_at };
+  listSurveyOnlyReports(): readonly StoredCheckupListItem[] {
+    return this.#database.prepare("SELECT r.report_id, r.status, r.source, r.camera_status, r.action, r.created_at, p.payload_json FROM checkup_report_snapshot r LEFT JOIN wellness_checkup_payload p ON p.report_id = r.report_id ORDER BY r.created_at DESC").all().map((row) => {
+      const value = row as { report_id: string; status: string; source: string; camera_status: string; action: string; created_at: string; payload_json: string | null };
+      const base = { status: value.status, source: value.source, cameraStatus: value.camera_status, action: decryptedValue(this.#codec, value.action, `checkup:${value.report_id}:action`), createdAt: value.created_at };
+      if (value.payload_json === null) return base;
+      try {
+        const payload = JSON.parse(decryptedValue(this.#codec, value.payload_json, `wellness:${value.report_id}:payload`)) as { cameraEvidence?: { blinkRatePerMinute?: unknown; distanceZone?: unknown; validSampleRatio?: unknown; reasonCodes?: unknown } };
+        const evidence = payload.cameraEvidence;
+        if (!evidence) return base;
+        return { ...base, blinkRatePerMinute: typeof evidence.blinkRatePerMinute === "number" ? evidence.blinkRatePerMinute : null, distanceZone: typeof evidence.distanceZone === "string" ? evidence.distanceZone : null, validSampleRatio: typeof evidence.validSampleRatio === "number" ? evidence.validSampleRatio : 0, cameraReasonCodes: Array.isArray(evidence.reasonCodes) ? evidence.reasonCodes.filter((item): item is string => typeof item === "string") : [] };
+      } catch { return base; }
     });
   }
 

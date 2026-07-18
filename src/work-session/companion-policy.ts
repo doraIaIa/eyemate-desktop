@@ -1,4 +1,4 @@
-export const COMPANION_POLICY_VERSION = "m2-companion-policy/0.1.0" as const;
+export const COMPANION_POLICY_VERSION = "m2-companion-policy/0.2.0" as const;
 
 export type CompanionMode = "BALANCED" | "DEEP_FOCUS" | "HIGH_SUPPORT" | "TIMER_ONLY" | "CUSTOM";
 export type NudgeType = "DISTANCE_NEAR" | "BREAK_REMINDER";
@@ -48,7 +48,7 @@ export function decideNudge(input: CompanionPolicyInput): NudgeDecision {
   if (input.signal !== "SUFFICIENT") return abstain("INSUFFICIENT_SIGNAL");
   if (input.nudgeType !== undefined && input.enabledNudgeTypes !== undefined && !input.enabledNudgeTypes.includes(input.nudgeType)) return abstain("NUDGE_DISABLED");
   if (input.mode === "TIMER_ONLY" && input.nudgeType !== "BREAK_REMINDER") return abstain("TIMER_ONLY");
-  if (input.mode === "DEEP_FOCUS") return abstain("DEEP_FOCUS");
+  if (input.mode === "DEEP_FOCUS" && input.nudgeType !== "BREAK_REMINDER") return abstain("DEEP_FOCUS");
   if (inQuietHours(input.minuteOfDay, input.quietHours)) return abstain("QUIET_HOURS");
   if (input.nudgesInWindow >= input.frequencyCap) return abstain("FREQUENCY_CAP");
   if (remaining > 0) return abstain("COOLDOWN");

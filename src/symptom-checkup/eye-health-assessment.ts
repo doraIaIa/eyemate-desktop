@@ -18,6 +18,7 @@ export interface CheckupCameraEvidence {
   readonly sampleCount: number;
   readonly validSampleCount: number;
   readonly validSampleRatio: number;
+  readonly qualityDistribution: CameraMeasurementAggregate["qualityDistribution"] | null;
   readonly confidence: number;
   readonly blinkRatePerMinute: number | null;
   readonly distanceZone: "NEAR" | "COMFORT" | "FAR" | "UNKNOWN";
@@ -55,6 +56,23 @@ function confidenceFromRatio(ratio: number): EyeHealthConfidence {
   return "MISSING";
 }
 
+function blinkConfidence(camera: CheckupCameraEvidence): EyeHealthConfidence {
+  if (camera.blinkRatePerMinute === null) return "MISSING";
+  if (camera.blinkRatePerMinute === 0) return "LOW";
+  return confidenceFromRatio(camera.validSampleRatio);
+}
+
+function distanceConfidence(camera: CheckupCameraEvidence): EyeHealthConfidence {
+  if (camera.distanceZone === "UNKNOWN") return "MISSING";
+  return confidenceFromRatio(camera.validSampleRatio);
+}
+
+function cameraContribution(camera: CheckupCameraEvidence): number {
+  const blinkCoverage = camera.blinkRatePerMinute === null ? 0 : camera.blinkRatePerMinute === 0 ? 0.05 : Math.min(0.25, camera.confidence * 0.25);
+  const distanceCoverage = camera.distanceZone === "UNKNOWN" ? 0 : Math.min(0.25, camera.confidence * 0.25);
+  return blinkCoverage + distanceCoverage;
+}
+
 function scoreSignal(score: number | null): EyeHealthSignal {
   if (score === null) return "MISSING";
   if (score <= 4) return "SUPPORTIVE";
@@ -64,6 +82,7 @@ function scoreSignal(score: number | null): EyeHealthSignal {
 
 function blinkSignal(rate: number | null): EyeHealthSignal {
   if (rate === null) return "MISSING";
+  if (rate === 0) return "WATCH";
   if (rate < 8) return "ADJUST";
   if (rate > 35) return "WATCH";
   return "SUPPORTIVE";
@@ -77,13 +96,13 @@ function distanceSignal(zone: CheckupCameraEvidence["distanceZone"]): EyeHealthS
 
 function cameraQualityEvidence(camera: CheckupCameraEvidence): string {
   if (camera.status === "NOT_MEASURED") return "Camera chưa được dùng trong lần checkup này.";
-  if (camera.status !== "COMPLETED") return "Camera chưa tạo đủ dữ liệu quan sát ổn định.";
+  if (camera.sampleCount === 0) return "Camera chưa tạo được frame quan sát hợp lệ.";
   return `${Math.round(camera.validSampleRatio * 100)}% thời lượng camera đủ chất lượng; xử lý cục bộ và không lưu hình ảnh.`;
 }
 
 function blinkObservation(rate: number | null): string {
   if (rate === null) return "Chưa có đủ dữ liệu camera để ước tính nhịp chớp mắt.";
-  if (rate === 0) return "Chưa nhận diện được lần chớp mắt rõ ràng trong cửa sổ đo 30 giây.";
+  if (rate === 0) return "Camera không ghi nhận được blink event rõ ràng trong cửa sổ 30 giây; kết quả này cần đo lại hoặc đối chiếu bằng quan sát trực tiếp.";
   return `Ước tính khoảng ${rate}/phút trong cửa sổ đo camera 30 giây.`;
 }
 
@@ -109,6 +128,7 @@ export function cameraEvidenceFromAggregate(aggregate: CameraMeasurementAggregat
       sampleCount: 0,
       validSampleCount: 0,
       validSampleRatio: 0,
+      qualityDistribution: null,
       confidence: 0,
       blinkRatePerMinute: null,
       distanceZone: "UNKNOWN",
@@ -123,6 +143,7 @@ export function cameraEvidenceFromAggregate(aggregate: CameraMeasurementAggregat
     sampleCount: aggregate.sampleCount,
     validSampleCount: aggregate.validSampleCount,
     validSampleRatio: aggregate.validSampleRatio,
+    qualityDistribution: aggregate.qualityDistribution,
     confidence: aggregate.confidence,
     blinkRatePerMinute: aggregate.blinkSummary.status === "OBSERVED" ? aggregate.blinkSummary.ratePerMinute : null,
     distanceZone: aggregate.distanceSummary.status === "OBSERVED" ? aggregate.distanceSummary.dominantZone : "UNKNOWN",
@@ -148,7 +169,9 @@ export function buildEyeHealthAssessment(report: WellnessCheckReport, camera: Ch
   const symptomSignal = scoreSignal(report.discomfortLoad.score);
   const blink = blinkSignal(camera.blinkRatePerMinute);
   const distance = distanceSignal(camera.distanceZone);
-  const cameraConfidence = confidenceFromRatio(camera.validSampleRatio);
+  const blinkDataConfidence = blinkConfidence(camera);
+  const distanceDataConfidence = distanceConfidence(camera);
+  const dataConfidence = Math.round(((report.discomfortLoad.score === null ? 0 : 0.5) + cameraContribution(camera)) * 100) / 100;
   const rows: EyeHealthAssessmentRow[] = [
     {
       dimension: "SELF_REPORTED_COMFORT",
@@ -164,8 +187,8 @@ export function buildEyeHealthAssessment(report: WellnessCheckReport, camera: Ch
       observation: blinkObservation(camera.blinkRatePerMinute),
       evidence: cameraQualityEvidence(camera),
       signal: blink,
-      confidence: cameraConfidence,
-      action: blink === "ADJUST" ? "Thêm nhắc chớp mắt chủ động và nghỉ nhìn xa ngắn." : "Tiếp tục theo dõi ở các lần đo sau.",
+      confidence: blinkDataConfidence,
+      action: blink === "ADJUST" || blink === "WATCH" ? "Thêm nhắc chớp mắt chủ động và đo lại nếu camera chưa bắt được blink rõ." : "Tiếp tục theo dõi ở các lần đo sau.",
       limitation: "Blink rate là quan sát hành vi trong một cửa sổ ngắn, không xác định nguyên nhân khô mắt."
     },
     {
@@ -173,7 +196,7 @@ export function buildEyeHealthAssessment(report: WellnessCheckReport, camera: Ch
       observation: distanceObservation(camera.distanceZone),
       evidence: cameraQualityEvidence(camera),
       signal: distance,
-      confidence: cameraConfidence,
+      confidence: distanceDataConfidence,
       action: distance === "ADJUST" ? "Kiểm tra lại vị trí màn hình/webcam và giảm phiên nhìn gần liên tục." : "Duy trì khoảng cách làm việc hiện tại nếu thấy thoải mái.",
       limitation: "EyeMate chỉ phân loại zone theo calibration cá nhân, không công bố khoảng cách centimet đo được."
     },
@@ -188,10 +211,10 @@ export function buildEyeHealthAssessment(report: WellnessCheckReport, camera: Ch
     },
     {
       dimension: "DATA_CONFIDENCE",
-      observation: `Độ phủ dữ liệu tổng hợp ${Math.round(((report.discomfortLoad.score === null ? 0 : 0.5) + Math.min(0.5, camera.confidence * 0.5)) * 100)}%.`,
+      observation: `Độ phủ dữ liệu tổng hợp ${Math.round(dataConfidence * 100)}%.`,
       evidence: `Tự báo cáo ${report.discomfortLoad.answeredItemCount}/5 câu; camera đủ chất lượng ${Math.round(camera.validSampleRatio * 100)}%.`,
-      signal: camera.status === "INSUFFICIENT_DATA" || report.discomfortLoad.score === null ? "MISSING" : "SUPPORTIVE",
-      confidence: report.discomfortLoad.score !== null && camera.status === "COMPLETED" ? "MEDIUM" : "LOW",
+      signal: camera.status === "INSUFFICIENT_DATA" || report.discomfortLoad.score === null || camera.blinkRatePerMinute === 0 ? "WATCH" : "SUPPORTIVE",
+      confidence: report.discomfortLoad.score !== null && dataConfidence >= 0.75 ? "MEDIUM" : "LOW",
       action: "Nếu dữ liệu thiếu, đo lại trong điều kiện ánh sáng ổn định và một khuôn mặt trong khung hình.",
       limitation: "Một lần checkup không đủ để kết luận xu hướng dài hạn."
     }
@@ -204,8 +227,7 @@ export function buildEyeHealthAssessment(report: WellnessCheckReport, camera: Ch
     PAUSE_AND_RECHECK: "Ưu tiên nghỉ, điều chỉnh và theo dõi lại",
     MISSING: "Chưa đủ dữ liệu để đánh giá"
   };
-  const dataConfidence = Math.round(((report.discomfortLoad.score === null ? 0 : 0.5) + Math.min(0.5, camera.confidence * 0.5)) * 100) / 100;
-  const missingEvidence = rows.filter((row) => row.signal === "MISSING").map((row) => row.dimension);
+  const missingEvidence = rows.filter((row) => row.signal === "MISSING" || (row.dimension === "BLINK_BEHAVIOR" && camera.blinkRatePerMinute === 0)).map((row) => row.dimension);
   return Object.freeze({
     version: EYE_HEALTH_ASSESSMENT_VERSION,
     overallSignal,

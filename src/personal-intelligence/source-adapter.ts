@@ -1,11 +1,12 @@
 import { ANALYTICS_SCHEMA_VERSION, type AnalyticsInput, validateAnalyticsInput } from "./analytics.js";
+import type { WorkSession } from "../work-session/session-state.js";
 
-export interface WorkSessionAnalyticsSource { readonly summaryId: string; readonly sessionId: string; readonly elapsedActiveMs: number; readonly createdAt: string; readonly timezone: string; readonly schemaVersion: string; }
+export interface WorkSessionAnalyticsSource { readonly summaryId: string; readonly sessionId: string; readonly modeId: WorkSession["modeId"]; readonly elapsedActiveMs: number; readonly createdAt: string; readonly timezone: string; readonly schemaVersion: string; }
 export interface SurveyAnalyticsSource { readonly reportId: string; readonly createdAt: string; readonly timezone: string; readonly schemaVersion: string; readonly symptomBurden: number | null; }
 
 export function fromWorkSession(source: WorkSessionAnalyticsSource): AnalyticsInput {
   if (!Number.isSafeInteger(source.elapsedActiveMs) || source.elapsedActiveMs <= 0) throw new Error("INVALID_WORK_SESSION_ANALYTICS_SOURCE");
-  return validateAnalyticsInput({ sourceId: source.summaryId, sourceType: "WORK_SESSION", occurredAtUtc: source.createdAt, timezone: source.timezone, schemaVersion: ANALYTICS_SCHEMA_VERSION, algorithmVersion: source.schemaVersion, quality: "VALID", contextKey: "timer-only", sessionDurationMinutes: Math.ceil(source.elapsedActiveMs / 60_000), breakCompliance: null, symptomBurden: null, nearLoad: null, distanceDeviation: null, blinkDeviation: null });
+  return validateAnalyticsInput({ sourceId: source.summaryId, sourceType: "WORK_SESSION", occurredAtUtc: source.createdAt, timezone: source.timezone, schemaVersion: ANALYTICS_SCHEMA_VERSION, algorithmVersion: source.schemaVersion, quality: "VALID", contextKey: `work:${source.modeId.toLowerCase()}`, sessionDurationMinutes: Math.ceil(source.elapsedActiveMs / 60_000), breakCompliance: null, symptomBurden: null, nearLoad: null, distanceDeviation: null, blinkDeviation: null });
 }
 
 export function fromSurveyOnly(source: SurveyAnalyticsSource): AnalyticsInput {

@@ -15,7 +15,11 @@ export interface CameraRuntimeCallbacks {
 }
 
 interface Landmark { readonly x: number; readonly y: number; readonly z?: number; }
-interface FaceResult { readonly faceLandmarks: readonly (readonly Landmark[])[]; }
+interface BlendshapeCategory { readonly categoryName: string; readonly score: number; }
+interface FaceResult {
+  readonly faceLandmarks: readonly (readonly Landmark[])[];
+  readonly faceBlendshapes: readonly { readonly categories: readonly BlendshapeCategory[] }[];
+}
 interface FaceLandmarkerInstance { detectForVideo(video: HTMLVideoElement, timestampMs: number): FaceResult; close(): void; }
 interface VisionModule {
   readonly FilesetResolver: { forVisionTasks(basePath: string): Promise<unknown> };
@@ -39,6 +43,11 @@ function poseScore(points: readonly Landmark[]): number {
   return Math.max(0, Math.min(1, 1 - Math.abs(nose.x - center) / (span * 0.35)));
 }
 
+function blendshapeScore(result: FaceResult, categoryName: "eyeBlinkLeft" | "eyeBlinkRight"): number | null {
+  const category = result.faceBlendshapes[0]?.categories.find((candidate) => candidate.categoryName === categoryName);
+  return category && Number.isFinite(category.score) ? category.score : null;
+}
+
 async function deviceBinding(deviceId: string, width: number, height: number): Promise<string> {
   const bytes = new TextEncoder().encode(`${deviceId}|${width}x${height}`);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
@@ -58,6 +67,7 @@ export class LocalCameraRuntime {
   #stream: MediaStream | null = null;
   #landmarker: FaceLandmarkerInstance | null = null;
   #animationFrame: number | null = null;
+  #videoFrameCallback: number | null = null;
   #video: HTMLVideoElement | null = null;
   #context: CameraRuntimeContext | null = null;
   #stopping = false;
@@ -79,6 +89,23 @@ export class LocalCameraRuntime {
     if (!navigator.mediaDevices?.enumerateDevices) return [];
     const devices = (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === "videoinput");
     return devices.map((device, index) => ({ deviceId: device.deviceId, label: device.label || `Camera ${index + 1}` }));
+  }
+
+  async attachPreview(video: HTMLVideoElement): Promise<boolean> {
+    if (!this.#stream || !this.#landmarker) return false;
+    if (this.#video === video) return true;
+    if (this.#animationFrame !== null) cancelAnimationFrame(this.#animationFrame);
+    if (this.#videoFrameCallback !== null && this.#video) this.#video.cancelVideoFrameCallback(this.#videoFrameCallback);
+    this.#animationFrame = null;
+    this.#videoFrameCallback = null;
+    if (this.#video) this.#video.srcObject = null;
+    this.#video = video;
+    video.srcObject = this.#stream;
+    video.muted = true;
+    video.playsInline = true;
+    await video.play();
+    this.#scheduleFrame();
+    return true;
   }
 
   async start(video: HTMLVideoElement, selectedDeviceId?: string): Promise<CameraRuntimeContext | null> {
@@ -104,7 +131,7 @@ export class LocalCameraRuntime {
       const modulePath = "./vendor/vision_bundle.mjs";
       const vision = await import(modulePath) as VisionModule;
       const fileset = await vision.FilesetResolver.forVisionTasks(new URL("./vendor/wasm", import.meta.url).href);
-      this.#landmarker = await vision.FaceLandmarker.createFromOptions(fileset, { baseOptions: { modelAssetPath: new URL("./models/face_landmarker.task", import.meta.url).href }, runningMode: "VIDEO", numFaces: 2, minFaceDetectionConfidence: 0.5, minFacePresenceConfidence: 0.5, minTrackingConfidence: 0.5, outputFaceBlendshapes: false, outputFacialTransformationMatrixes: false });
+      this.#landmarker = await vision.FaceLandmarker.createFromOptions(fileset, { baseOptions: { modelAssetPath: new URL("./models/face_landmarker.task", import.meta.url).href }, runningMode: "VIDEO", numFaces: 2, minFaceDetectionConfidence: 0.5, minFacePresenceConfidence: 0.5, minTrackingConfidence: 0.5, outputFaceBlendshapes: true, outputFacialTransformationMatrixes: false });
       this.#callbacks.onState("ACTIVE", "CAMERA_ACTIVE");
       this.#scheduleFrame();
       return this.#context;
@@ -119,7 +146,9 @@ export class LocalCameraRuntime {
   async stop(): Promise<void> {
     this.#stopping = true;
     if (this.#animationFrame !== null) cancelAnimationFrame(this.#animationFrame);
+    if (this.#videoFrameCallback !== null && this.#video) this.#video.cancelVideoFrameCallback(this.#videoFrameCallback);
     this.#animationFrame = null;
+    this.#videoFrameCallback = null;
     this.#landmarker?.close();
     this.#landmarker = null;
     for (const track of this.#stream?.getTracks() ?? []) track.stop();
@@ -136,12 +165,20 @@ export class LocalCameraRuntime {
   readonly #onDeviceChange = (): void => { void this.stop(); this.#callbacks.onState("DEVICE_CHANGED", "CAMERA_DEVICE_CHANGED"); };
 
   #scheduleFrame(): void {
-    this.#animationFrame = requestAnimationFrame(() => {
+    const processFrame = (timestampMs: number): void => {
+      this.#animationFrame = null;
+      this.#videoFrameCallback = null;
       if (!this.#video || !this.#landmarker || !this.#stream) return;
-      try { this.#emitObservation(this.#landmarker.detectForVideo(this.#video, performance.now())); }
+      try { this.#emitObservation(this.#landmarker.detectForVideo(this.#video, timestampMs)); }
       catch { this.#callbacks.onState("FAILED", "CAMERA_INFERENCE_FAILED"); void this.stop(); return; }
       this.#scheduleFrame();
-    });
+    };
+    if (!this.#video) return;
+    if (typeof this.#video.requestVideoFrameCallback === "function") {
+      this.#videoFrameCallback = this.#video.requestVideoFrameCallback((timestampMs) => processFrame(timestampMs));
+    } else {
+      this.#animationFrame = requestAnimationFrame((timestampMs) => processFrame(timestampMs));
+    }
   }
 
   #emitObservation(result: FaceResult): void {
@@ -162,6 +199,8 @@ export class LocalCameraRuntime {
       timestampMs: performance.now(), faceCount: result.faceLandmarks.length, eyeVisibility: points ? 1 : 0, poseScore: points ? poseScore(points) : 0, lightingScore,
       leftEar: points ? eyeAspectRatio(points, [362, 385, 387, 263, 373, 380]) : null,
       rightEar: points ? eyeAspectRatio(points, [33, 160, 158, 133, 153, 144]) : null,
+      leftBlinkScore: points ? blendshapeScore(result, "eyeBlinkLeft") : null,
+      rightBlinkScore: points ? blendshapeScore(result, "eyeBlinkRight") : null,
       interEyeDistancePx: points && this.#video && points[33] && points[263] ? distance(points[33], points[263]) * this.#video.videoWidth : null
     });
   }

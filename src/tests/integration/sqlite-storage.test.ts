@@ -54,11 +54,13 @@ test("Integrated Checkup lưu camera status và assessment payload mà không l�
   const result = openLocalSqliteStorage(databasePath, { sensitiveDataCodec: createSensitiveDataCodec(Buffer.alloc(32, 13)) });
   assert.equal(result.state, "READY");
   if (result.state === "READY") {
-    const payload = JSON.stringify({ cameraEvidence: { status: "COMPLETED", rawDataPersisted: false }, assessment: { disclaimer: "WELLNESS_EDUCATION_NOT_DIAGNOSIS" } });
+    const payload = JSON.stringify({ cameraEvidence: { status: "COMPLETED", rawDataPersisted: false, blinkRatePerMinute: 14, distanceZone: "COMFORT", validSampleRatio: 0.9, reasonCodes: [] }, assessment: { disclaimer: "WELLNESS_EDUCATION_NOT_DIAGNOSIS" } });
     result.storage.saveSurveyOnlyReport({ reportId: "integrated-0001", status: "COMPLETED", source: "INTEGRATED_CHECKUP", cameraStatus: "COMPLETED", action: "LOOK_AWAY_BREAK", provenanceVersion: "eyemate-symptom-check/1.0.0", createdAt: "2026-07-15T00:00:00.000Z", wellnessPayload: { questionnaireVersion: "eyemate-symptom-check/1.0.0", scoreVersion: "eyemate-symptom-check-total/1.0.0", payloadJson: payload } });
     const item = result.storage.listSurveyOnlyReports()[0];
     assert.equal(item?.source, "INTEGRATED_CHECKUP");
     assert.equal(item?.cameraStatus, "COMPLETED");
+    assert.equal(item?.blinkRatePerMinute, 14);
+    assert.equal(item?.distanceZone, "COMFORT");
     assert.equal(result.storage.getWellnessCheckPayload("integrated-0001"), payload);
     result.storage.close();
   }
@@ -178,7 +180,7 @@ test("preferences và data inventory persist qua restart rồi reset cùng delet
   const initial = openLocalSqliteStorage(databasePath);
   assert.equal(initial.state, "READY");
   if (initial.state === "READY") {
-    initial.storage.saveUserPreferences({ defaultMode: "TIMER_ONLY", soundEnabled: true, breakReminderEnabled: false, quietHoursEnabled: true, quietStartMinute: 1320, quietEndMinute: 420, reducedMotion: true });
+    initial.storage.saveUserPreferences({ defaultMode: "TIMER_ONLY", customWorkDurationMinutes: 45, customBreakDurationMinutes: 8, customReminderAtMinutes: 35, soundEnabled: true, breakReminderEnabled: false, quietHoursEnabled: true, quietStartMinute: 1320, quietEndMinute: 420, reducedMotion: true });
     assert.equal(initial.storage.getDataInventory().find((item) => item.category === "PREFERENCE")?.recordCount, 1);
     initial.storage.close();
   }
@@ -186,6 +188,7 @@ test("preferences và data inventory persist qua restart rồi reset cùng delet
   assert.equal(reopened.state, "READY");
   if (reopened.state === "READY") {
     assert.equal(reopened.storage.loadUserPreferences().soundEnabled, true);
+    assert.equal(reopened.storage.loadUserPreferences().customWorkDurationMinutes, 45);
     assert.equal(reopened.storage.deleteAllLocalData(), "DELETED");
     assert.equal(reopened.storage.loadUserPreferences().soundEnabled, false);
     assert.equal(reopened.storage.getDataInventory().every((item) => item.recordCount === 0), true);

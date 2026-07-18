@@ -9,7 +9,10 @@ export interface LocalExportResult { readonly status: "EXPORTED" | "CANCELLED" |
 export type M3DataCategory = "BASELINE" | "PATTERN" | "SUMMARY" | "REPORT" | "ALL";
 export type NudgeResponse = "AUTO_CORRECTED" | "ACCEPTED" | "SNOOZED" | "DISMISSED" | "IGNORED" | "UNKNOWN";
 export interface UserPreferences {
-  readonly defaultMode: "TIMER_ONLY";
+  readonly defaultMode: WorkSession["modeId"];
+  readonly customWorkDurationMinutes: number;
+  readonly customBreakDurationMinutes: number;
+  readonly customReminderAtMinutes: number;
   readonly soundEnabled: boolean;
   readonly breakReminderEnabled: boolean;
   readonly quietHoursEnabled: boolean;
@@ -25,6 +28,18 @@ export interface DataInventoryItem {
   readonly location: "LOCAL_ONLY";
 }
 
+export interface StoredCheckupListItem {
+  readonly status: string;
+  readonly action: string;
+  readonly createdAt: string;
+  readonly cameraStatus?: string;
+  readonly source?: string;
+  readonly blinkRatePerMinute?: number | null;
+  readonly distanceZone?: string | null;
+  readonly validSampleRatio?: number;
+  readonly cameraReasonCodes?: readonly string[];
+}
+
 export interface EyeMatePreloadApi {
   getRuntimeInfo(): Promise<RuntimeInfo>;
   getPrivacySummary(): Promise<PrivacySummary>;
@@ -35,7 +50,7 @@ export interface EyeMatePreloadApi {
   completeOnboardingWithoutCamera(): Promise<void>;
   withdrawCameraConsent(): Promise<void>;
   deleteAllLocalData(): Promise<"DELETED" | "PARTIALLY_DELETED" | "FAILED">;
-  listSurveyOnlyReports(): Promise<readonly { readonly status: string; readonly action: string; readonly createdAt: string; readonly cameraStatus?: string; readonly source?: string }[]>;
+  listSurveyOnlyReports(): Promise<readonly StoredCheckupListItem[]>;
   startWorkSession(modeId?: WorkSession["modeId"]): Promise<WorkSession>;
   pauseWorkSession(): Promise<WorkSession>;
   resumeWorkSession(): Promise<WorkSession>;

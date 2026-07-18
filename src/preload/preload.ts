@@ -49,7 +49,7 @@ const eyeMateApi: EyeMatePreloadApi = {
   async listSurveyOnlyReports() {
     const result: unknown = await ipcRenderer.invoke("reports:list-survey-only");
     if (!Array.isArray(result) || !result.every((value) => typeof value === "object" && value !== null)) throw new Error("PRELOAD_REPORT_LIST_INVALID");
-    return result as readonly { readonly status: string; readonly action: string; readonly createdAt: string; readonly cameraStatus?: string; readonly source?: string }[];
+    return result as readonly import("../shared/preload-contract.js").StoredCheckupListItem[];
   },
   async startWorkSession(modeId) { return await ipcRenderer.invoke("work-session:start", modeId); },
   async pauseWorkSession() { return await ipcRenderer.invoke("work-session:pause"); },
@@ -90,8 +90,11 @@ function isCameraCalibrationRecord(value: unknown): value is import("../camera/c
 function isUserPreferences(value: unknown): value is import("../shared/preload-contract.js").UserPreferences {
   if (typeof value !== "object" || value === null) return false;
   const item = value as Record<string, unknown>;
-  return item.defaultMode === "TIMER_ONLY" && ["soundEnabled", "breakReminderEnabled", "quietHoursEnabled", "reducedMotion"].every((key) => typeof item[key] === "boolean")
-    && ["quietStartMinute", "quietEndMinute"].every((key) => Number.isInteger(item[key]) && Number(item[key]) >= 0 && Number(item[key]) < 1440);
+  return ["BALANCED", "DEEP_FOCUS", "HIGH_SUPPORT", "TIMER_ONLY", "CUSTOM"].includes(String(item.defaultMode)) && ["soundEnabled", "breakReminderEnabled", "quietHoursEnabled", "reducedMotion"].every((key) => typeof item[key] === "boolean")
+    && ["quietStartMinute", "quietEndMinute"].every((key) => Number.isInteger(item[key]) && Number(item[key]) >= 0 && Number(item[key]) < 1440)
+    && Number.isInteger(item.customWorkDurationMinutes) && Number(item.customWorkDurationMinutes) >= 5 && Number(item.customWorkDurationMinutes) <= 180
+    && Number.isInteger(item.customBreakDurationMinutes) && Number(item.customBreakDurationMinutes) >= 1 && Number(item.customBreakDurationMinutes) <= 60
+    && Number.isInteger(item.customReminderAtMinutes) && Number(item.customReminderAtMinutes) >= 1 && Number(item.customReminderAtMinutes) <= Number(item.customWorkDurationMinutes);
 }
 
 function isDataInventoryItem(value: unknown): value is import("../shared/preload-contract.js").DataInventoryItem {

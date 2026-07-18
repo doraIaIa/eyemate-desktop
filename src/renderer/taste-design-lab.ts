@@ -170,6 +170,11 @@ function bindTasteDesignLab(): void {
   });
   for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>("[data-taste-trace-state]"))) button.addEventListener("click", () => { activeTraceState = button.dataset.tasteTraceState as TraceState; renderTasteDesignLab(); });
   for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>("[data-taste-action]"))) button.addEventListener("click", () => { const status = document.querySelector<HTMLElement>("#taste-demo-status"); if (status) status.textContent = `Demo control: ${button.dataset.tasteAction}. Không gọi IPC hoặc thay đổi dữ liệu.`; });
+  for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>(".taste-filter-set button"))) button.addEventListener("click", () => {
+    for (const item of Array.from(button.parentElement?.querySelectorAll("button") ?? [])) item.classList.toggle("selected", item === button);
+    const status = document.querySelector<HTMLElement>("#taste-demo-status");
+    if (status) status.textContent = `Demo filter: ${button.textContent?.trim() ?? "không rõ"}. Không gọi IPC hoặc thay đổi dữ liệu.`;
+  });
   document.querySelector<HTMLInputElement>("#taste-reduced-motion")?.addEventListener("change", (event) => { reducedMotion = (event.currentTarget as HTMLInputElement).checked; renderTasteDesignLab(); });
   document.querySelector<HTMLInputElement>("#taste-reduced-transparency")?.addEventListener("change", (event) => { reducedTransparency = (event.currentTarget as HTMLInputElement).checked; renderTasteDesignLab(); });
   root?.classList.toggle("taste-reduced-motion", reducedMotion);
