@@ -7,3 +7,5 @@ candidates/tauri/src-tauri/gen/
 .pilot/
 .tmp/
 dist/
+.claude/
+CLAUDE.md
