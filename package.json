@@ -6,6 +6,7 @@
   "scripts": {
     "clean": "node tools/m1/clean.mjs",
     "dev": "npm run build && electron dist/main/main.js --enable-dev-panel",
+    "dev:enterprise-demo": "npm run build && electron dist/main/main.js --enterprise-demo",
     "lint": "node tools/m1/lint.mjs",
     "typecheck": "tsc --noEmit",
     "build": "npm run clean && tsc -p tsconfig.json && node tools/m1/copy-assets.mjs",

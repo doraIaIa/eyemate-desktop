@@ -10,7 +10,7 @@ import { validateCameraCalibrationRecord, type CameraCalibrationRecord } from ".
 import { validateCameraMeasurementAggregate, type CameraMeasurementAggregate } from "../camera/measurement-window.js";
 import type { CheckupSummary, IntegratedCheckupRequest, PrivacySummary, SurveyRequest } from "../shared/m1-contract.js";
 import { createSurveyOnlyExportPreview, resolveDeletionResult } from "../user-data/data-controls.js";
-import { DEFAULT_USER_PREFERENCES, openLocalSqliteStorage, resolveDatabasePath, type LocalSqliteStorage } from "../platform-electron/sqlite-storage.js";
+import type { LocalSqliteStorage, NudgeResponse } from "../platform-electron/sqlite-storage.js";
 import type { M3DataCategory, UserPreferences } from "../shared/preload-contract.js";
 import { WELLNESS_MAXIMUM_SCORE, createWellnessCheckReport, wellnessQuestions, type WellnessQuestionId, type WellnessResponse } from "../symptom-checkup/wellness-check.js";
 import { actionsWithCameraEvidence, buildEyeHealthAssessment, cameraEvidenceFromAggregate, type CheckupCameraEvidence, type EyeHealthAssessment } from "../symptom-checkup/eye-health-assessment.js";
@@ -25,8 +25,8 @@ import { localDateFor, validateAnalyticsInput, type AnalyticsInput } from "../pe
 import { buildPersonalReport, renderProfessionalSummary, type PersonalReport } from "../personal-intelligence/report-service.js";
 import { writeLocalExport, writeLocalPdfExport, type LocalExportFormat } from "../platform-electron/local-export.js";
 import { renderLocalPdf } from "../platform-electron/pdf-export.js";
-import type { NudgeResponse } from "../platform-electron/sqlite-storage.js";
 import { loadOrCreateProtectedStorageKey } from "../platform-electron/storage-crypto.js";
+import { ENTERPRISE_DEMO_HASH, isEnterpriseDemoMode, isEnterpriseDemoValidationMode, shouldInitializePersonalStorage } from "./enterprise-demo-mode.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const rendererIndexPath = path.join(currentDirectory, "../renderer/index.html");
@@ -44,14 +44,26 @@ const egressObservationMode = process.argv.includes("--egress-observe");
 const cameraRuntimeTestMode = process.argv.includes("--camera-runtime-test");
 const cameraRuntimeFullTestMode = process.argv.includes("--camera-runtime-full-test");
 const devPanelValidationMode = process.argv.includes("--dev-panel-validate");
+const enterpriseDemoMode = isEnterpriseDemoMode();
+const enterpriseDemoValidationMode = isEnterpriseDemoValidationMode();
 const developerPanelEnabled = !app.isPackaged && process.argv.includes("--enable-dev-panel");
 const uiCaptureArgument = process.argv.find((argument) => argument.startsWith("--ui-screenshot-dir="));
 const uiScreenshotDirectory = uiCaptureArgument?.slice("--ui-screenshot-dir=".length) ?? null;
+let enterpriseDemoBlockedNetworkRequests = 0;
+const isolatedValidationMode = smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode || livingAuroraValidationMode || tasteDesignLabValidationMode || clarityProductionValidationMode || uiRecoverySeedMode || uiRecoveryCheckMode || egressObservationMode || cameraRuntimeTestMode || cameraRuntimeFullTestMode || devPanelValidationMode || enterpriseDemoValidationMode;
 
-if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode || livingAuroraValidationMode || tasteDesignLabValidationMode || clarityProductionValidationMode || uiRecoverySeedMode || uiRecoveryCheckMode || egressObservationMode || cameraRuntimeTestMode || cameraRuntimeFullTestMode || devPanelValidationMode) {
+if (enterpriseDemoMode) {
+  const demoProfile = enterpriseDemoValidationMode ? "enterprise-demo-validation" : "enterprise-demo-dev";
+  app.setPath("userData", path.join(currentDirectory, `../../.tmp/${demoProfile}-user-data`));
+} else if (isolatedValidationMode) {
+  app.setPath("userData", path.join(currentDirectory, "../../.tmp/personal-validation-user-data"));
+}
+
+if (isolatedValidationMode || enterpriseDemoMode || developerPanelEnabled) {
   app.disableHardwareAcceleration();
   app.commandLine.appendSwitch("disable-gpu");
   app.commandLine.appendSwitch("disable-gpu-compositing");
+  app.commandLine.appendSwitch("disable-gpu-sandbox");
 }
 
 async function runDevPanelValidation(window: BrowserWindow): Promise<void> {
@@ -80,6 +92,7 @@ function getRuntimeInfo(): RuntimeInfo {
 }
 
 let storage: LocalSqliteStorage | null = null;
+let defaultUserPreferences: UserPreferences | null = null;
 let workSession: WorkSession | null = null;
 let sessionMonotonicMs = 0;
 let lastNudgeMonotonicMs: number | null = null;
@@ -95,6 +108,11 @@ function persistActiveSessionBeforeExit(): void {
   if (workSession?.state !== "ACTIVE") return;
   workSession = tickSession(workSession, sessionNow());
   storage?.saveSession({ sessionId: workSession.id, modeId: workSession.modeId, state: workSession.state, elapsedActiveMs: workSession.elapsedActiveMs, updatedAt: currentIso() });
+}
+
+function getDefaultUserPreferences(): UserPreferences {
+  if (defaultUserPreferences === null) throw new Error("PERSONAL_STORAGE_NOT_INITIALIZED");
+  return defaultUserPreferences;
 }
 
 function updateWorkSession(event: "START" | "STARTED" | "PAUSE" | "RESUME" | "FINISH" | "CANCEL"): WorkSession {
@@ -144,7 +162,7 @@ function recoverPersistedSession(): void {
 function requestBreakNudge(): NudgeDecision & { readonly nudgeId: string } {
   if (workSession?.state !== "ACTIVE") throw new Error("SESSION_NOT_ACTIVE");
   const now = sessionNow();
-  const preferences = storage?.loadUserPreferences() ?? DEFAULT_USER_PREFERENCES;
+  const preferences = storage?.loadUserPreferences() ?? getDefaultUserPreferences();
   const modeProfile = getCompanionModeProfile(workSession.modeId, { workDurationMinutes: preferences.customWorkDurationMinutes, breakDurationMinutes: preferences.customBreakDurationMinutes, reminderAtMinutes: preferences.customReminderAtMinutes });
   const localNow = new Date();
   const decision = decideNudge({ mode: workSession.modeId, minuteOfDay: localNow.getHours() * 60 + localNow.getMinutes(), quietHours: preferences.quietHoursEnabled ? { startMinute: preferences.quietStartMinute, endMinute: preferences.quietEndMinute } : undefined, cooldownMinutes: modeProfile.cooldownMinutes, frequencyCap: modeProfile.maxNudgesPerSession, nowMonotonicMs: now, lastNudgeMonotonicMs, nudgesInWindow: nudgesInSession, signal: "SUFFICIENT", nudgeType: "BREAK_REMINDER", enabledNudgeTypes: preferences.breakReminderEnabled ? ["BREAK_REMINDER"] : [] });
@@ -342,10 +360,10 @@ function registerIpcHandlers(): void {
     const content = format === "JSON" ? JSON.stringify(exportReport, null, 2) : renderProfessionalSummary(exportReport);
     return format === "PDF" ? writeLocalPdfExport(selected.filePath, await renderLocalPdf(content)) : writeLocalExport(selected.filePath, content);
   });
-  ipcMain.handle("settings:get", () => storage?.loadUserPreferences() ?? DEFAULT_USER_PREFERENCES);
+  ipcMain.handle("settings:get", () => storage?.loadUserPreferences() ?? getDefaultUserPreferences());
   ipcMain.handle("settings:update", (_event, preferences: UserPreferences) => {
     if (typeof preferences !== "object" || preferences === null) throw new Error("INVALID_USER_PREFERENCES");
-    return storage?.saveUserPreferences(preferences) ?? DEFAULT_USER_PREFERENCES;
+    return storage?.saveUserPreferences(preferences) ?? getDefaultUserPreferences();
   });
   ipcMain.handle("camera-calibration:get", () => storage?.loadCameraCalibration() ?? null);
   ipcMain.handle("camera-calibration:save", (_event, record: CameraCalibrationRecord) => storage?.saveCameraCalibration(validateCameraCalibrationRecord(record)) ?? validateCameraCalibrationRecord(record));
@@ -357,15 +375,59 @@ async function createMainWindow(): Promise<BrowserWindow> {
   const window = new BrowserWindow(createSecureWindowOptions(preloadPath));
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => event.preventDefault());
-  await window.loadFile(rendererIndexPath);
+  await window.loadFile(rendererIndexPath, enterpriseDemoMode ? { hash: ENTERPRISE_DEMO_HASH } : undefined);
   window.show();
   return window;
+}
+
+function configureEnterpriseDemoBoundary(): void {
+  session.defaultSession.webRequest.onBeforeRequest({ urls: ["http://*/*", "https://*/*", "ws://*/*", "wss://*/*"] }, (_details, callback) => {
+    enterpriseDemoBlockedNetworkRequests += 1;
+    callback({ cancel: true });
+  });
+  session.defaultSession.setPermissionCheckHandler(() => false);
+  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
 }
 
 function configureLocalCameraPermission(): void {
   const isAllowed = (webContentsUrl: string): boolean => webContentsUrl.startsWith("file:") && storage?.loadCameraConsent()?.decision === "GRANTED";
   session.defaultSession.setPermissionCheckHandler((webContents, permission) => permission === "media" && webContents !== null && isAllowed(webContents.getURL()));
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => callback(permission === "media" && isAllowed(webContents.getURL())));
+}
+
+async function runEnterpriseDemoValidation(window: BrowserWindow): Promise<void> {
+  const evaluate = async <T>(source: string): Promise<T> => await window.webContents.executeJavaScript(source, true) as T;
+  const wait = async (milliseconds = 180): Promise<void> => await new Promise((resolve) => setTimeout(resolve, milliseconds));
+  await wait(420);
+  const initial = await evaluate(`(() => ({
+    hash: location.hash,
+    root: Boolean(document.querySelector('[data-enterprise-demo-root]')),
+    body: document.body.classList.contains('enterprise-demo-active'),
+    personalTopbarHidden: getComputedStyle(document.querySelector('.production-topbar')).display === 'none',
+    sqliteText: document.body.textContent.includes('SQLite'),
+    defaultParticipation: document.body.textContent.includes('Aggregate contribution') && document.body.textContent.includes('OFF'),
+    forbiddenCopy: document.body.textContent.includes('Không employee monitoring') && document.body.textContent.includes('Không focus/fatigue/productivity score')
+  }))()`);
+  if (JSON.stringify(initial) !== JSON.stringify({ hash: `#${ENTERPRISE_DEMO_HASH}`, root: true, body: true, personalTopbarHidden: true, sqliteText: false, defaultParticipation: true, forbiddenCopy: true })) throw new Error(`ENTERPRISE_DEMO_INITIAL_STATE_INVALID:${JSON.stringify(initial)}`);
+  for (const route of ["transparency", "it", "insights", "campaigns", "report", "audit"]) {
+    await evaluate(`location.hash = '#/enterprise-demo/${route}'; true`);
+    await wait();
+    const state = await evaluate(`(() => ({ route: location.hash, root: Boolean(document.querySelector('[data-enterprise-demo-root]')), current: document.querySelector('.enterprise-nav [aria-current="page"]')?.getAttribute('href') }))()`);
+    if (JSON.stringify(state) !== JSON.stringify({ route: `#/enterprise-demo/${route}`, root: true, current: `#/enterprise-demo/${route}` })) throw new Error(`ENTERPRISE_DEMO_ROUTE_INVALID:${route}:${JSON.stringify(state)}`);
+  }
+  await evaluate("location.hash = '#/enterprise-demo/insights'; true");
+  await wait();
+  const insights = await evaluate(`(() => {
+    const metricLabels = Array.from(document.querySelectorAll('.enterprise-metric')).map((item) => item.textContent ?? '').join(' ');
+    return document.body.textContent.includes('Suppressed cohort') && !/Focus score|Fatigue score|Productivity score|Health score/i.test(metricLabels);
+  })()`);
+  if (!insights) throw new Error("ENTERPRISE_DEMO_INSIGHTS_BOUNDARY_INVALID");
+  await evaluate("location.hash = '#/enterprise-demo/transparency'; true");
+  await wait();
+  const defaultOff = await evaluate("document.querySelector('#enterprise-aggregate-toggle')?.checked === false");
+  if (!defaultOff) throw new Error("ENTERPRISE_DEMO_PARTICIPATION_DEFAULT_NOT_OFF");
+  if (enterpriseDemoBlockedNetworkRequests !== 0) throw new Error(`ENTERPRISE_DEMO_NETWORK_REQUEST:${enterpriseDemoBlockedNetworkRequests}`);
+  console.log("ENTERPRISE_DEMO_VALIDATION_PASS packagedElectron=true noPersonalStorage=true syntheticOnly=true aggregateDefaultOff=true noNetworkRequests=true routes=7 privacyBoundaries=true");
 }
 
 async function runSmoke(window: BrowserWindow): Promise<void> {
@@ -841,14 +903,35 @@ async function runCameraRuntimeTest(window: BrowserWindow, fullMeasurement: bool
 }
 
 app.whenReady().then(async () => {
-  const userDataDirectory = app.getPath("userData");
-  const protectedKey = loadOrCreateProtectedStorageKey({ keyFilePath: path.join(userDataDirectory, "protected-storage-key.json"), protector: safeStorage, allowCreate: true });
-  if (protectedKey.state !== "READY") throw new Error(protectedKey.failureCode);
-  const openedStorage = openLocalSqliteStorage(resolveDatabasePath(userDataDirectory), { sensitiveDataCodec: protectedKey.codec });
-  if (openedStorage.state === "READY") { storage = openedStorage.storage; recoverPersistedSession(); }
-  configureLocalCameraPermission();
-  registerIpcHandlers();
+  if (shouldInitializePersonalStorage(enterpriseDemoMode)) {
+    const { DEFAULT_USER_PREFERENCES, openLocalSqliteStorage, resolveDatabasePath } = await import("../platform-electron/sqlite-storage.js");
+    defaultUserPreferences = DEFAULT_USER_PREFERENCES;
+    const userDataDirectory = app.getPath("userData");
+    const protectedKey = loadOrCreateProtectedStorageKey({ keyFilePath: path.join(userDataDirectory, "protected-storage-key.json"), protector: safeStorage, allowCreate: true });
+    if (protectedKey.state === "READY") {
+      const openedStorage = openLocalSqliteStorage(resolveDatabasePath(userDataDirectory), { sensitiveDataCodec: protectedKey.codec });
+      if (openedStorage.state === "READY") { storage = openedStorage.storage; recoverPersistedSession(); }
+      else console.error(`PERSONAL_STORAGE_UNAVAILABLE:${openedStorage.failureCode}`);
+    } else {
+      console.error(`PERSONAL_STORAGE_RECOVERY_REQUIRED:${protectedKey.failureCode}`);
+    }
+    configureLocalCameraPermission();
+    registerIpcHandlers();
+  } else {
+    configureEnterpriseDemoBoundary();
+  }
   const window = await createMainWindow();
+
+  if (enterpriseDemoValidationMode) {
+    try {
+      await runEnterpriseDemoValidation(window);
+      app.exit(0);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : "ENTERPRISE_DEMO_VALIDATION_FAILED");
+      app.exit(1);
+    }
+    return;
+  }
 
   if (smokeMode || companionSmokeMode || intelligenceSmokeMode || uiValidationMode || livingAuroraValidationMode || tasteDesignLabValidationMode || clarityProductionValidationMode || uiRecoverySeedMode || uiRecoveryCheckMode || egressObservationMode || cameraRuntimeTestMode || cameraRuntimeFullTestMode || devPanelValidationMode) {
     try {

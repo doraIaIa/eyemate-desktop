@@ -5,4 +5,5 @@ candidates/tauri/src-tauri/gen/
 .m1/
 .m4/
 .pilot/
+.tmp/
 dist/

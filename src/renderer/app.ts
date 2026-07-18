@@ -12,8 +12,9 @@ import { applyDevObservationOverrides, EMPTY_DEV_OVERRIDES, type DevOverrides } 
 import { DevPanelController } from "./dev-panel.js";
 import { evaluateCompanionCycle, getCompanionModeProfile } from "../work-session/companion-cycle.js";
 import { buildWorkRhythm, type WorkRhythmSummary } from "../personal-intelligence/work-rhythm.js";
+import { renderEnterpriseDemo } from "./enterprise-demo.js";
 
-type RouteId = "home" | "checkup" | "companion" | "intelligence" | "reports" | "privacy" | "settings" | "design-lab" | "taste-design-lab";
+type RouteId = "home" | "checkup" | "companion" | "intelligence" | "reports" | "privacy" | "settings" | "design-lab" | "taste-design-lab" | "enterprise-demo";
 type ReportTab = "overview" | "week" | "month" | "history";
 
 const routes: readonly RouteId[] = ["home", "checkup", "companion", "intelligence", "reports", "privacy", "settings", "design-lab", "taste-design-lab"];
@@ -95,6 +96,7 @@ function updateDevRawMetrics(): void {
 
 function routeFromHash(): RouteId {
   const path = location.hash.replace(/^#\/?/, "");
+  if (path === "enterprise-demo" || path.startsWith("enterprise-demo/")) return "enterprise-demo";
   if (path === "design-lab/living-aurora") return "design-lab";
   if (path === "design-lab/taste-direction") return "taste-design-lab";
   const candidate = path.split("/")[0];
@@ -1306,15 +1308,17 @@ function bindProductionShell(): void {
 async function renderRoute(): Promise<void> {
   if (sessionTicker !== null) { window.clearInterval(sessionTicker); sessionTicker = null; }
   const route = routeFromHash();
-  const productionRoute = route !== "design-lab" && route !== "taste-design-lab";
+  const productionRoute = route !== "design-lab" && route !== "taste-design-lab" && route !== "enterprise-demo";
   document.body.classList.toggle("production-clarity-active", productionRoute);
   document.body.dataset.route = route;
   document.body.classList.toggle("design-lab-active", route === "design-lab");
   document.body.classList.toggle("taste-design-lab-active", route === "taste-design-lab");
+  document.body.classList.toggle("enterprise-demo-active", route === "enterprise-demo");
   if (route !== "checkup" && cameraRuntime.active) await stopCameraFlow();
   skeletonPage(route);
   try {
-    if (route === "design-lab") renderDesignLab();
+    if (route === "enterprise-demo") renderEnterpriseDemo(setView);
+    else if (route === "design-lab") renderDesignLab();
     else if (route === "taste-design-lab") renderTasteDesignLab();
     else if (route === "home") await renderHome();
     else if (route === "checkup") renderCheckup();
@@ -1336,8 +1340,11 @@ document.addEventListener("visibilitychange", () => {
   });
 });
 if (!location.hash) location.replace("#/home");
-bindProductionShell();
-void window.eyeMate.getUserPreferences().then(applyPreferences).catch(() => { /* Route error UI handles unavailable storage. */ });
-startCompanionMonitor();
-void window.eyeMate.getRuntimeInfo().then(async (runtime) => { if (!runtime.developerPanelEnabled) return; cameraCalibration = await window.eyeMate.getCameraCalibration().then((record) => record?.profile ?? null).catch(() => null); devPanel.enable(); }).catch(() => { /* Production remains without developer controls. */ });
+const bootsEnterpriseDemo = routeFromHash() === "enterprise-demo";
+if (!bootsEnterpriseDemo) {
+  bindProductionShell();
+  void window.eyeMate.getUserPreferences().then(applyPreferences).catch(() => { /* Route error UI handles unavailable storage. */ });
+  startCompanionMonitor();
+  void window.eyeMate.getRuntimeInfo().then(async (runtime) => { if (!runtime.developerPanelEnabled) return; cameraCalibration = await window.eyeMate.getCameraCalibration().then((record) => record?.profile ?? null).catch(() => null); devPanel.enable(); }).catch(() => { /* Production remains without developer controls. */ });
+}
 void renderRoute();
