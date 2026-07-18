@@ -452,29 +452,61 @@ function configureLocalCameraPermission(): void {
 
 async function runEnterpriseDemoValidation(window: BrowserWindow): Promise<void> {
   const evaluate = async <T>(source: string): Promise<T> => await window.webContents.executeJavaScript(source, true) as T;
-  const wait = async (milliseconds = 180): Promise<void> => await new Promise((resolve) => setTimeout(resolve, milliseconds));
-  await wait(420);
+  const wait = async (milliseconds = 220): Promise<void> => await new Promise((resolve) => setTimeout(resolve, milliseconds));
+  const screenshotDirectory = path.join(currentDirectory, "../../docs/validation/enterprise-demo");
+  const capture = async (name: string): Promise<void> => {
+    const image = await window.webContents.capturePage();
+    await mkdir(screenshotDirectory, { recursive: true });
+    await writeFile(path.join(screenshotDirectory, `${name}.png`), image.toPNG());
+  };
+  const inspectLayout = async (): Promise<{ readonly overflow: boolean; readonly overlap: boolean; readonly chartVisible: boolean; readonly legendVisible: boolean; readonly kpis: number }> => await evaluate(`(() => {
+    const rectangles = Array.from(document.querySelectorAll('.enterprise-kpi')).map((item) => item.getBoundingClientRect());
+    const overlap = rectangles.some((rectangle, index) => rectangles.slice(index + 1).some((other) => rectangle.left < other.right && rectangle.right > other.left && rectangle.top < other.bottom && rectangle.bottom > other.top));
+    const chart = document.querySelector('.enterprise-chart svg')?.getBoundingClientRect();
+    const legend = document.querySelector('.enterprise-chart-legend')?.getBoundingClientRect();
+    return { overflow: document.documentElement.scrollWidth > window.innerWidth + 1, overlap, chartVisible: Boolean(chart && chart.width > 240 && chart.height > 150), legendVisible: Boolean(legend && legend.width > 180 && legend.height > 10), kpis: rectangles.length };
+  })()`);
+  await wait(520);
   const initial = await evaluate(`(() => ({
     hash: location.hash,
     root: Boolean(document.querySelector('[data-enterprise-demo-root]')),
     body: document.body.classList.contains('enterprise-demo-active'),
     personalTopbarHidden: getComputedStyle(document.querySelector('.production-topbar')).display === 'none',
     sqliteText: document.body.textContent.includes('SQLite'),
-    defaultParticipation: document.body.textContent.includes('Aggregate contribution') && document.body.textContent.includes('OFF'),
-    forbiddenCopy: document.body.textContent.includes('Không employee monitoring') && document.body.textContent.includes('Không focus/fatigue/productivity score')
+    syntheticBadge: document.body.textContent.includes('Synthetic data'),
+    denominator: document.body.textContent.includes('205 / 247'),
+    legend: document.querySelectorAll('.enterprise-chart-legend span').length === 4,
+    reportName: document.body.textContent.includes('EyeMate Program Implementation & Participation Report'),
+    noBenchmark: !/benchmark|trung bình ngành/i.test(document.body.textContent ?? '')
   }))()`);
-  if (JSON.stringify(initial) !== JSON.stringify({ hash: `#${ENTERPRISE_DEMO_HASH}`, root: true, body: true, personalTopbarHidden: true, sqliteText: false, defaultParticipation: true, forbiddenCopy: true })) throw new Error(`ENTERPRISE_DEMO_INITIAL_STATE_INVALID:${JSON.stringify(initial)}`);
+  if (JSON.stringify(initial) !== JSON.stringify({ hash: `#${ENTERPRISE_DEMO_HASH}`, root: true, body: true, personalTopbarHidden: true, sqliteText: false, syntheticBadge: true, denominator: true, legend: true, reportName: true, noBenchmark: true })) throw new Error(`ENTERPRISE_DEMO_INITIAL_STATE_INVALID:${JSON.stringify(initial)}`);
+  for (const [width, height] of [[1100, 700], [1280, 800], [1366, 768], [1440, 900], [1600, 1000], [1920, 1080]] as const) {
+    window.setSize(width, height);
+    await wait();
+    const layout = await inspectLayout();
+    if (layout.overflow || layout.overlap || !layout.chartVisible || !layout.legendVisible || layout.kpis !== 4) throw new Error(`ENTERPRISE_DEMO_VIEWPORT_INVALID:${width}x${height}:${JSON.stringify(layout)}`);
+    if ([[1100, 700], [1366, 768], [1440, 900], [1920, 1080]].some(([captureWidth, captureHeight]) => captureWidth === width && captureHeight === height)) await capture(`enterprise-overview-${width}x${height}`);
+  }
   for (const route of ["transparency", "it", "insights", "campaigns", "report", "audit"]) {
     await evaluate(`location.hash = '#/enterprise-demo/${route}'; true`);
     await wait();
     const state = await evaluate(`(() => ({ route: location.hash, root: Boolean(document.querySelector('[data-enterprise-demo-root]')), current: document.querySelector('.enterprise-nav [aria-current="page"]')?.getAttribute('href') }))()`);
     if (JSON.stringify(state) !== JSON.stringify({ route: `#/enterprise-demo/${route}`, root: true, current: `#/enterprise-demo/${route}` })) throw new Error(`ENTERPRISE_DEMO_ROUTE_INVALID:${route}:${JSON.stringify(state)}`);
+    await capture(route === "insights" ? "enterprise-program-insights-available-1440x900" : `enterprise-${route}-1440x900`);
+    if (route === "insights") {
+      await evaluate(`(() => { const select = document.querySelector('#enterprise-cohort-select'); select.value = 'legal'; select.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+      await wait();
+      await capture("enterprise-program-insights-suppressed-1440x900");
+      await evaluate(`(() => { const select = document.querySelector('#enterprise-cohort-select'); select.value = 'all'; select.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+      await wait();
+    }
   }
   await evaluate("location.hash = '#/enterprise-demo/insights'; true");
   await wait();
   const insights = await evaluate(`(() => {
-    const metricLabels = Array.from(document.querySelectorAll('.enterprise-metric')).map((item) => item.textContent ?? '').join(' ');
-    return document.body.textContent.includes('Suppressed cohort') && !/Focus score|Fatigue score|Productivity score|Health score/i.test(metricLabels);
+    const metricLabels = Array.from(document.querySelectorAll('.enterprise-kpi')).map((item) => item.textContent ?? '').join(' ');
+    const suppressed = document.querySelector('.cohort-row.suppressed');
+    return Boolean(suppressed) && !/\\d/.test(suppressed?.textContent ?? '') && !/Focus score|Fatigue score|Productivity score|Health score/i.test(metricLabels);
   })()`);
   if (!insights) throw new Error("ENTERPRISE_DEMO_INSIGHTS_BOUNDARY_INVALID");
   await evaluate("location.hash = '#/enterprise-demo/transparency'; true");
@@ -482,7 +514,7 @@ async function runEnterpriseDemoValidation(window: BrowserWindow): Promise<void>
   const defaultOff = await evaluate("document.querySelector('#enterprise-aggregate-toggle')?.checked === false");
   if (!defaultOff) throw new Error("ENTERPRISE_DEMO_PARTICIPATION_DEFAULT_NOT_OFF");
   if (enterpriseDemoBlockedNetworkRequests !== 0) throw new Error(`ENTERPRISE_DEMO_NETWORK_REQUEST:${enterpriseDemoBlockedNetworkRequests}`);
-  console.log("ENTERPRISE_DEMO_VALIDATION_PASS packagedElectron=true noPersonalStorage=true syntheticOnly=true aggregateDefaultOff=true noNetworkRequests=true routes=7 privacyBoundaries=true");
+  console.log("ENTERPRISE_DEMO_VALIDATION_PASS packagedElectron=true noPersonalStorage=true syntheticOnly=true aggregateDefaultOff=true noNetworkRequests=true routes=7 privacyBoundaries=true viewports=6 screenshots=11 legends=true denominator=true suppressionNoValue=true");
 }
 
 async function runSmoke(window: BrowserWindow): Promise<void> {

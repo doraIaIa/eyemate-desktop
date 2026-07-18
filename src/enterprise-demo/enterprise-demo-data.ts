@@ -1,39 +1,134 @@
 export type EnterpriseDemoRoute = "overview" | "transparency" | "it" | "insights" | "campaigns" | "report" | "audit";
+export type MetricId = "enrollment-coverage" | "monthly-active-participation" | "break-engagement" | "long-observed-session-rate" | "data-coverage" | "missing-unknown";
+export type PrivacyState = "AVAILABLE" | "UNKNOWN" | "INSUFFICIENT_DATA" | "SUPPRESSED";
+export type SourceState = "COMPLETE" | "PARTIAL" | "MISSING";
 
-export interface EnterpriseDemoMetric {
+export interface SyntheticOrganization {
+  readonly id: string;
+  readonly name: string;
+  readonly plan: string;
+  readonly eligibleSeats: number;
+}
+
+export interface ReportingPeriod {
   readonly id: string;
   readonly label: string;
-  readonly value: string;
-  readonly window: string;
-  readonly coverage: number;
-  readonly status: "available" | "suppressed" | "unknown";
-  readonly interpretation: string;
+  readonly startsOn: string;
+  readonly endsOn: string;
+  readonly methodologyVersion: string;
+  readonly refreshedAt: string;
+}
+
+export interface MetricDefinition {
+  readonly id: MetricId;
+  readonly label: string;
+  readonly shortLabel: string;
+  readonly plainLanguageDefinition: string;
+  readonly numeratorLabel: string;
+  readonly denominatorLabel: string;
+  readonly unit: "PERCENT";
+  readonly colorToken: string;
+  readonly icon: "users" | "activity" | "break" | "clock" | "database" | "unknown";
+  readonly favorableDirection: "UP" | "DOWN" | "NEUTRAL";
+  readonly allowedInterpretation: string;
   readonly prohibitedInterpretation: string;
 }
 
-export interface EnterpriseDemoCohort {
-  readonly id: string;
-  readonly label: string;
-  readonly employees: number;
-  readonly contributors: number;
-  readonly status: "reportable" | "suppressed";
+export interface MetricPoint {
+  readonly period: string;
+  readonly numerator: number;
+  readonly denominator: number;
 }
 
-export interface EnterpriseDemoCampaign {
+export interface MetricObservation {
+  readonly id: MetricId;
+  readonly definition: MetricDefinition;
+  readonly numerator: number | null;
+  readonly denominator: number | null;
+  readonly value: number | null;
+  readonly previousPeriodValue: number | null;
+  readonly deltaPoints: number | null;
+  readonly coverage: number | null;
+  readonly missingRate: number | null;
+  readonly reportingPeriod: ReportingPeriod;
+  readonly metricVersion: string;
+  readonly privacyState: PrivacyState;
+  readonly sourceState: SourceState;
+  readonly series: readonly { readonly period: string; readonly value: number | null }[];
+}
+
+export interface MetricSeries {
+  readonly metricId: MetricId;
+  readonly label: string;
+  readonly colorToken: string;
+  readonly values: readonly { readonly period: string; readonly value: number | null }[];
+}
+
+export interface CohortSummary {
+  readonly id: string;
+  readonly label: string;
+  readonly eligible: number | null;
+  readonly contributors: number | null;
+  readonly participation: number | null;
+  readonly privacyState: PrivacyState;
+  readonly explanation: string;
+}
+
+export interface DataCoverageSummary {
+  readonly validContributors: number;
+  readonly expectedContributors: number;
+  readonly completeWindows: number;
+  readonly expectedWindows: number;
+  readonly thresholdReadyCohorts: number;
+  readonly totalCohorts: number;
+  readonly coverage: number;
+  readonly missingRate: number;
+  readonly reportReady: boolean;
+  readonly methodologyVersion: string;
+}
+
+export interface CampaignSummary {
   readonly id: string;
   readonly title: string;
-  readonly state: "draft" | "scheduled" | "paused";
-  readonly window: string;
-  readonly reach: string;
+  readonly state: "ACTIVE" | "UPCOMING" | "PAUSED";
+  readonly startsOn: string;
+  readonly endsOn: string;
+  readonly reachedCohorts: number;
+  readonly eligibleCohorts: number;
+  readonly previewState: "PUBLISHED" | "READY" | "WITHDRAWN";
   readonly employeeControl: string;
-  readonly aggregateOnly: string;
+  readonly aggregateMetrics: readonly MetricId[];
+}
+
+export interface ReportSummary {
+  readonly id: string;
+  readonly name: "EyeMate Program Implementation & Participation Report";
+  readonly period: string;
+  readonly state: "READY" | "DRAFT" | "REVOKED";
+  readonly methodologyVersion: string;
+  readonly coverage: number;
+  readonly issuedOn: string | null;
+  readonly hash: string | null;
+}
+
+export interface AppVersionDistribution {
+  readonly version: string;
+  readonly devices: number;
+  readonly state: "CURRENT" | "UPDATE_AVAILABLE" | "BLOCKED" | "UNKNOWN";
+}
+
+export interface PrivacyThresholdPolicy {
+  readonly minimumEligibleCohort: 20;
+  readonly minimumContributors: 15;
+  readonly suppressCellsBelow: 10;
+  readonly status: "PROPOSED";
 }
 
 export interface EnterpriseDemoAuditEvent {
   readonly id: string;
   readonly actor: string;
   readonly action: string;
-  readonly result: "allowed" | "denied";
+  readonly result: "ALLOWED" | "DENIED";
   readonly detail: string;
 }
 
@@ -48,184 +143,107 @@ export interface EnterpriseDemoPolicy {
 }
 
 export interface EnterpriseDemoModel {
-  readonly organization: {
-    readonly name: string;
-    readonly plan: string;
-    readonly ring: string;
-    readonly appVersion: string;
-    readonly devices: number;
-  };
+  readonly organization: SyntheticOrganization;
+  readonly period: ReportingPeriod;
   readonly policy: EnterpriseDemoPolicy;
+  readonly thresholds: PrivacyThresholdPolicy;
   readonly routes: readonly EnterpriseDemoRoute[];
-  readonly metrics: readonly EnterpriseDemoMetric[];
-  readonly cohorts: readonly EnterpriseDemoCohort[];
-  readonly campaigns: readonly EnterpriseDemoCampaign[];
+  readonly metrics: readonly MetricObservation[];
+  readonly trendSeries: readonly MetricSeries[];
+  readonly cohorts: readonly CohortSummary[];
+  readonly dataCoverage: DataCoverageSummary;
+  readonly campaigns: readonly CampaignSummary[];
+  readonly reports: readonly ReportSummary[];
+  readonly versions: readonly AppVersionDistribution[];
   readonly audit: readonly EnterpriseDemoAuditEvent[];
   readonly forbiddenEmployerFeatures: readonly string[];
-  readonly reportClaims: {
-    readonly allowed: readonly string[];
-    readonly prohibited: readonly string[];
-  };
 }
 
-export const enterpriseDemoRoutes: readonly EnterpriseDemoRoute[] = ["overview", "transparency", "it", "insights", "campaigns", "report", "audit"];
+export const enterpriseDemoRoutes: readonly EnterpriseDemoRoute[] = ["overview", "insights", "campaigns", "report", "it", "transparency", "audit"];
 
-export const defaultEnterpriseDemoPolicy: EnterpriseDemoPolicy = {
-  defaultAggregateParticipation: false,
-  cameraCoercionAllowed: false,
-  managerDrillDownAllowed: false,
-  identityInsightsJoinAllowed: false,
-  realtimePresenceAllowed: false,
-  syntheticDataOnly: true,
-  networkAllowed: false
+export const enterpriseMetricDefinitions: Readonly<Record<MetricId, MetricDefinition>> = {
+  "enrollment-coverage": { id: "enrollment-coverage", label: "Phủ sóng đăng ký", shortLabel: "Phủ sóng", plainLanguageDefinition: "Tỷ lệ vị trí đủ điều kiện đã kích hoạt EyeMate.", numeratorLabel: "vị trí đã kích hoạt", denominatorLabel: "vị trí đủ điều kiện", unit: "PERCENT", colorToken: "lime", icon: "users", favorableDirection: "UP", allowedInterpretation: "Phạm vi triển khai chương trình.", prohibitedInterpretation: "Không phải tỷ lệ nhân viên đang làm việc." },
+  "monthly-active-participation": { id: "monthly-active-participation", label: "Tham gia chủ động hàng tháng", shortLabel: "Tham gia", plainLanguageDefinition: "Tỷ lệ contributor đủ điều kiện đã đóng góp aggregate trong tháng.", numeratorLabel: "contributor có aggregate", denominatorLabel: "contributor đủ điều kiện", unit: "PERCENT", colorToken: "violet", icon: "activity", favorableDirection: "UP", allowedInterpretation: "Mức tham gia chương trình ở cấp tổng hợp.", prohibitedInterpretation: "Không phải attendance hoặc thời gian làm việc." },
+  "break-engagement": { id: "break-engagement", label: "Tương tác break", shortLabel: "Tương tác break", plainLanguageDefinition: "Tỷ lệ cửa sổ nhắc nghỉ đủ điều kiện có phản hồi aggregate.", numeratorLabel: "cửa sổ có tương tác", denominatorLabel: "cửa sổ đủ điều kiện", unit: "PERCENT", colorToken: "amber", icon: "break", favorableDirection: "UP", allowedInterpretation: "Mức tương tác với nhắc nghỉ của chương trình.", prohibitedInterpretation: "Không phải mức tuân thủ của từng nhân viên." },
+  "long-observed-session-rate": { id: "long-observed-session-rate", label: "Tỷ lệ phiên quan sát dài", shortLabel: "Phiên dài", plainLanguageDefinition: "Tỷ lệ observed session tổng hợp dài từ hai giờ trở lên.", numeratorLabel: "phiên dài", denominatorLabel: "phiên quan sát đủ điều kiện", unit: "PERCENT", colorToken: "teal", icon: "clock", favorableDirection: "DOWN", allowedInterpretation: "Tín hiệu chương trình để điều chỉnh nhịp nghỉ.", prohibitedInterpretation: "Không phải thời gian làm việc hoặc fatigue score." },
+  "data-coverage": { id: "data-coverage", label: "Độ phủ dữ liệu", shortLabel: "Độ phủ", plainLanguageDefinition: "Tỷ lệ contributor tạo dữ liệu aggregate hợp lệ trong kỳ.", numeratorLabel: "contributor hợp lệ", denominatorLabel: "contributor kỳ vọng", unit: "PERCENT", colorToken: "green", icon: "database", favorableDirection: "UP", allowedInterpretation: "Mức đủ dữ liệu để đọc báo cáo.", prohibitedInterpretation: "Không phải trạng thái sức khỏe." },
+  "missing-unknown": { id: "missing-unknown", label: "Thiếu hoặc chưa rõ", shortLabel: "Thiếu/chưa rõ", plainLanguageDefinition: "Tỷ lệ observation thiếu hoặc không xác định.", numeratorLabel: "observation thiếu", denominatorLabel: "observation kỳ vọng", unit: "PERCENT", colorToken: "muted", icon: "unknown", favorableDirection: "DOWN", allowedInterpretation: "Giới hạn dữ liệu cần đọc cùng báo cáo.", prohibitedInterpretation: "Unknown không được hiểu thành 0 hoặc bình thường." }
 };
 
+export const defaultEnterpriseDemoPolicy: EnterpriseDemoPolicy = { defaultAggregateParticipation: false, cameraCoercionAllowed: false, managerDrillDownAllowed: false, identityInsightsJoinAllowed: false, realtimePresenceAllowed: false, syntheticDataOnly: true, networkAllowed: false };
+export const defaultPrivacyThresholds: PrivacyThresholdPolicy = { minimumEligibleCohort: 20, minimumContributors: 15, suppressCellsBelow: 10, status: "PROPOSED" };
+
 export const enterpriseDemoForbiddenEmployerFeatures: readonly string[] = [
-  "Camera stream, raw frame, video hoặc landmark",
-  "Symptom answer hoặc personal report của một nhân viên",
-  "Blink timeline hoặc distance timeline cá nhân",
-  "Focus score, fatigue score, productivity score hoặc emotion inference",
-  "Real-time employee presence",
-  "Individual break history hoặc employee ranking",
-  "Manager drill-down xuống dữ liệu wellbeing cá nhân"
+  "Triệu chứng hoặc báo cáo cá nhân", "Luồng camera, raw frame hoặc landmark", "Điểm tập trung, mệt mỏi hoặc năng suất", "Hiện diện nhân viên theo thời gian thực", "Lịch sử nghỉ của một cá nhân", "Manager drill-down hoặc xếp hạng nhân viên"
 ];
 
+function ratio(numerator: number, denominator: number): number | null {
+  return denominator === 0 ? null : Math.round(numerator * 1000 / denominator) / 10;
+}
+
+function observation(id: MetricId, numerator: number, denominator: number, previousNumerator: number, previousDenominator: number, coverage: number, missingRate: number, period: ReportingPeriod, points: readonly MetricPoint[]): MetricObservation {
+  const value = ratio(numerator, denominator);
+  const previousPeriodValue = ratio(previousNumerator, previousDenominator);
+  return { id, definition: enterpriseMetricDefinitions[id], numerator, denominator, value, previousPeriodValue, deltaPoints: value === null || previousPeriodValue === null ? null : Math.round((value - previousPeriodValue) * 10) / 10, coverage, missingRate, reportingPeriod: period, metricVersion: "enterprise-metrics/1.0.0-proposed", privacyState: value === null ? "UNKNOWN" : "AVAILABLE", sourceState: coverage >= 80 ? "COMPLETE" : "PARTIAL", series: points.map((point) => ({ period: point.period, value: ratio(point.numerator, point.denominator) })) };
+}
+
+function safeCohort(id: string, label: string, eligible: number, contributors: number, thresholds: PrivacyThresholdPolicy): CohortSummary {
+  if (eligible < thresholds.minimumEligibleCohort || contributors < thresholds.minimumContributors || contributors < thresholds.suppressCellsBelow) {
+    return { id, label, eligible: null, contributors: null, participation: null, privacyState: "SUPPRESSED", explanation: `Không hiển thị vì chưa đạt ngưỡng cohort ${thresholds.minimumEligibleCohort} và contributor ${thresholds.minimumContributors}.` };
+  }
+  return { id, label, eligible, contributors, participation: ratio(contributors, eligible), privacyState: "AVAILABLE", explanation: "Aggregate đủ ngưỡng để hiển thị." };
+}
+
 export function createEnterpriseDemoModel(): EnterpriseDemoModel {
+  const period: ReportingPeriod = { id: "2025-06", label: "Tháng 6, 2025", startsOn: "2025-06-01", endsOn: "2025-06-30", methodologyVersion: "enterprise-metrics/1.0.0-proposed", refreshedAt: "2025-07-01T09:20:00+07:00" };
+  const periods = ["T1/2025", "T2/2025", "T3/2025", "T4/2025", "T5/2025", "T6/2025"];
+  const points = (values: readonly [number, number][]): readonly MetricPoint[] => values.map(([numerator, denominator], index) => ({ period: periods[index] ?? `Kỳ ${index + 1}`, numerator, denominator }));
+  const metrics = [
+    observation("enrollment-coverage", 205, 247, 190, 247, 94, 6, period, points([[178, 240], [185, 242], [196, 245], [199, 247], [201, 247], [205, 247]])),
+    observation("monthly-active-participation", 168, 247, 158, 247, 92, 8, period, points([[141, 240], [149, 242], [158, 245], [160, 247], [162, 247], [168, 247]])),
+    observation("break-engagement", 842, 1238, 866, 1217, 88, 12, period, points([[624, 1090], [669, 1118], [723, 1172], [767, 1194], [866, 1217], [842, 1238]])),
+    observation("long-observed-session-rate", 131, 1187, 166, 1182, 86, 14, period, points([[174, 1072], [168, 1101], [174, 1128], [171, 1150], [166, 1182], [131, 1187]]))
+  ] as const;
+  const coverage = { validContributors: 221, expectedContributors: 247, completeWindows: 28, expectedWindows: 30, thresholdReadyCohorts: 5, totalCohorts: 6, coverage: ratio(221, 247) ?? 0, missingRate: ratio(26, 247) ?? 0, reportReady: true, methodologyVersion: period.methodologyVersion };
   return {
-    organization: {
-      name: "Northstar Studio",
-      plan: "Enterprise Pilot Discovery",
-      ring: "Design partner ring A",
-      appVersion: "0.1.0-m1",
-      devices: 186
-    },
+    organization: { id: "northstar-studio", name: "Northstar Studio", plan: "Design partner · 247 vị trí", eligibleSeats: 247 },
+    period,
     policy: defaultEnterpriseDemoPolicy,
+    thresholds: defaultPrivacyThresholds,
     routes: enterpriseDemoRoutes,
-    metrics: [
-      {
-        id: "monthly-active-participation",
-        label: "Program participation",
-        value: "68%",
-        window: "30 ngày",
-        coverage: 82,
-        status: "available",
-        interpretation: "Tỷ lệ thiết bị có đóng góp aggregate trong kỳ, sau khi nhân viên đã biết rõ và cho phép.",
-        prohibitedInterpretation: "Không phải attendance, không cho biết ai đang làm việc."
-      },
-      {
-        id: "break-engagement-rate",
-        label: "Break engagement",
-        value: "54%",
-        window: "Tuần này",
-        coverage: 76,
-        status: "available",
-        interpretation: "Tỷ lệ nhắc nghỉ được phản hồi ở cấp cohort.",
-        prohibitedInterpretation: "Không phải mức tuân thủ của từng nhân viên."
-      },
-      {
-        id: "long-observed-session-rate",
-        label: "Long observed-session rate",
-        value: "21%",
-        window: "Tuần này",
-        coverage: 74,
-        status: "available",
-        interpretation: "Tỷ lệ phiên local dài hơn ngưỡng chương trình ở cấp nhóm.",
-        prohibitedInterpretation: "Không phải thời gian làm việc cá nhân."
-      },
-      {
-        id: "helpfulness",
-        label: "Employee helpfulness",
-        value: "4.1/5",
-        window: "Khảo sát tháng",
-        coverage: 63,
-        status: "available",
-        interpretation: "Đánh giá hữu ích tự nguyện sau campaign.",
-        prohibitedInterpretation: "Không phải sức khỏe, năng suất hoặc mức hài lòng cá nhân."
-      },
-      {
-        id: "engineering-small-cohort",
-        label: "Engineering cohort",
-        value: "Suppressed",
-        window: "Tuần này",
-        coverage: 0,
-        status: "suppressed",
-        interpretation: "Cohort dưới ngưỡng không được hiển thị.",
-        prohibitedInterpretation: "Không được suy ra unknown thành zero hoặc trạng thái tốt."
-      }
-    ],
-    cohorts: [
-      { id: "product-design", label: "Product Design", employees: 42, contributors: 31, status: "reportable" },
-      { id: "customer-ops", label: "Customer Operations", employees: 58, contributors: 44, status: "reportable" },
-      { id: "engineering-platform", label: "Engineering Platform", employees: 17, contributors: 12, status: "suppressed" },
-      { id: "finance", label: "Finance", employees: 24, contributors: 15, status: "reportable" }
-    ],
+    metrics,
+    trendSeries: metrics.map((metric) => ({ metricId: metric.id, label: metric.definition.shortLabel, colorToken: metric.definition.colorToken, values: metric.series })),
+    cohorts: [safeCohort("engineering", "Engineering", 62, 54, defaultPrivacyThresholds), safeCohort("finance", "Finance", 37, 30, defaultPrivacyThresholds), safeCohort("design", "Product Design", 43, 31, defaultPrivacyThresholds), safeCohort("product", "Product", 39, 26, defaultPrivacyThresholds), safeCohort("sales", "Sales", 46, 28, defaultPrivacyThresholds), safeCohort("operations", "Customer Operations", 40, 19, defaultPrivacyThresholds), safeCohort("legal", "Legal", 17, 12, defaultPrivacyThresholds)],
+    dataCoverage: coverage,
     campaigns: [
-      {
-        id: "micro-break-week",
-        title: "Micro-break week",
-        state: "scheduled",
-        window: "22-26 tháng 7",
-        reach: "4 cohort đủ ngưỡng",
-        employeeControl: "Preview trước khi bắt đầu, có opt-out và pause",
-        aggregateOnly: "Chỉ campaign reach, break engagement và helpfulness aggregate"
-      },
-      {
-        id: "lighting-check",
-        title: "Lighting setup check",
-        state: "draft",
-        window: "Chưa phát hành",
-        reach: "Đang review bởi Privacy Auditor",
-        employeeControl: "Không bật camera và không đo ẩn",
-        aggregateOnly: "Chỉ mức tham gia aggregate nếu đủ ngưỡng"
-      },
-      {
-        id: "close-workout",
-        title: "End-of-day visual reset",
-        state: "paused",
-        window: "Đã tạm dừng",
-        reach: "Không gửi thêm reminder",
-        employeeControl: "Employee thấy trạng thái paused",
-        aggregateOnly: "Không tạo leaderboard hoặc target cá nhân"
-      }
+      { id: "detox-mat", title: "Detox Mắt — Hè 2025", state: "ACTIVE", startsOn: "2025-06-01", endsOn: "2025-06-30", reachedCohorts: 5, eligibleCohorts: 6, previewState: "PUBLISHED", employeeControl: "Preview, opt-out và pause luôn khả dụng", aggregateMetrics: ["break-engagement", "monthly-active-participation"] },
+      { id: "focus-reset", title: "Visual Reset — Tháng 7", state: "UPCOMING", startsOn: "2025-07-01", endsOn: "2025-07-31", reachedCohorts: 0, eligibleCohorts: 6, previewState: "READY", employeeControl: "Chưa mở đăng ký; không đo ẩn", aggregateMetrics: ["break-engagement"] }
     ],
+    reports: [
+      { id: "EPR-2025-06", name: "EyeMate Program Implementation & Participation Report", period: "Tháng 6, 2025", state: "READY", methodologyVersion: period.methodologyVersion, coverage: coverage.coverage, issuedOn: "2025-07-01", hash: "sha256:9f4e8d2a7ac2" },
+      { id: "EPR-2025-Q2", name: "EyeMate Program Implementation & Participation Report", period: "Quý 2, 2025", state: "DRAFT", methodologyVersion: period.methodologyVersion, coverage: 87.4, issuedOn: null, hash: null }
+    ],
+    versions: [{ version: "0.1.0-m1", devices: 171, state: "CURRENT" }, { version: "0.0.9", devices: 49, state: "UPDATE_AVAILABLE" }, { version: "0.0.8", devices: 18, state: "BLOCKED" }, { version: "Không xác định", devices: 9, state: "UNKNOWN" }],
     audit: [
-      { id: "audit-001", actor: "Wellbeing Admin", action: "Xem Program Insights", result: "allowed", detail: "Cohort aggregate đủ ngưỡng; không có drill-down." },
-      { id: "audit-002", actor: "Manager", action: "Mở individual break history", result: "denied", detail: "Vai trò manager không có individual wellbeing view." },
-      { id: "audit-003", actor: "Support Operator", action: "Truy cập technical support metadata", result: "allowed", detail: "Payload đã scrub; không chứa symptom/camera/personal report." },
-      { id: "audit-004", actor: "IT Admin", action: "Ép camera policy ON", result: "denied", detail: "Camera luôn do employee quyết định ở Personal Wellbeing Plane." },
-      { id: "audit-005", actor: "Executive Viewer", action: "Export Program Evidence Report", result: "allowed", detail: "Report chỉ xác minh source, hash, methodology và trạng thái revocation." }
+      { id: "audit-001", actor: "Wellbeing Admin", action: "Xem Program Insights", result: "ALLOWED", detail: "Cohort aggregate đủ ngưỡng; không có drill-down." },
+      { id: "audit-002", actor: "Manager", action: "Mở lịch sử nghỉ cá nhân", result: "DENIED", detail: "Vai trò manager không có individual wellbeing view." },
+      { id: "audit-003", actor: "Support Operator", action: "Đọc support metadata", result: "ALLOWED", detail: "Payload đã scrub; không chứa symptom, camera hoặc personal report." },
+      { id: "audit-004", actor: "IT Admin", action: "Ép camera policy ON", result: "DENIED", detail: "Camera luôn do employee quyết định ở Personal Wellbeing Plane." }
     ],
-    forbiddenEmployerFeatures: enterpriseDemoForbiddenEmployerFeatures,
-    reportClaims: {
-      allowed: [
-        "Mô tả phạm vi chương trình và mức tham gia aggregate",
-        "Nêu phương pháp, coverage, suppressed cohort và limitation",
-        "Xác minh report ID, document hash, issue state và methodology version"
-      ],
-      prohibited: [
-        "Legal/ISO/HSE compliance claim",
-        "Medical effectiveness hoặc employee health status",
-        "Causal productivity improvement",
-        "Focus, fatigue hoặc productivity score"
-      ]
-    }
+    forbiddenEmployerFeatures: enterpriseDemoForbiddenEmployerFeatures
   };
 }
 
-export function isEnterpriseDemoRoute(value: string): value is EnterpriseDemoRoute {
-  return enterpriseDemoRoutes.includes(value as EnterpriseDemoRoute);
-}
+export function isEnterpriseDemoRoute(value: string): value is EnterpriseDemoRoute { return enterpriseDemoRoutes.includes(value as EnterpriseDemoRoute); }
 
 export function validateEnterpriseDemoBoundary(model: EnterpriseDemoModel): readonly string[] {
   const failures: string[] = [];
   if (model.policy.defaultAggregateParticipation !== false) failures.push("AGGREGATE_PARTICIPATION_NOT_OFF_BY_DEFAULT");
-  if (model.policy.networkAllowed !== false) failures.push("NETWORK_ALLOWED_IN_DEMO");
-  if (model.policy.syntheticDataOnly !== true) failures.push("SYNTHETIC_DATA_ONLY_NOT_DECLARED");
+  if (model.policy.networkAllowed !== false || model.policy.syntheticDataOnly !== true) failures.push("DEMO_DATA_BOUNDARY_INVALID");
   if (model.policy.cameraCoercionAllowed || model.policy.managerDrillDownAllowed || model.policy.identityInsightsJoinAllowed || model.policy.realtimePresenceAllowed) failures.push("FORBIDDEN_ENTERPRISE_CAPABILITY_ENABLED");
-  for (const metric of model.metrics) {
-    const prohibited = `${metric.label} ${metric.interpretation}`.toLowerCase();
-    if (/\bfocus score\b|\bfatigue score\b|\bproductivity score\b|\bhealth score\b/.test(prohibited)) failures.push(`PROHIBITED_METRIC:${metric.id}`);
-  }
-  if (!model.cohorts.some((cohort) => cohort.status === "suppressed")) failures.push("SUPPRESSED_COHORT_EXAMPLE_MISSING");
+  if (!model.cohorts.some((cohort) => cohort.privacyState === "SUPPRESSED" && cohort.eligible === null && cohort.contributors === null && cohort.participation === null)) failures.push("SUPPRESSION_SELECTOR_INVALID");
+  if (model.metrics.some((metric) => metric.value === null && metric.privacyState === "AVAILABLE")) failures.push("UNKNOWN_RENDERED_AVAILABLE");
+  const metricText = model.metrics.map((metric) => `${metric.id} ${metric.definition.label}`).join(" ").toLowerCase();
+  if (/focus score|fatigue score|productivity score|health score/.test(metricText)) failures.push("PROHIBITED_METRIC");
   return failures;
 }
