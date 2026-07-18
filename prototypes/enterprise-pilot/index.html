@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EyeMate Enterprise Pilot Prototype</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="prototype-banner">
+    PROTOTYPE · DỮ LIỆU GIẢ LẬP · KHÔNG DÙNG ĐỂ ĐÁNH GIÁ NHÂN VIÊN
+  </div>
+
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">EYEMATE ENTERPRISE PILOT</div>
+      <h1>Workplace Visual Wellbeing Program Platform for Screen-Based Work</h1>
+      <p>Triển khai chương trình sức khỏe thị giác mà không giám sát cá nhân.</p>
+    </div>
+    <div class="topbar-actions">
+      <button class="ghost" id="privacySummaryBtn">Ranh giới dữ liệu</button>
+      <span class="status-pill">Synthetic tenant: Acme Corp</span>
+    </div>
+  </header>
+
+  <nav class="nav-tabs" aria-label="Prototype screens">
+    <button class="nav-tab active" data-view="employee">Nhân viên</button>
+    <button class="nav-tab" data-view="it">IT Admin</button>
+    <button class="nav-tab" data-view="insights">HR / EHS Insights</button>
+    <button class="nav-tab" data-view="campaigns">Campaign</button>
+    <button class="nav-tab" data-view="evidence">EyeMate Program Implementation & Participation Report</button>
+    <button class="nav-tab" data-view="audit">Privacy Audit</button>
+  </nav>
+
+  <main>
+    <section id="employee" class="view active">
+      <div class="section-heading">
+        <div>
+          <div class="eyebrow">PERSONAL WELLBEING PLANE</div>
+          <h2>Minh bạch trước khi tham gia</h2>
+          <p>Người dùng biết chính xác dữ liệu nào ở lại trên máy và dữ liệu tổng hợp nào có thể đóng góp.</p>
+        </div>
+        <span class="local-pill">Local-first</span>
+      </div>
+
+      <div class="grid two">
+        <article class="card positive">
+          <h3>Công ty có thể xem</h3>
+          <ul class="check-list">
+            <li>Tỷ lệ kích hoạt ở cấp tổ chức</li>
+            <li>Thống kê tuần/tháng của nhóm đủ lớn</li>
+            <li>Phiên bản ứng dụng và tình trạng cập nhật</li>
+            <li>Mức độ tham gia campaign ở dạng aggregate</li>
+          </ul>
+        </article>
+
+        <article class="card danger">
+          <h3>Công ty không bao giờ xem</h3>
+          <ul class="cross-list">
+            <li>Camera, raw frame hoặc landmark</li>
+            <li>Triệu chứng và báo cáo cá nhân</li>
+            <li>Điểm mệt mỏi, tập trung hoặc năng suất</li>
+            <li>Timeline nghỉ, blink hoặc khoảng cách từng người</li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="grid two">
+        <article class="card">
+          <h3>Trạng thái tham gia</h3>
+          <div class="setting-row">
+            <div>
+              <strong>Đóng góp thống kê chương trình hàng tuần</strong>
+              <p>Chỉ gửi counter/bucket không định danh sau khi tổng hợp tại máy.</p>
+            </div>
+            <label class="switch">
+              <input id="aggregateToggle" type="checkbox" />
+              <span></span>
+            </label>
+          </div>
+          <div class="setting-row">
+            <div>
+              <strong>Cho phép camera cục bộ</strong>
+              <p>Tùy chọn. Tắt camera không làm mất quyền dùng survey và break companion.</p>
+            </div>
+            <label class="switch">
+              <input id="cameraToggle" type="checkbox" />
+              <span></span>
+            </label>
+          </div>
+          <div id="participationState" class="notice success">
+            Bạn đang tham gia chương trình bằng thống kê tổng hợp hàng tuần.
+          </div>
+        </article>
+
+        <article class="card">
+          <h3>Quyền kiểm soát</h3>
+          <div class="stack">
+            <button class="secondary" id="pauseBtn">Tạm dừng đóng góp 30 ngày</button>
+            <button class="secondary" id="unlinkBtn">Rời tổ chức, giữ dữ liệu cá nhân</button>
+            <button class="secondary">Xuất dữ liệu cá nhân</button>
+            <button class="danger-button">Xóa dữ liệu cá nhân</button>
+          </div>
+          <p class="muted">Rời tổ chức chỉ hủy liên kết enterprise. Dữ liệu local không được chuyển cho công ty.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="it" class="view">
+      <div class="section-heading">
+        <div>
+          <div class="eyebrow">ENTERPRISE CONTROL PLANE</div>
+          <h2>IT quản trị phần mềm, không quản trị sức khỏe</h2>
+          <p>Identity/device-management data được tách khỏi wellbeing analytics.</p>
+        </div>
+        <button class="primary" id="rolloutBtn">Tạo rollout ring</button>
+      </div>
+
+      <div class="metrics four">
+        <div class="metric-card"><span>Seats đã cấp</span><strong>247</strong><small>230 đã kích hoạt</small></div>
+        <div class="metric-card"><span>App healthy 24h</span><strong>221</strong><small>96% thiết bị active</small></div>
+        <div class="metric-card warning"><span>Cần cập nhật</span><strong>14</strong><small>Phiên bản &lt; 2.1.0</small></div>
+        <div class="metric-card"><span>License còn hiệu lực</span><strong>247</strong><small>Hết hạn 31/12/2026</small></div>
+      </div>
+
+      <div class="card">
+        <div class="table-toolbar">
+          <div>
+            <h3>Device & application inventory</h3>
+            <p class="muted">Không có symptom, camera, break history hoặc wellbeing score.</p>
+          </div>
+          <div class="inline">
+            <select id="deviceFilter">
+              <option value="all">Tất cả trạng thái</option>
+              <option value="healthy">Healthy</option>
+              <option value="update">Cần cập nhật</option>
+              <option value="stale">Không check-in 7 ngày</option>
+            </select>
+            <button class="secondary" id="exportInventoryBtn">Export CSV giả lập</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Device</th><th>Assigned identity</th><th>Version</th><th>App health</th><th>Check-in window</th><th>License</th></tr>
+            </thead>
+            <tbody id="deviceTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="insights" class="view">
+      <div class="section-heading">
+        <div>
+          <div class="eyebrow">PRIVACY-PRESERVING INSIGHTS</div>
+          <h2>Hiệu quả chương trình ở cấp nhóm</h2>
+          <p>Không real-time, không drill-down cá nhân, luôn hiển thị denominator và coverage.</p>
+        </div>
+        <div class="inline">
+          <select id="periodSelect">
+            <option value="month">Tháng 7/2026</option>
+            <option value="week">Tuần 28/2026</option>
+          </select>
+          <select id="cohortSelect">
+            <option value="company">Toàn công ty · 230 người</option>
+            <option value="engineering">Engineering · 87 người</option>
+            <option value="sales">Sales · 32 người</option>
+            <option value="legal">Legal · 12 người</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="suppressionNotice" class="notice warning hidden">
+        Không hiển thị: cohort không đạt ngưỡng privacy. Hãy chọn nhóm có ít nhất 20 người đủ điều kiện.
+      </div>
+
+      <div id="insightContent">
+        <div class="metrics four">
+          <div class="metric-card"><span>Enrollment coverage</span><strong id="enrollmentMetric">93%</strong><small id="enrollmentDenom">230 / 247 seats</small></div>
+          <div class="metric-card"><span>Monthly participation</span><strong id="participationMetric">83%</strong><small id="participationDenom">191 / 230 activated</small></div>
+          <div class="metric-card"><span>Break engagement</span><strong id="breakMetric">68%</strong><small>Eligible opportunities có đủ coverage</small></div>
+          <div class="metric-card"><span>Long observed sessions</span><strong id="longMetric">11%</strong><small>Observed sessions &gt; 2h không break</small></div>
+        </div>
+
+        <div class="grid two">
+          <article class="card">
+            <div class="card-heading">
+              <div><h3>Xu hướng chương trình</h3><p class="muted">Không diễn giải thành năng suất hoặc sức khỏe.</p></div>
+              <span class="method-pill">Metric v1.1</span>
+            </div>
+            <div id="trendChart" class="bar-chart"></div>
+          </article>
+
+          <article class="card">
+            <h3>Chất lượng và mức phủ dữ liệu</h3>
+            <div class="coverage-row"><span>Contributors đủ điều kiện</span><strong id="contributorsMetric">191</strong></div>
+            <div class="coverage-row"><span>Coverage tổng hợp</span><strong id="coverageMetric">78%</strong></div>
+            <div class="coverage-row"><span>Missing / unknown</span><strong id="unknownMetric">22%</strong></div>
+            <div class="coverage-row"><span>Cửa sổ báo cáo</span><strong id="windowMetric">Tháng</strong></div>
+            <div class="notice info">Metric không đủ coverage sẽ chuyển sang UNKNOWN, không tự coi là bình thường.</div>
+          </article>
+        </div>
+
+        <div class="grid two">
+          <article class="card">
+            <h3>Employee helpfulness</h3>
+            <div class="score-line"><strong>74%</strong><span>cho biết lời nhắc có ích</span></div>
+            <div class="score-line"><strong>82%</strong><span>hiểu công ty nhìn thấy dữ liệu gì</span></div>
+            <div class="score-line"><strong>7%</strong><span>cảm thấy chương trình gây áp lực</span></div>
+            <p class="muted">Khảo sát tự nguyện, aggregate, không dùng để xếp hạng bộ phận.</p>
+          </article>
+
+          <article class="card">
+            <h3>Gợi ý hành động cấp tổ chức</h3>
+            <ul class="action-list">
+              <li>Giảm cường độ reminder tại Engineering trong tuần release.</li>
+              <li>Chạy campaign “Healthy Break Month” cho Sales và Ops.</li>
+              <li>Gửi lại transparency notice vì 18% chưa hiểu data boundary.</li>
+            </ul>
+            <button class="primary" data-go="campaigns">Tạo campaign từ gợi ý</button>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="campaigns" class="view">
+      <div class="section-heading">
+        <div>
+          <div class="eyebrow">TRANSPARENT CAMPAIGNS</div>
+          <h2>Campaign có guardrail và quyền kiểm soát</h2>
+          <p>Không đo ngầm, không leaderboard cá nhân, không ép bật camera.</p>
+        </div>
+        <span class="status-pill">Approved templates only</span>
+      </div>
+
+      <div class="grid campaign-layout">
+        <article class="card">
+          <h3>1. Chọn template</h3>
+          <div id="templateList" class="template-list"></div>
+
+          <h3>2. Phạm vi và thời gian</h3>
+          <label>Cohort
+            <select id="campaignCohort">
+              <option value="sales">Sales + Ops · 60 người</option>
+              <option value="engineering">Engineering · 87 người</option>
+              <option value="company">Toàn công ty · 230 người</option>
+              <option value="legal">Legal · 12 người</option>
+            </select>
+          </label>
+          <label>Thời lượng
+            <select id="campaignDuration">
+              <option>14 ngày</option>
+              <option selected>30 ngày</option>
+              <option>45 ngày</option>
+            </select>
+          </label>
+
+          <div class="setting-row">
+            <div>
+              <strong>Cho phép nhân viên opt-out</strong>
+              <p>Việc từ chối không hiển thị cho manager hoặc HR.</p>
+            </div>
+            <label class="switch"><input type="checkbox" checked disabled><span></span></label>
+          </div>
+
+          <div id="campaignPrivacyWarning" class="notice warning hidden">
+            Cohort không đạt ngưỡng. Campaign có thể gửi nội dung chung, nhưng không được tạo analytics cho nhóm này.
+          </div>
+
+          <button class="primary full" id="launchCampaignBtn">Khởi tạo campaign giả lập</button>
+        </article>
+
+        <article class="card preview-card">
+          <div class="eyebrow">EMPLOYEE PREVIEW</div>
+          <h3 id="campaignPreviewTitle">Healthy Break Month</h3>
+          <p id="campaignPreviewDescription">Một chương trình 30 ngày giúp bạn thử các khoảng nghỉ ngắn, có thể tùy chỉnh hoặc tắt bất cứ lúc nào.</p>
+          <div class="preview-message">
+            <strong>EyeMate · Công ty Acme đang tài trợ chương trình</strong>
+            <p id="campaignPreviewMessage">Hãy thử nghỉ mắt ngắn trong các phiên màn hình kéo dài. Công ty chỉ nhận thống kê nhóm hàng tuần và không thấy lịch sử cá nhân của bạn.</p>
+          </div>
+          <div class="grid two compact">
+            <div class="mini-card"><strong>Công ty nhận</strong><span>Reach, aggregate engagement, coverage</span></div>
+            <div class="mini-card"><strong>Công ty không nhận</strong><span>Ai bỏ qua, ai opt-out, symptom, camera</span></div>
+          </div>
+          <button class="secondary full">Xem toàn bộ privacy notice</button>
+        </article>
+      </div>
+
+      <div class="card">
+        <h3>Trạng thái campaign đang chạy</h3>
+        <div class="campaign-progress">
+          <div><strong>Healthy Break Month · Sales + Ops</strong><span>Ngày 18/30</span></div>
+          <div class="progress-track"><span style="width:60%"></span></div>
+          <div class="metrics four compact-metrics">
+            <div><strong>79%</strong><span>Program reach</span></div>
+            <div><strong>61%</strong><span>Aggregate engagement</span></div>
+            <div><strong>74%</strong><span>Data coverage</span></div>
+            <div><strong>+6 pts</strong><span>Observed change</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="evidence" class="view">
+      <div class="section-heading">
+        <div>
+          <div class="eyebrow">PROGRAM IMPLEMENTATION & PARTICIPATION REPORT</div>
+          <h2>Báo cáo triển khai và mức độ tham gia chương trình EyeMate</h2>
+          <p>QR chỉ xác minh tính toàn vẹn và nguồn phát hành của tài liệu.</p>
+        </div>
+        <button class="primary" id="generateReportBtn">Tạo preview mới</button>
+      </div>
+
+      <div class="evidence-layout">
+        <article class="report-paper" id="reportPaper">
+          <div class="report-header">
+            <div>
+              <div class="eyebrow">EYEMATE · WORKPLACE VISUAL WELLBEING PROGRAM</div>
+              <h2>EyeMate Program Implementation & Participation Report</h2>
+              <span class="report-status">Active program · H1/2026</span>
+            </div>
+            <div class="qr-placeholder">QR</div>
+          </div>
+
+          <div class="report-body">
+            <p>Cấp cho tổ chức</p>
+            <h3>Acme Corporation</h3>
+            <p>Tài liệu xác nhận tổ chức đã triển khai chương trình EyeMate cho nhân viên sử dụng màn hình trong kỳ báo cáo. Tài liệu không chứng nhận tuân thủ pháp luật, ISO, HSE hoặc kết quả y tế.</p>
+
+            <div class="report-metrics">
+              <div><strong>230</strong><span>Seats kích hoạt</span></div>
+              <div><strong>83%</strong><span>Monthly participation</span></div>
+              <div><strong>68%</strong><span>Break engagement</span></div>
+              <div><strong>78%</strong><span>Data coverage</span></div>
+            </div>
+
+            <table class="report-table">
+              <tr><td>Thời gian triển khai</td><td>01/01/2026 – 30/06/2026</td></tr>
+              <tr><td>Campaign đã thực hiện</td><td>3</td></tr>
+              <tr><td>Employee helpfulness</td><td>74% trên 163 phản hồi tự nguyện</td></tr>
+              <tr><td>Privacy threshold</td><td>Cohort ≥ 20; cell suppression &lt; 10</td></tr>
+              <tr><td>Methodology</td><td>Enterprise Metrics v1.1</td></tr>
+            </table>
+
+            <div class="report-note">
+              Không có camera stream, raw frame, symptom record, individual wellbeing report, focus score hoặc productivity score được cung cấp cho tổ chức.
+            </div>
+
+            <div class="signature-row">
+              <div><span>Phát hành bởi</span><strong>EyeMate Program Operations</strong></div>
+              <div><span>Report ID</span><strong id="reportId">EM-REP-2026-00047</strong></div>
+            </div>
+          </div>
+        </article>
+
+        <aside class="card">
+          <h3>Authenticity verification</h3>
+          <p class="muted">Prototype mô phỏng xác minh hash, methodology version và thời điểm tạo.</p>
+          <div class="coverage-row"><span>Document hash</span><strong id="hashText">b81f…4d92</strong></div>
+          <div class="coverage-row"><span>Issued at</span><strong id="issuedAt">2026-07-18</strong></div>
+          <div class="coverage-row"><span>Methodology</span><strong>v1.1</strong></div>
+          <button class="secondary full" id="verifyBtn">Verify prototype</button>
+          <div id="verifyResult" class="notice success hidden">Tài liệu hợp lệ trong dữ liệu prototype. Đây không phải xác nhận pháp lý.</div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="audit" class="view">
+      <div class="section-heading">
+        <div>
+          <div class="eyebrow">PRIVACY AUDIT & NEGATIVE TESTING</div>
+          <h2>Kiểm tra những truy vấn hệ thống phải từ chối</h2>
+          <p>Privacy không chỉ là UI; nó phải được enforcement ở API, query và export.</p>
+        </div>
+      </div>
+
+      <div class="grid two">
+        <article class="card">
+          <h3>Query simulator</h3>
+          <label>Yêu cầu thử nghiệm
+            <select id="querySelect">
+              <option value="individual">Hiển thị symptom của nhân viên A</option>
+              <option value="small">Lọc phòng Legal 12 người theo campaign</option>
+              <option value="difference">So sánh hai cohort chỉ khác một người</option>
+              <option value="realtime">Ai đang online và chưa nghỉ?</option>
+              <option value="allowed">Monthly aggregate của Engineering</option>
+            </select>
+          </label>
+          <button class="primary full" id="runQueryBtn">Chạy privacy gate</button>
+          <div id="queryResult" class="query-result"></div>
+        </article>
+
+        <article class="card">
+          <h3>Invariants đang khóa</h3>
+          <ul class="check-list">
+            <li>Không employer individual health view</li>
+            <li>Không focus, fatigue hoặc productivity inference</li>
+            <li>Không exact timestamp trong aggregate contribution</li>
+            <li>Cohort threshold và cell suppression bắt buộc</li>
+            <li>Campaign phải minh bạch và có opt-out</li>
+            <li>Unknown không được biến thành normal</li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="card">
+        <h3>Audit log giả lập</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Time</th><th>Actor role</th><th>Action</th><th>Decision</th><th>Reason</th></tr></thead>
+            <tbody id="auditTable">
+              <tr><td>10:02</td><td>Wellbeing Admin</td><td>Export monthly aggregate</td><td><span class="badge allowed">Allowed</span></td><td>Cohort 87, coverage 81%</td></tr>
+              <tr><td>09:44</td><td>Manager</td><td>Filter department + campaign + date</td><td><span class="badge blocked">Blocked</span></td><td>Anti-differencing policy</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="privacyDialog">
+    <div class="dialog-header">
+      <h3>Ranh giới dữ liệu đã chốt</h3>
+      <button class="icon-button" id="closePrivacyDialog">×</button>
+    </div>
+    <div class="dialog-body">
+      <div class="grid two compact">
+        <div>
+          <h4>Control Plane</h4>
+          <p>Identity, license, device, app version, update health, RBAC, audit.</p>
+        </div>
+        <div>
+          <h4>Insights Plane</h4>
+          <p>Weekly/monthly aggregate, thresholded cohorts, no individual drill-down.</p>
+        </div>
+      </div>
+      <div class="notice danger">
+        Cấm: camera stream, symptom cá nhân, focus/fatigue/productivity score, real-time employee presence.
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="genericDialog">
+    <div class="dialog-header">
+      <h3 id="genericDialogTitle">Prototype action</h3>
+      <button class="icon-button" id="closeGenericDialog">×</button>
+    </div>
+    <div class="dialog-body" id="genericDialogBody"></div>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+{
+  "tenant": {
+    "id": "org_acme_synthetic",
+    "name": "Acme Corporation",
+    "synthetic": true,
+    "seats": 247,
+    "activated": 230
+  },
+  "metric_contract": {
+    "version": "enterprise-metrics/1.1",
+    "window": "2026-07",
+    "cohort_minimum": 20,
+    "minimum_contributors": 15,
+    "cell_suppression_below": 10
+  },
+  "allowed_aggregate_example": {
+    "cohort_id": "department_engineering_rotating",
+    "reporting_window": "2026-07",
+    "eligible_contributors": 87,
+    "contributors": 77,
+    "enrollment_coverage": 0.96,
+    "monthly_participation": 0.88,
+    "break_engagement": 0.78,
+    "long_observed_session_rate": 0.08,
+    "data_coverage": 0.81,
+    "metric_version": "enterprise-metrics/1.1"
+  },
+  "forbidden_fields": [
+    "employee_email",
+    "device_serial_in_insights",
+    "exact_timestamp",
+    "symptom_answers",
+    "blink_series",
+    "distance_series",
+    "focus_score",
+    "fatigue_score",
+    "productivity_score",
+    "camera_frame"
+  ]
+}
