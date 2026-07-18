@@ -13,6 +13,8 @@ EyeMate is a local-first personal visual-wellbeing desktop application. M0 throu
 
 M5 Enterprise Discovery is `IN_REVIEW` as a separate non-implementation track. Owner decisions have been applied to normalize the Discovery boundary. M5 implementation remains `NOT_STARTED`; no backend, tenant service, cloud synchronization, production admin dashboard, authentication, SSO, production database or application-code change is approved by this status.
 
+Enterprise Pilot Demo is available as a `DEVELOPMENT_ONLY_REVIEW_ARTIFACT` behind `npm run dev:enterprise-demo`. It is a packaged Electron demo window with synthetic in-memory data for owner review, not a production admin dashboard and not M5 implementation.
+
 ## Milestone Status
 
 | Milestone | Status | Closing reference | Remaining limitations |
@@ -85,6 +87,7 @@ Approved-for-discovery owner decisions: product category wording, three-plane ar
 - Enterprise prototype: `prototypes/enterprise-pilot/`
 - Enterprise Discovery Pack: `docs/product/enterprise/`, `docs/data/enterprise/`, `docs/privacy-security/enterprise/`, `docs/architecture/enterprise/`, `docs/research/enterprise/`
 - Enterprise proposed specs: `specs/015-enterprise-trust-and-deployment/` through `specs/021-enterprise-rbac-and-audit/`
+- Enterprise pilot demo: `docs/product/enterprise/enterprise-pilot-demo.md`, `npm run dev:enterprise-demo`, `npm run test:enterprise-demo`
 
 ## Continuity
 
