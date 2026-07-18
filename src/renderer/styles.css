@@ -433,6 +433,11 @@ body.production-clarity-active .session-timer { color: var(--text); font-family:
 body.production-clarity-active .session-progress { background: #e2e6df; }
 body.production-clarity-active .session-progress span { background: var(--text); transform: scaleX(0); transform-origin: left; animation: clarity-progress-enter 760ms 220ms var(--clarity-ease) forwards; }
 body.production-clarity-active .companion-ring-track { stroke: #e2e6df; } body.production-clarity-active .companion-ring-progress { stroke: var(--text); }
+body.production-clarity-active[data-route="companion"] .companion-timer-ring { width: 360px; max-width: calc(100vw - 96px); margin: 18px auto 18px; }
+body.production-clarity-active[data-route="companion"] .companion-timer-ring > div { width: 100%; min-width: 0; justify-content: center; gap: 10px; transform: translateY(4px); }
+body.production-clarity-active[data-route="companion"] .companion-timer-ring .session-timer { color: var(--text); font-size: 76px; line-height: .92; letter-spacing: 0; white-space: nowrap; }
+body.production-clarity-active[data-route="companion"] .companion-timer-ring small { font-size: 11px; letter-spacing: .12em; }
+@media (max-width: 760px) { body.production-clarity-active[data-route="companion"] .companion-timer-ring { width: 300px; max-width: calc(100vw - 64px); } body.production-clarity-active[data-route="companion"] .companion-timer-ring .session-timer { font-size: 56px; } }
 body.production-clarity-active .companion-policy { border-left: 3px solid var(--accent-strong); }
 
 body.production-clarity-active .tabs { width: fit-content; gap: 4px; padding: 4px; border: 1px solid var(--border); border-radius: 24px; background: var(--surface-1); }
