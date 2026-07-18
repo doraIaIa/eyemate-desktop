@@ -2,21 +2,16 @@
 
 Last updated: 2026-07-18
 Current branch: `main`
-Current HEAD: `128a94269c84b658ac95fa5cb328d1e531e972c6`
+Current HEAD: `629916b07aa85bec46673d2908d498232e966c40`
 Upstream: `origin/main`
-Working tree at update time: `clean`
+Working tree at update time: `M5 Enterprise Discovery changes pending review`
 Latest implementation commit: `128a942 feat: strengthen checkup companion and personal insights`
 
 ## Current Project Phase
 
 EyeMate is a local-first personal visual-wellbeing desktop application. M0 through M4 are complete at an engineering level with limitations; this does not mean `PUBLIC_READY`, signed release ready, or real-person pilot ready.
 
-The current active decision point is:
-
-1. Continue closing external validation and pilot gates for the personal product.
-2. Or open a separate M5 Enterprise Discovery track without mixing it into the personal data plane.
-
-M5 Enterprise has not started. Enterprise work must begin with discovery plus privacy/legal specification, not with a production backend or dashboard.
+M5 Enterprise Discovery is `IN_REVIEW` as a separate non-implementation track. Owner decisions have been applied to normalize the Discovery boundary. M5 implementation remains `NOT_STARTED`; no backend, tenant service, cloud synchronization, production admin dashboard, authentication, SSO, production database or application-code change is approved by this status.
 
 ## Milestone Status
 
@@ -27,7 +22,7 @@ M5 Enterprise has not started. Enterprise work must begin with discovery plus pr
 | M2 | `ENGINEERING_COMPLETE_WITH_LIMITATIONS` | `024bff9` / `128a942` | Camera companion validation |
 | M3 | `ENGINEERING_COMPLETE_WITH_LIMITATIONS` | `2998fcb` / `5123da6` / `128a942` | Camera-derived VLI, stronger claims |
 | M4 | `ENGINEERING_COMPLETE_WITH_LIMITATIONS` | `fcaeaca` | Signing, dynamic egress, real-device validation, pilot approval |
-| M5 | `NOT_STARTED` | None | Discovery, legal/privacy, RBAC, cohort architecture |
+| M5 Discovery | `M5_DISCOVERY_IN_REVIEW_IMPLEMENTATION_NOT_STARTED` | `prototypes/enterprise-pilot/`, `docs/product/enterprise/`, `docs/data/enterprise/`, `docs/privacy-security/enterprise/`, `docs/architecture/enterprise/`, `docs/research/enterprise/`, `specs/015-*` to `specs/021-*` | Privacy/legal/security review, design-partner validation, technical planning decision |
 
 Do not promote any milestone above `ENGINEERING_COMPLETE_WITH_LIMITATIONS` until the matching external gates have explicit evidence and owner approval.
 
@@ -55,7 +50,7 @@ This list is an engineering inventory, not a marketing or clinical claim.
 - Signed/public MSIX: pending certificate, distribution identity and install/update/rollback evidence.
 - Clinical diagnosis, treatment and OSDI clinical flow: disabled or outside intended use unless separately approved.
 - Focus, fatigue and productivity monitoring: not implemented and not in current personal-product scope.
-- M5 Enterprise: not started.
+- M5 Enterprise implementation: not started.
 
 ## External Gates Remaining
 
@@ -71,11 +66,13 @@ This list is an engineering inventory, not a marketing or clinical claim.
 
 ## Enterprise Status
 
-M5 is post-MVP. Enterprise implementation has not started.
+M5 is post-MVP. Enterprise Discovery is in review; Enterprise implementation has not started.
 
-There is no tenant, account, backend, RBAC, admin dashboard, cohort aggregation pipeline, employee health monitoring or individual employer view in the current repository.
+There is no production tenant service, account system, backend, production RBAC, production admin dashboard, production cohort aggregation pipeline, employee health monitoring or individual employer view in the current repository.
 
-Any Enterprise work must start as a separate Discovery track with privacy/legal boundaries, cohort threshold design, RBAC/audit requirements and re-identification controls. It must not expose personal symptom records, checkup reports, risk labels or individual health views to an employer.
+The imported enterprise prototype is a non-production discovery artifact using synthetic data. The Enterprise Discovery Pack records privacy/legal boundaries, cohort threshold design, RBAC/audit requirements and re-identification controls for owner review. It must not expose personal symptom records, checkup reports, risk labels or individual health views to an employer.
+
+Approved-for-discovery owner decisions: product category wording, three-plane architecture boundary, non-overridable forbidden employer features, Control Plane identity scope, aggregate contribution default OFF, proposed-pilot-default privacy thresholds, four bounded campaign templates, EyeMate Program Implementation & Participation Report naming and design-partner criteria.
 
 ## Evidence Pointers
 
@@ -84,22 +81,25 @@ Any Enterprise work must start as a separate Discovery track with privacy/legal 
 - M4 exit: `docs/validation/m4-exit-record.md`
 - Pilot feature matrix: `pilot/feature-matrix.json`
 - External gate checklist: `pilot/external-gate-checklist.json`
-- Latest implementation batch: `128a942 feat: strengthen checkup companion and personal insights`
+- Latest implementation batch: `629916b docs(status): synchronize project state at 128a942`
+- Enterprise prototype: `prototypes/enterprise-pilot/`
+- Enterprise Discovery Pack: `docs/product/enterprise/`, `docs/data/enterprise/`, `docs/privacy-security/enterprise/`, `docs/architecture/enterprise/`, `docs/research/enterprise/`
+- Enterprise proposed specs: `specs/015-enterprise-trust-and-deployment/` through `specs/021-enterprise-rbac-and-audit/`
 
 ## Continuity
 
 Recommended next decision:
 
-1. Continue resolving external validation gates for the personal product.
-2. Or approve a separate M5 Enterprise Discovery track, explicitly isolated from the personal data plane.
+1. Review the M5 Enterprise Discovery Pack after owner-decision normalization and decide whether it is ready to commit as Discovery documentation.
+2. Continue resolving external validation gates for the personal product independently.
 
-Option 2 is not approved by this status document. This document only records that M5 is `NOT_STARTED`.
+This document does not approve M5 implementation or technical planning.
 
 ## Last Verified Repository State For This Status Sync
 
 - Branch: `main`
-- HEAD: `128a94269c84b658ac95fa5cb328d1e531e972c6`
+- HEAD: `629916b07aa85bec46673d2908d498232e966c40`
 - Upstream: `origin/main`
-- Working tree: `clean`
-- Scope changed: documentation status only
-- Files intentionally changed by this sync: `PROJECT_STATUS.md`
+- Working tree: `M5 Enterprise Discovery changes pending review`
+- Scope changed: M5 Enterprise Discovery documentation/prototype only
+- Files intentionally changed by this sync: `PROJECT_STATUS.md`, Enterprise Discovery docs/specs/prototype
